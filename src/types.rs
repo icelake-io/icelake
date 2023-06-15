@@ -97,18 +97,12 @@ pub struct Field {
 /// - Elements can be either optional or required.
 /// - Element types may be any type.
 pub struct List {
-    /// Unique identifier for the element
-    pub elements: Vec<Element>,
-}
-
-/// Element is the unit of a list.
-pub struct Element {
     /// an integer id that is unique in the table schema.
-    pub id: i32,
+    pub element_id: i32,
     /// Optional or required, meaning that values can (or can not be null)
-    pub required: bool,
+    pub element_required: bool,
     /// Element types may be any type.
-    pub element_type: Any,
+    pub element_type: Box<Any>,
 }
 
 /// A map is a collection of key-value pairs with a key type and a value type.
@@ -117,20 +111,15 @@ pub struct Element {
 /// - Map keys are required and map values can be either optional or required.
 /// - Both map keys and map values may be any type, including nested types.
 pub struct Map {
-    /// Entries of map.
-    pub entries: Vec<Entry>,
-}
-
-pub struct Entry {
     /// an integer id that is unique in the table schema
     pub key_id: i32,
     /// Both map keys and map values may be any type, including nested types.
-    pub key_type: Any,
+    pub key_type: Box<Any>,
 
     /// an integer id that is unique in the table schema
     pub value_id: i32,
     /// map values can be either optional or required.
     pub value_required: bool,
     /// Both map keys and map values may be any type, including nested types.
-    pub value_type: Any,
+    pub value_type: Box<Any>,
 }
