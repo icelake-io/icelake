@@ -1,4 +1,5 @@
 /// All data types are either primitives or nested types, which are maps, lists, or structs.
+#[derive(Debug, PartialEq, Eq)]
 pub enum Any {
     /// A Primitive type
     Primitive(Primitive),
@@ -11,6 +12,7 @@ pub enum Any {
 }
 
 /// Primitive Types within a schema.
+#[derive(Debug, PartialEq, Eq)]
 pub enum Primitive {
     /// True or False
     Boolean,
@@ -73,11 +75,13 @@ pub enum Primitive {
 /// - Fields may be any type.
 /// - Fields may have an optional comment or doc string.
 /// - Fields can have default values.
+#[derive(Debug, PartialEq, Eq)]
 pub struct Struct {
     pub fields: Vec<Field>,
 }
 
 /// A Field is the field of a struct.
+#[derive(Debug, PartialEq, Eq)]
 pub struct Field {
     /// An integer id that is unique in the table schema
     pub id: i32,
@@ -96,6 +100,7 @@ pub struct Field {
 /// - The element field has an integer id that is unique in the table schema.
 /// - Elements can be either optional or required.
 /// - Element types may be any type.
+#[derive(Debug, PartialEq, Eq)]
 pub struct List {
     /// an integer id that is unique in the table schema.
     pub element_id: i32,
@@ -110,6 +115,7 @@ pub struct List {
 /// - Both the key field and value field each have an integer id that is unique in the table schema.
 /// - Map keys are required and map values can be either optional or required.
 /// - Both map keys and map values may be any type, including nested types.
+#[derive(Debug, PartialEq, Eq)]
 pub struct Map {
     /// an integer id that is unique in the table schema
     pub key_id: i32,
@@ -122,4 +128,19 @@ pub struct Map {
     pub value_required: bool,
     /// Both map keys and map values may be any type, including nested types.
     pub value_type: Box<Any>,
+}
+
+/// A table’s schema is a list of named columns.
+///
+/// All data types are either primitives or nested types, which are maps, lists, or structs.
+/// A table schema is also a struct type.
+#[derive(Debug)]
+pub struct SchemaV2 {
+    /// The unique id for this schema.
+    pub id: i32,
+    /// A schema can optionally track the set of primitive fields that
+    /// identify rows in a table, using the property identifier-field-ids
+    pub identifier_field_ids: Option<Vec<i32>>,
+    /// types contained in this schema.
+    pub types: Struct,
 }
