@@ -35,4 +35,4 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - name: Test
-        uses: cargo test
+        run: cargo test
