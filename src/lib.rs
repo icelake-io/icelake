@@ -1,2 +1,2 @@
-pub mod schema;
+pub mod formats;
 pub mod types;

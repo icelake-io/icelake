@@ -546,9 +546,11 @@ dependencies = [
 name = "icelake"
 version = "0.0.0"
 dependencies = [
+ "anyhow",
  "futures",
  "opendal",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
