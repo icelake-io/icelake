@@ -1,16 +1,29 @@
+use std::fmt;
+use std::marker::PhantomData;
+
+use serde::de;
+use serde::de::MapAccess;
+use serde::de::Visitor;
 use serde::Deserialize;
+use serde::Deserializer;
 
 use crate::types;
 use anyhow::anyhow;
 use anyhow::Result;
+
+/// Parse schema_v2 from json bytes.
+pub fn parse_schema_v2(schema: &[u8]) -> Result<types::SchemaV2> {
+    let schema: Schema = serde_json::from_slice(schema)?;
+    schema.try_into()
+}
 
 #[derive(Deserialize)]
 #[serde(rename_all = "kebab-case")]
 struct Schema {
     schema_id: i32,
     identifier_field_ids: Option<Vec<i32>>,
-    #[serde(flatten)]
-    typ: NestedType,
+    #[serde(rename = "type", flatten, deserialize_with = "string_or_struct")]
+    typ: Types,
 }
 
 impl TryFrom<Schema> for types::SchemaV2 {
@@ -32,39 +45,29 @@ impl TryFrom<Schema> for types::SchemaV2 {
     }
 }
 
-#[derive(Deserialize)]
-#[serde(untagged)]
-enum StringOrTypes {
-    PrimitiveType(PrimitiveType),
-    NestedType(NestedType),
-}
-
-#[derive(Deserialize)]
-struct PrimitiveType {
-    #[serde(rename = "type")]
-    typ: String,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "kebab-case")]
-struct NestedType {
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "kebab-case", default)]
+struct Types {
     #[serde(rename = "type")]
     typ: String,
 
     /// Only available when typ == "struct"
-    fields: Option<Vec<Field>>,
+    fields: Vec<Field>,
 
     /// Only available when typ == "list"
-    element_id: Option<i32>,
-    element_required: Option<bool>,
-    element: Option<Box<StringOrTypes>>,
+    element_id: i32,
+    element_required: bool,
+    #[serde(deserialize_with = "string_or_struct")]
+    element: Option<Box<Types>>,
 
     /// Only available when typ == "map"
-    key_id: Option<i32>,
-    key: Option<Box<StringOrTypes>>,
-    value_id: Option<i32>,
-    value_required: Option<bool>,
-    value: Option<Box<StringOrTypes>>,
+    key_id: i32,
+    #[serde(deserialize_with = "string_or_struct")]
+    key: Option<Box<Types>>,
+    value_id: i32,
+    value_required: bool,
+    #[serde(deserialize_with = "string_or_struct")]
+    value: Option<Box<Types>>,
 }
 
 #[derive(Deserialize)]
@@ -73,80 +76,139 @@ struct Field {
     id: i32,
     name: String,
     required: bool,
-    #[serde(rename = "type", flatten)]
-    typ: StringOrTypes,
+    #[serde(rename = "type", deserialize_with = "string_or_struct")]
+    typ: Types,
     doc: Option<String>,
 }
 
-impl TryFrom<&StringOrTypes> for types::Any {
-    type Error = anyhow::Error;
+/// We need to support both `T` and `Box<T>` so we can't use
+/// the `std::str::FromStr` trait directly.
+trait FromStr {
+    fn from_str(s: &str) -> Self;
+}
 
-    fn try_from(v: &StringOrTypes) -> Result<Self, Self::Error> {
-        let t = match v {
-            StringOrTypes::PrimitiveType(s) => match s.typ.as_str() {
-                "boolean" => types::Any::Primitive(types::Primitive::Boolean),
-                "int" => types::Any::Primitive(types::Primitive::Int),
-                "long" => types::Any::Primitive(types::Primitive::Long),
-                "float" => types::Any::Primitive(types::Primitive::Float),
-                "double" => types::Any::Primitive(types::Primitive::Double),
-                "date" => types::Any::Primitive(types::Primitive::Date),
-                "time" => types::Any::Primitive(types::Primitive::Time),
-                "timestamp" => types::Any::Primitive(types::Primitive::Timestamp),
-                "timestamptz" => types::Any::Primitive(types::Primitive::Timestampz),
-                "string" => types::Any::Primitive(types::Primitive::String),
-                "uuid" => types::Any::Primitive(types::Primitive::Uuid),
-                "binary" => types::Any::Primitive(types::Primitive::Binary),
-                v if v.starts_with("fixed") => {
-                    let length = v
-                        .strip_prefix("fixed")
-                        .expect("type must starts with `fixed`")
-                        .trim_start_matches('[')
-                        .trim_end_matches(']')
-                        .parse()
-                        .map_err(|err| anyhow!("fixed type {v:?} is invalid: {err:?}"))?;
-
-                    types::Any::Primitive(types::Primitive::Fixed(length))
-                }
-                v if v.starts_with("decimal") => {
-                    let parts = v
-                        .strip_prefix("decimal")
-                        .expect("type must starts with `decimal`")
-                        .trim_start_matches('(')
-                        .trim_end_matches(')')
-                        .split(',')
-                        .collect::<Vec<_>>();
-                    if parts.len() != 2 {
-                        return Err(anyhow!("decimal type {v:?} is invalid"));
-                    }
-
-                    let precision = parts[0]
-                        .parse()
-                        .map_err(|err| anyhow!("decimal type {v:?} is invalid: {err:?}"))?;
-                    let scale = parts[1]
-                        .parse()
-                        .map_err(|err| anyhow!("decimal type {v:?} is invalid: {err:?}"))?;
-
-                    types::Any::Primitive(types::Primitive::Decimal { precision, scale })
-                }
-                s => return Err(anyhow!("type {:?} is not valid primitive type", s)),
-            },
-            StringOrTypes::NestedType(v) => v.try_into()?,
-        };
-
-        Ok(t)
+impl FromStr for Types {
+    fn from_str(s: &str) -> Self {
+        Types {
+            typ: s.to_string(),
+            ..Default::default()
+        }
     }
 }
 
-impl TryFrom<&NestedType> for types::Any {
+impl FromStr for Box<Types> {
+    fn from_str(s: &str) -> Self {
+        Box::new(Types {
+            typ: s.to_string(),
+            ..Default::default()
+        })
+    }
+}
+
+impl FromStr for Option<Box<Types>> {
+    fn from_str(s: &str) -> Self {
+        Some(Box::new(Types {
+            typ: s.to_string(),
+            ..Default::default()
+        }))
+    }
+}
+
+fn string_or_struct<'de, T, D>(deserializer: D) -> Result<T, D::Error>
+where
+    T: Deserialize<'de> + FromStr,
+    D: Deserializer<'de>,
+{
+    // This is a Visitor that forwards string types to T's `FromStr` impl and
+    // forwards map types to T's `Deserialize` impl. The `PhantomData` is to
+    // keep the compiler from complaining about T being an unused generic type
+    // parameter. We need T in order to know the Value type for the Visitor
+    // impl.
+    struct StringOrStruct<T>(PhantomData<fn() -> T>);
+
+    impl<'de, T> Visitor<'de> for StringOrStruct<T>
+    where
+        T: Deserialize<'de> + FromStr,
+    {
+        type Value = T;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("string or map")
+        }
+
+        fn visit_str<E>(self, value: &str) -> Result<T, E>
+        where
+            E: de::Error,
+        {
+            Ok(FromStr::from_str(value))
+        }
+
+        fn visit_map<M>(self, map: M) -> Result<T, M::Error>
+        where
+            M: MapAccess<'de>,
+        {
+            // `MapAccessDeserializer` is a wrapper that turns a `MapAccess`
+            // into a `Deserializer`, allowing it to be used as the input to T's
+            // `Deserialize` implementation. T then deserializes itself using
+            // the entries from the map visitor.
+            Deserialize::deserialize(de::value::MapAccessDeserializer::new(map))
+        }
+    }
+
+    deserializer.deserialize_any(StringOrStruct(PhantomData))
+}
+
+impl TryFrom<&Types> for types::Any {
     type Error = anyhow::Error;
 
-    fn try_from(v: &NestedType) -> Result<Self, Self::Error> {
+    fn try_from(v: &Types) -> Result<Self, Self::Error> {
         let t = match v.typ.as_str() {
+            "boolean" => types::Any::Primitive(types::Primitive::Boolean),
+            "int" => types::Any::Primitive(types::Primitive::Int),
+            "long" => types::Any::Primitive(types::Primitive::Long),
+            "float" => types::Any::Primitive(types::Primitive::Float),
+            "double" => types::Any::Primitive(types::Primitive::Double),
+            "date" => types::Any::Primitive(types::Primitive::Date),
+            "time" => types::Any::Primitive(types::Primitive::Time),
+            "timestamp" => types::Any::Primitive(types::Primitive::Timestamp),
+            "timestamptz" => types::Any::Primitive(types::Primitive::Timestampz),
+            "string" => types::Any::Primitive(types::Primitive::String),
+            "uuid" => types::Any::Primitive(types::Primitive::Uuid),
+            "binary" => types::Any::Primitive(types::Primitive::Binary),
+            v if v.starts_with("fixed") => {
+                let length = v
+                    .strip_prefix("fixed")
+                    .expect("type must starts with `fixed`")
+                    .trim_start_matches('[')
+                    .trim_end_matches(']')
+                    .parse()
+                    .map_err(|err| anyhow!("fixed type {v:?} is invalid: {err:?}"))?;
+
+                types::Any::Primitive(types::Primitive::Fixed(length))
+            }
+            v if v.starts_with("decimal") => {
+                let parts = v
+                    .strip_prefix("decimal")
+                    .expect("type must starts with `decimal`")
+                    .trim_start_matches('(')
+                    .trim_end_matches(')')
+                    .split(',')
+                    .collect::<Vec<_>>();
+                if parts.len() != 2 {
+                    return Err(anyhow!("decimal type {v:?} is invalid"));
+                }
+
+                let precision = parts[0]
+                    .parse()
+                    .map_err(|err| anyhow!("decimal type {v:?} is invalid: {err:?}"))?;
+                let scale = parts[1]
+                    .parse()
+                    .map_err(|err| anyhow!("decimal type {v:?} is invalid: {err:?}"))?;
+
+                types::Any::Primitive(types::Primitive::Decimal { precision, scale })
+            }
             "struct" => {
-                let raw_fields = v
-                    .fields
-                    .as_ref()
-                    .ok_or_else(|| anyhow!("struct type must have fields"))?;
+                let raw_fields = &v.fields;
 
                 let mut fields = Vec::with_capacity(raw_fields.len());
                 for f in raw_fields {
@@ -164,16 +226,12 @@ impl TryFrom<&NestedType> for types::Any {
                 types::Any::Struct(types::Struct { fields })
             }
             "list" => {
-                let element_id = v
-                    .element_id
-                    .ok_or_else(|| anyhow!("list type must have element_id"))?;
-                let element_required = v
-                    .element_required
-                    .ok_or_else(|| anyhow!("list type must have element_required"))?;
+                let element_id = v.element_id;
+                let element_required = v.element_required;
                 let element_type = v
                     .element
                     .as_ref()
-                    .ok_or_else(|| anyhow!("list type must have element"))?;
+                    .ok_or_else(|| anyhow!("element type is required"))?;
 
                 types::Any::List(types::List {
                     element_id,
@@ -182,23 +240,17 @@ impl TryFrom<&NestedType> for types::Any {
                 })
             }
             "map" => {
-                let key_id = v
-                    .key_id
-                    .ok_or_else(|| anyhow!("map type must have key_id"))?;
+                let key_id = v.key_id;
                 let key_type = v
                     .key
                     .as_ref()
-                    .ok_or_else(|| anyhow!("map type must have key"))?;
-                let value_id = v
-                    .value_id
-                    .ok_or_else(|| anyhow!("map type must have value_id"))?;
-                let value_required = v
-                    .value_required
-                    .ok_or_else(|| anyhow!("map type must have value_required"))?;
+                    .ok_or_else(|| anyhow!("map type key is required"))?;
+                let value_id = v.value_id;
+                let value_required = v.value_required;
                 let value_type = v
                     .value
                     .as_ref()
-                    .ok_or_else(|| anyhow!("map type must have value_type"))?;
+                    .ok_or_else(|| anyhow!("map type value is required"))?;
 
                 types::Any::Map(types::Map {
                     key_id,
@@ -208,17 +260,11 @@ impl TryFrom<&NestedType> for types::Any {
                     value_type: Box::new(value_type.as_ref().try_into()?),
                 })
             }
-            v => return Err(anyhow!("type {:?} is not valid nested type", v)),
+            v => return Err(anyhow!("type {:?} is not valid schema type", v)),
         };
 
         Ok(t)
     }
-}
-
-/// Parse schema_v2 from json bytes.
-pub fn parse_schema_v2(schema: &[u8]) -> Result<types::SchemaV2> {
-    let schema: Schema = serde_json::from_slice(schema)?;
-    schema.try_into()
 }
 
 #[cfg(test)]
@@ -247,7 +293,7 @@ mod tests {
         assert_eq!(schema.types.fields.len(), 1);
         assert_eq!(schema.types.fields[0].id, 1);
         assert_eq!(schema.types.fields[0].name, "VendorID");
-        assert_eq!(schema.types.fields[0].required, false);
+        assert!(!schema.types.fields[0].required);
         assert_eq!(
             schema.types.fields[0].field_type,
             types::Any::Primitive(types::Primitive::Long)
@@ -258,17 +304,21 @@ mod tests {
     fn test_parse_schema_v2_list() {
         let schema = r#"
 {
-	"type" : "struct",
-	"schema-id" : 0,
-   	"fields" : [ {
-  		"id" : 1,
-		"name" : "VendorID",
-  		"required" : false,
- 		"type": "list",
-        "element-id": 3,
-        "element-required": true,
-        "element": "string"
- 	} ]
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [
+        {
+            "id" : 1,
+            "name" : "VendorID",
+            "required" : false,
+            "type": {
+                "type": "list",
+                "element-id": 3,
+                "element-required": true,
+                "element": "string"
+            }
+        }
+    ]
 }
         "#;
 
@@ -279,13 +329,57 @@ mod tests {
         assert_eq!(schema.types.fields.len(), 1);
         assert_eq!(schema.types.fields[0].id, 1);
         assert_eq!(schema.types.fields[0].name, "VendorID");
-        assert_eq!(schema.types.fields[0].required, false);
+        assert!(!schema.types.fields[0].required);
         assert_eq!(
             schema.types.fields[0].field_type,
             types::Any::List(types::List {
                 element_id: 3,
                 element_required: true,
                 element_type: types::Any::Primitive(types::Primitive::String).into(),
+            })
+        );
+    }
+
+    #[test]
+    fn test_parse_schema_v2_map() {
+        let schema = r#"
+{
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [
+        {
+            "id" : 1,
+            "name" : "VendorID",
+            "required" : false,
+            "type": {
+                "type": "map",
+                "key-id": 4,
+                "key": "string",
+                "value-id": 5,
+                "value-required": false,
+                "value": "double"
+            }
+        }
+    ]
+}
+        "#;
+
+        let schema = parse_schema_v2(schema.as_bytes()).unwrap();
+
+        assert_eq!(schema.id, 0);
+        assert_eq!(schema.identifier_field_ids, None);
+        assert_eq!(schema.types.fields.len(), 1);
+        assert_eq!(schema.types.fields[0].id, 1);
+        assert_eq!(schema.types.fields[0].name, "VendorID");
+        assert!(!schema.types.fields[0].required);
+        assert_eq!(
+            schema.types.fields[0].field_type,
+            types::Any::Map(types::Map {
+                key_id: 4,
+                key_type: types::Any::Primitive(types::Primitive::String).into(),
+                value_id: 5,
+                value_required: false,
+                value_type: types::Any::Primitive(types::Primitive::Double).into(),
             })
         );
     }
