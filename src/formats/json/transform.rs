@@ -2,6 +2,7 @@ use crate::types;
 use anyhow::anyhow;
 use anyhow::Result;
 
+/// Parse transform string represent into types::Transform enum.
 pub fn parse_transform(s: &str) -> Result<types::Transform> {
     let t = match s {
         "identity" => types::Transform::Identity,

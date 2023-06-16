@@ -251,6 +251,7 @@ pub enum Transform {
 /// as the partition spec is the same for the data files.)
 ///
 /// Tables are configured with a partition spec that defines how to produce a tuple of partition values from a record.
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct PartitionSpec {
     /// The spec id.
     pub id: i32,
@@ -259,6 +260,7 @@ pub struct PartitionSpec {
 }
 
 /// Field of the specified partition spec.
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct PartitionField {
     /// A source column id from the table’s schema
     pub source_column_id: i32,
@@ -286,6 +288,7 @@ pub struct PartitionField {
 /// - Sorting floating-point numbers should produce the following behavior:
 ///   `-NaN` < `-Infinity` < `-value` < `-0` < `0` < `value` < `Infinity`
 ///   < `NaN`
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct SortOrder {
     /// The sort order id of this SortOrder
     pub id: i32,
@@ -295,6 +298,7 @@ pub struct SortOrder {
 }
 
 /// Field of the specified sort order.
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct SortField {
     /// A source column id from the table’s schema
     pub source_column_id: i32,
@@ -313,6 +317,7 @@ pub struct SortField {
 }
 
 /// sort direction, that can only be either `asc` or `desc`
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum SortDirection {
     ASC,
     DESC,
@@ -320,6 +325,7 @@ pub enum SortDirection {
 
 /// A null order that describes the order of null values when sorted.
 /// Can only be either nulls-first or nulls-last
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum NullOrder {
     NullsFirst,
     NullsLast,
