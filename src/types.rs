@@ -137,7 +137,7 @@ pub struct Map {
 /// All data types are either primitives or nested types, which are maps, lists, or structs.
 /// A table schema is also a struct type.
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct SchemaV2 {
+pub struct Schema {
     /// The unique id for this schema.
     pub id: i32,
     /// A schema can optionally track the set of primitive fields that
@@ -445,7 +445,7 @@ pub struct FieldSummary {
 /// files, along with each file’s partition data tuple, metrics, and tracking
 /// information.
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct ManifestV2 {
+pub struct ManifestFile {
     /// field: 0
     ///
     /// Used to track additions and deletions.
@@ -468,7 +468,7 @@ pub struct ManifestV2 {
     /// field id: 2
     ///
     /// File path, partition tuple, metrics, …
-    pub data_file: DataFileV2,
+    pub data_file: DataFile,
 }
 
 /// FIXME: partition_spec is not parsed.
@@ -476,7 +476,7 @@ pub struct ManifestV2 {
 pub struct ManifestMetadata {
     /// The table schema at the time the manifest
     /// was written
-    pub schema: SchemaV2,
+    pub schema: Schema,
     /// ID of the schema used to write the manifest as a string
     pub schema_id: i32,
 
@@ -515,12 +515,12 @@ pub enum ManifestStatus {
 
 /// Data file carries data file path, partition tuple, metrics, …
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct DataFileV2 {
+pub struct DataFile {
     /// field id: 134
     ///
     /// Type of content stored by the data file: data, equality deletes,
     /// or position deletes (all v1 files are data files)
-    pub content: DataContentTypeV2,
+    pub content: DataContentType,
     /// field id: 100
     ///
     /// Full URI for the file with FS scheme
@@ -638,7 +638,7 @@ pub struct DataFileV2 {
 /// Type of content stored by the data file: data, equality deletes, or
 /// position deletes (all v1 files are data files)
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum DataContentTypeV2 {
+pub enum DataContentType {
     /// value: 0
     Data,
     /// value: 1

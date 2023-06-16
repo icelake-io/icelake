@@ -8,17 +8,19 @@ use serde::Deserialize;
 use serde_with::serde_as;
 use serde_with::Bytes;
 
-use crate::formats::json::parse_schema_v2;
+use crate::formats::json::parse_schema;
 use crate::types;
 
 /// Parse manifest list from avro bytes.
-pub fn parse_manifest_v2(bs: &[u8]) -> Result<(types::ManifestMetadata, Vec<types::ManifestV2>)> {
+pub fn parse_manifest_file(
+    bs: &[u8],
+) -> Result<(types::ManifestMetadata, Vec<types::ManifestFile>)> {
     let reader = Reader::new(bs)?;
 
     // Parse manifest metadata
     let meta = reader.user_metadata();
     let metadata = types::ManifestMetadata {
-        schema: parse_schema_v2(
+        schema: parse_schema(
             meta.get("schema")
                 .ok_or_else(|| anyhow!("schema is required in manifest metadata but not found"))?,
         )?,
@@ -90,11 +92,11 @@ struct ManifestEntry {
     data_file: DataFile,
 }
 
-impl TryFrom<ManifestEntry> for types::ManifestV2 {
+impl TryFrom<ManifestEntry> for types::ManifestFile {
     type Error = anyhow::Error;
 
     fn try_from(v: ManifestEntry) -> Result<Self, Self::Error> {
-        Ok(types::ManifestV2 {
+        Ok(types::ManifestFile {
             status: parse_manifest_status(v.status)?,
             snapshot_id: v.snapshot_id,
             sequence_number: v.sequence_number,
@@ -128,11 +130,11 @@ struct DataFile {
     sort_order_id: Option<i32>,
 }
 
-impl TryFrom<DataFile> for types::DataFileV2 {
+impl TryFrom<DataFile> for types::DataFile {
     type Error = anyhow::Error;
 
     fn try_from(v: DataFile) -> Result<Self, Self::Error> {
-        Ok(types::DataFileV2 {
+        Ok(types::DataFile {
             content: parse_data_content_type(v.content)?,
             file_path: v.file_path,
             file_format: parse_data_file_format(&v.file_format)?,
@@ -195,11 +197,11 @@ fn parse_manifest_status(v: i32) -> Result<types::ManifestStatus> {
     }
 }
 
-fn parse_data_content_type(v: i32) -> Result<types::DataContentTypeV2> {
+fn parse_data_content_type(v: i32) -> Result<types::DataContentType> {
     match v {
-        0 => Ok(types::DataContentTypeV2::Data),
-        1 => Ok(types::DataContentTypeV2::PostionDeletes),
-        2 => Ok(types::DataContentTypeV2::EqualityDeletes),
+        0 => Ok(types::DataContentType::Data),
+        1 => Ok(types::DataContentType::PostionDeletes),
+        2 => Ok(types::DataContentType::EqualityDeletes),
         _ => Err(anyhow!("data content type {} is invalid", v)),
     }
 }
@@ -257,7 +259,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_manifest_v2() -> Result<()> {
+    fn test_parse_manifest() -> Result<()> {
         let path = format!(
             "{}/testdata/simple_table/metadata/10d28031-9739-484c-92db-cdf2975cead4-m0.avro",
             env::current_dir()
@@ -267,12 +269,12 @@ mod tests {
 
         let bs = fs::read(path).expect("read_file must succeed");
 
-        let (meta, manifests) = parse_manifest_v2(&bs)?;
+        let (meta, manifests) = parse_manifest_file(&bs)?;
 
         assert_eq!(
             meta,
             types::ManifestMetadata {
-                schema: types::SchemaV2 {
+                schema: types::Schema {
                     id: 0,
                     identifier_field_ids: None,
                     types: types::Struct {
