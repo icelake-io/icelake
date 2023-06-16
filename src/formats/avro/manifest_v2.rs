@@ -1,54 +1,87 @@
 use std::collections::HashMap;
 
+use anyhow::anyhow;
+use anyhow::Result;
+use apache_avro::from_value;
+use apache_avro::Reader;
 use serde::Deserialize;
 use serde_with::serde_as;
 use serde_with::Bytes;
 
-#[derive(Deserialize)]
-#[cfg_attr(test, derive(Debug, PartialEq, Eq))]
-struct ManifestFile {
-    manifest_path: String,
-    manifest_length: i64,
-    partition_spec_id: i32,
-    #[serde(default)]
-    content: i32,
-    #[serde(default)]
-    sequence_number: i64,
-    #[serde(default)]
-    min_sequence_number: i64,
-    #[serde(default)]
-    added_snapshot_id: i64,
-    #[serde(default)]
-    added_files_count: i32,
-    #[serde(default)]
-    existing_files_count: i32,
-    #[serde(default)]
-    deleted_files_count: i32,
-    #[serde(default)]
-    added_rows_count: i64,
-    #[serde(default)]
-    existing_rows_count: i64,
-    #[serde(default)]
-    deleted_rows_count: i64,
-    partitions: Option<Vec<FieldSummary>>,
-    key_metadata: Option<Vec<u8>>,
+use crate::formats::json::parse_schema_v2;
+use crate::types;
+
+/// Parse manifest list from avro bytes.
+pub fn parse_manifest_v2(bs: &[u8]) -> Result<(types::ManifestMetadata, Vec<types::ManifestV2>)> {
+    let reader = Reader::new(bs)?;
+
+    // Parse manifest metadata
+    let meta = reader.user_metadata();
+    let metadata = types::ManifestMetadata {
+        schema: parse_schema_v2(
+            meta.get("schema")
+                .ok_or_else(|| anyhow!("schema is required in manifest metadata but not found"))?,
+        )?,
+        schema_id: {
+            match meta.get("schema-id") {
+                None => 0,
+                Some(v) => {
+                    let v = String::from_utf8_lossy(v);
+                    v.parse()
+                        .map_err(|err| anyhow!("schema-id {:?} is invalid: {:?}", v, err))?
+                }
+            }
+        },
+        partition_spec_id: {
+            match meta.get("partition-spec-id") {
+                None => 0,
+                Some(v) => {
+                    let v = String::from_utf8_lossy(v);
+                    v.parse()
+                        .map_err(|err| anyhow!("partition-spec-id {:?} is invalid: {:?}", v, err))?
+                }
+            }
+        },
+        format_version: {
+            match meta.get("format-version") {
+                None => 0,
+                Some(v) => {
+                    let v = String::from_utf8_lossy(v);
+                    v.parse()
+                        .map_err(|err| anyhow!("format-version {:?} is invalid: {:?}", v, err))?
+                }
+            }
+        },
+        content: {
+            let c = match meta.get("partition-spec-id") {
+                None => 0,
+                Some(v) => {
+                    let v = String::from_utf8_lossy(v);
+                    v.parse()
+                        .map_err(|err| anyhow!("partition-spec-id {:?} is invalid: {:?}", v, err))?
+                }
+            };
+
+            match c {
+                0 => types::ManifestContentType::Data,
+                1 => types::ManifestContentType::Deletes,
+                _ => return Err(anyhow!("content type {} is invalid", c)),
+            }
+        },
+    };
+
+    // Parse manifest entries
+    let mut entries = Vec::new();
+    for value in reader {
+        let v = value?;
+        entries.push(from_value::<ManifestEntry>(&v)?.try_into()?);
+    }
+
+    Ok((metadata, entries))
 }
 
 #[derive(Deserialize)]
 #[cfg_attr(test, derive(Debug, PartialEq, Eq))]
-struct FieldSummary {
-    /// field: 509
-    ///
-    /// Whether the manifest contains at least one partition with a null
-    /// value for the field
-    contains_null: bool,
-    /// field: 518
-    /// Whether the manifest contains at least one partition with a NaN
-    /// value for the field
-    contains_nan: Option<bool>,
-}
-
-#[derive(Debug, Deserialize)]
 struct ManifestEntry {
     status: i32,
     snapshot_id: Option<i64>,
@@ -57,7 +90,23 @@ struct ManifestEntry {
     data_file: DataFile,
 }
 
-#[derive(Debug, Deserialize)]
+impl TryFrom<ManifestEntry> for types::ManifestV2 {
+    type Error = anyhow::Error;
+
+    fn try_from(v: ManifestEntry) -> Result<Self, Self::Error> {
+        Ok(types::ManifestV2 {
+            status: parse_manifest_status(v.status)?,
+            snapshot_id: v.snapshot_id,
+            sequence_number: v.sequence_number,
+            file_sequence_number: v.file_sequence_number,
+            data_file: v.data_file.try_into()?,
+        })
+    }
+}
+
+#[serde_as]
+#[derive(Deserialize)]
+#[cfg_attr(test, derive(Debug, PartialEq, Eq))]
 struct DataFile {
     #[serde(default)]
     content: i32,
@@ -65,83 +114,116 @@ struct DataFile {
     file_format: String,
     record_count: i64,
     file_size_in_bytes: i64,
-    // column_sizes: Option<HashMap<i32, i64>>,
-    // value_counts: Option<HashMap<i32, i64>>,
-    // null_value_counts: Option<HashMap<i32, i64>>,
-    // nan_value_counts: Option<HashMap<i32, i64>>,
-    // distinct_counts: Option<HashMap<i32, i64>>,
+    column_sizes: Option<Vec<I64Entry>>,
+    value_counts: Option<Vec<I64Entry>>,
+    null_value_counts: Option<Vec<I64Entry>>,
+    nan_value_counts: Option<Vec<I64Entry>>,
+    distinct_counts: Option<Vec<I64Entry>>,
     lower_bounds: Option<Vec<BytesEntry>>,
     upper_bounds: Option<Vec<BytesEntry>>,
-    // key_metadata: Option<Vec<u8>>,
-    // split_offsets: Vec<i64>,
-    // equality_ids: Option<Vec<i32>>,
-    // sort_order_id: Option<i32>,
+    #[serde_as(as = "Option<Bytes>")]
+    key_metadata: Option<Vec<u8>>,
+    split_offsets: Vec<i64>,
+    equality_ids: Option<Vec<i32>>,
+    sort_order_id: Option<i32>,
+}
+
+impl TryFrom<DataFile> for types::DataFileV2 {
+    type Error = anyhow::Error;
+
+    fn try_from(v: DataFile) -> Result<Self, Self::Error> {
+        Ok(types::DataFileV2 {
+            content: parse_data_content_type(v.content)?,
+            file_path: v.file_path,
+            file_format: parse_data_file_format(&v.file_format)?,
+            partition: (),
+            record_count: v.record_count,
+            file_size_in_bytes: v.file_size_in_bytes,
+            column_sizes: v.column_sizes.map(parse_i64_entry),
+            value_counts: v.value_counts.map(parse_i64_entry),
+            null_value_counts: v.null_value_counts.map(parse_i64_entry),
+            nan_value_counts: v.nan_value_counts.map(parse_i64_entry),
+            distinct_counts: v.distinct_counts.map(parse_i64_entry),
+            lower_bounds: v.lower_bounds.map(parse_bytes_entry),
+            upper_bounds: v.upper_bounds.map(parse_bytes_entry),
+            key_metadata: v.key_metadata,
+            split_offsets: v.split_offsets,
+            equality_ids: v.equality_ids,
+            sort_order_id: v.sort_order_id,
+        })
+    }
 }
 
 #[serde_as]
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
+#[cfg_attr(test, derive(Debug, PartialEq, Eq))]
 struct BytesEntry {
     key: i32,
     #[serde_as(as = "Bytes")]
     value: Vec<u8>,
 }
 
+fn parse_bytes_entry(v: Vec<BytesEntry>) -> HashMap<i32, Vec<u8>> {
+    let mut m = HashMap::with_capacity(v.len());
+    for entry in v {
+        m.insert(entry.key, entry.value);
+    }
+    m
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(test, derive(Debug, PartialEq, Eq))]
+struct I64Entry {
+    key: i32,
+    value: i64,
+}
+
+fn parse_i64_entry(v: Vec<I64Entry>) -> HashMap<i32, i64> {
+    let mut m = HashMap::with_capacity(v.len());
+    for entry in v {
+        m.insert(entry.key, entry.value);
+    }
+    m
+}
+
+fn parse_manifest_status(v: i32) -> Result<types::ManifestStatus> {
+    match v {
+        0 => Ok(types::ManifestStatus::Existing),
+        1 => Ok(types::ManifestStatus::Added),
+        2 => Ok(types::ManifestStatus::Deleted),
+        _ => Err(anyhow!("manifest status {} is invalid", v)),
+    }
+}
+
+fn parse_data_content_type(v: i32) -> Result<types::DataContentTypeV2> {
+    match v {
+        0 => Ok(types::DataContentTypeV2::Data),
+        1 => Ok(types::DataContentTypeV2::PostionDeletes),
+        2 => Ok(types::DataContentTypeV2::EqualityDeletes),
+        _ => Err(anyhow!("data content type {} is invalid", v)),
+    }
+}
+
+fn parse_data_file_format(s: &str) -> Result<types::DataFileFormat> {
+    match s.to_lowercase().as_str() {
+        "avro" => Ok(types::DataFileFormat::Avro),
+        "orc" => Ok(types::DataFileFormat::Orc),
+        "parquet" => Ok(types::DataFileFormat::Parquet),
+        v => Err(anyhow!("data file format {:?} is not supported", v)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{env, fs};
 
-    use anyhow::Result;
     use apache_avro::from_value;
     use apache_avro::Reader;
 
     use super::*;
 
     #[test]
-    fn test_load_manifest_file() -> Result<()> {
-        let path = format!(
-            "{}/testdata/simple_table/metadata/snap-1646658105718557341-1-10d28031-9739-484c-92db-cdf2975cead4.avro",
-            env::current_dir()
-                .expect("current_dir must exist")
-                .to_string_lossy()
-        );
-
-        let bs = fs::read(path).expect("read_file must succeed");
-
-        let reader = Reader::new(&bs[..]).unwrap();
-
-        let mut files = Vec::new();
-
-        for value in reader {
-            files.push(from_value::<ManifestFile>(&value?)?);
-        }
-
-        assert_eq!(files.len(), 1);
-        assert_eq!(
-            files[0],
-            ManifestFile {
-                manifest_path: "/opt/bitnami/spark/warehouse/db/table/metadata/10d28031-9739-484c-92db-cdf2975cead4-m0.avro".to_string(),
-                manifest_length: 5806,
-                partition_spec_id: 0,
-                content: 0,
-                sequence_number: 0,
-                min_sequence_number: 0,
-                added_snapshot_id: 1646658105718557341,
-                added_files_count: 0,
-                existing_files_count: 0,
-                deleted_files_count: 0,
-                added_rows_count: 3,
-                existing_rows_count: 0,
-                deleted_rows_count: 0,
-                partitions: Some(vec![]),
-                key_metadata: None
-            }
-        );
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_load_manifest_entry() {
+    fn test_load_manifest_entry() -> Result<()> {
         let path = format!(
             "{}/testdata/simple_table/metadata/10d28031-9739-484c-92db-cdf2975cead4-m0.avro",
             env::current_dir()
@@ -152,18 +234,78 @@ mod tests {
         let bs = fs::read(path).expect("read_file must succeed");
 
         let reader = Reader::new(&bs[..]).unwrap();
-        println!(
-            "{:?}",
-            reader
-                .user_metadata()
-                .iter()
-                .map(|(k, v)| (k, String::from_utf8_lossy(v)))
-                .collect::<Vec<_>>()
+        let meta = reader.user_metadata();
+        assert!(meta.get("schema").is_some());
+        assert!(meta.get("partition-spec").is_some());
+        assert_eq!(
+            meta.get("partition-spec-id").map(|v| v.as_slice()),
+            Some("0".as_bytes())
+        );
+        assert_eq!(
+            meta.get("format-version").map(|v| v.as_slice()),
+            Some("1".as_bytes())
         );
 
+        let mut entries = Vec::new();
         for value in reader {
-            let v = value.unwrap();
-            println!("{:?}", from_value::<ManifestEntry>(&v).unwrap());
+            let v = value?;
+            entries.push(from_value::<ManifestEntry>(&v)?);
         }
+
+        assert_eq!(entries.len(), 3);
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_manifest_v2() -> Result<()> {
+        let path = format!(
+            "{}/testdata/simple_table/metadata/10d28031-9739-484c-92db-cdf2975cead4-m0.avro",
+            env::current_dir()
+                .expect("current_dir must exist")
+                .to_string_lossy()
+        );
+
+        let bs = fs::read(path).expect("read_file must succeed");
+
+        let (meta, manifests) = parse_manifest_v2(&bs)?;
+
+        assert_eq!(
+            meta,
+            types::ManifestMetadata {
+                schema: types::SchemaV2 {
+                    id: 0,
+                    identifier_field_ids: None,
+                    types: types::Struct {
+                        fields: vec![
+                            types::Field {
+                                id: 1,
+                                name: "id".to_string(),
+                                required: false,
+                                field_type: types::Any::Primitive(types::Primitive::Long),
+                                comment: None
+                            },
+                            types::Field {
+                                id: 2,
+                                name: "data".to_string(),
+                                required: false,
+                                field_type: types::Any::Primitive(types::Primitive::String),
+                                comment: None
+                            }
+                        ]
+                    }
+                },
+                schema_id: 0,
+                partition_spec_id: 0,
+                format_version: 1,
+                content: types::ManifestContentType::Data
+            }
+        );
+
+        assert_eq!(manifests.len(), 3);
+        assert_eq!(manifests[0].data_file.file_path, "/opt/bitnami/spark/warehouse/db/table/data/00000-0-b8982382-f016-467a-84e4-5e6bbe0ff19a-00001.parquet");
+        assert_eq!(manifests[1].data_file.file_path, "/opt/bitnami/spark/warehouse/db/table/data/00001-1-b8982382-f016-467a-84e4-5e6bbe0ff19a-00001.parquet");
+        assert_eq!(manifests[2].data_file.file_path, "/opt/bitnami/spark/warehouse/db/table/data/00002-2-b8982382-f016-467a-84e4-5e6bbe0ff19a-00001.parquet");
+
+        Ok(())
     }
 }

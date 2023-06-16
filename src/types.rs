@@ -351,76 +351,76 @@ pub struct ManifestList {
     /// field: 500
     ///
     /// Location of the manifest file
-    manifest_path: String,
+    pub manifest_path: String,
     /// field: 501
     ///
     /// Length of the manifest file in bytes
-    manifest_length: i64,
+    pub manifest_length: i64,
     /// field: 502
     ///
     /// ID of a partition spec used to write the manifest; must be listed
     /// in table metadata partition-specs
-    partition_spec_id: i32,
+    pub partition_spec_id: i32,
     /// field: 517
     ///
     /// The type of files tracked by the manifest, either data or delete
     /// files; 0 for all v1 manifests
-    content: ManifestContentType,
+    pub content: ManifestContentType,
     /// field: 515
     ///
     /// The sequence number when the manifest was added to the table; use 0
     /// when reading v1 manifest lists
-    sequence_number: i64,
+    pub sequence_number: i64,
     /// field: 516
     ///
     /// The minimum data sequence number of all live data or delete files in
     /// the manifest; use 0 when reading v1 manifest lists
-    min_sequence_number: i64,
+    pub min_sequence_number: i64,
     /// field: 503
     ///
     /// ID of the snapshot where the manifest file was added
-    added_snapshot_id: i64,
+    pub added_snapshot_id: i64,
     /// field: 504
     ///
     /// Number of entries in the manifest that have status ADDED, when null
     /// this is assumed to be non-zero
-    added_files_count: i32,
+    pub added_files_count: i32,
     /// field: 505
     ///
     /// Number of entries in the manifest that have status EXISTING (0),
     /// when null this is assumed to be non-zero
-    existing_files_count: i32,
+    pub existing_files_count: i32,
     /// field: 506
     ///
     /// Number of entries in the manifest that have status DELETED (2),
     /// when null this is assumed to be non-zero
-    deleted_files_count: i32,
+    pub deleted_files_count: i32,
     /// field: 512
     ///
     /// Number of rows in all of files in the manifest that have status
     /// ADDED, when null this is assumed to be non-zero
-    added_rows_count: i64,
+    pub added_rows_count: i64,
     /// field: 513
     ///
     /// Number of rows in all of files in the manifest that have status
     /// EXISTING, when null this is assumed to be non-zero
-    existing_rows_count: i64,
+    pub existing_rows_count: i64,
     /// field: 514
     ///
     /// Number of rows in all of files in the manifest that have status
     /// DELETED, when null this is assumed to be non-zero
-    deleted_rows_count: i64,
+    pub deleted_rows_count: i64,
     /// field: 507
     /// element_field: 508
     ///
     /// A list of field summaries for each partition field in the spec. Each
     /// field in the list corresponds to a field in the manifest file’s
     /// partition spec.
-    partitions: Option<Vec<FieldSummary>>,
+    pub partitions: Option<Vec<FieldSummary>>,
     /// field: 519
     ///
     /// Implementation-specific key metadata for encryption
-    key_metadata: Option<Vec<u8>>,
+    pub key_metadata: Option<Vec<u8>>,
 }
 
 /// Field summary for partition field in the spec.
@@ -434,11 +434,11 @@ pub struct FieldSummary {
     ///
     /// Whether the manifest contains at least one partition with a null
     /// value for the field
-    contains_null: bool,
+    pub contains_null: bool,
     /// field: 518
     /// Whether the manifest contains at least one partition with a NaN
     /// value for the field
-    contains_nan: Option<bool>,
+    pub contains_nan: Option<bool>,
 }
 
 /// A manifest is an immutable Avro file that lists data files or delete
@@ -446,10 +446,6 @@ pub struct FieldSummary {
 /// information.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ManifestV2 {
-    /// Metadata contains the partition spec and other metadata at the time of
-    /// writing this manifest.
-    pub metadata: ManifestMetadata,
-
     /// field: 0
     ///
     /// Used to track additions and deletions.
@@ -475,6 +471,7 @@ pub struct ManifestV2 {
     pub data_file: DataFileV2,
 }
 
+/// FIXME: partition_spec is not parsed.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ManifestMetadata {
     /// The table schema at the time the manifest
@@ -482,8 +479,12 @@ pub struct ManifestMetadata {
     pub schema: SchemaV2,
     /// ID of the schema used to write the manifest as a string
     pub schema_id: i32,
-    /// The partition spec used to write the manifest
-    pub partition_spec: PartitionSpec,
+
+    /// The partition spec used  to write the manifest
+    ///
+    /// FIXME: we should parse this field.
+    // pub partition_spec: Option<PartitionSpec>,
+
     /// ID of the partition spec used to write the manifest as a string
     pub partition_spec_id: i32,
     /// Table format version number of the manifest as a string
