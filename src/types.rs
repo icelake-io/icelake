@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 /// All data types are either primitives or nested types, which are maps, lists, or structs.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Any {
@@ -327,6 +329,216 @@ pub enum SortDirection {
 /// Can only be either nulls-first or nulls-last
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum NullOrder {
-    NullsFirst,
-    NullsLast,
+    First,
+    Last,
+}
+
+/// A manifest is an immutable Avro file that lists data files or delete
+/// files, along with each file’s partition data tuple, metrics, and tracking
+/// information.
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct ManifestV2 {
+    /// The table schema at the time the manifest
+    /// was written
+    pub schema: ManifestEntryV2,
+    /// ID of the schema used to write the manifest as a string
+    pub schema_id: i32,
+    /// The partition spec used to write the manifest
+    pub partition_spec: PartitionSpec,
+    /// ID of the partition spec used to write the manifest as a string
+    pub partition_spec_id: i32,
+    /// Table format version number of the manifest as a string
+    pub format_version: i32,
+    /// Type of content files tracked by the manifest: “data” or “deletes”
+    pub content: ManifestContentType,
+}
+
+/// Type of content files tracked by the manifest
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum ManifestContentType {
+    Data,
+    Deletes,
+}
+
+/// The schema of a manifest file is a struct called manifest_entry.
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct ManifestEntryV2 {
+    /// field: 0
+    ///
+    /// Used to track additions and deletions.
+    pub status: ManifestEntryStatus,
+    /// field id: 1
+    ///
+    /// Snapshot id where the file was added, or deleted if status is 2.
+    /// Inherited when null.
+    pub snapshot_id: Option<i64>,
+    /// field id: 3
+    ///
+    /// Data sequence number of the file.
+    /// Inherited when null and status is 1 (added).
+    pub sequence_number: Option<i64>,
+    /// field id: 4
+    ///
+    /// File sequence number indicating when the file was added.
+    /// Inherited when null and status is 1 (added).
+    pub file_sequence_number: Option<i64>,
+    /// field id: 2
+    ///
+    /// File path, partition tuple, metrics, …
+    pub data_file: DataFileV2,
+}
+
+/// Used to track additions and deletions in ManifestEntry.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum ManifestEntryStatus {
+    /// Value: 0
+    Existing,
+    /// Value: 1
+    Added,
+    /// Value: 2
+    ///
+    /// Deletes are informational only and not used in scans.
+    Deleted,
+}
+
+/// Data file carries data file path, partition tuple, metrics, …
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct DataFileV2 {
+    /// field id: 134
+    ///
+    /// Type of content stored by the data file: data, equality deletes,
+    /// or position deletes (all v1 files are data files)
+    pub content: DataContentTypeV2,
+    /// field id: 100
+    ///
+    /// Full URI for the file with FS scheme
+    pub file_path: String,
+    /// field id: 101
+    ///
+    /// String file format name, avro, orc or parquet
+    pub file_format: DataFileFormat,
+    /// field id: 102
+    ///
+    /// Partition data tuple, schema based on the partition spec output using
+    /// partition field ids for the struct field ids
+    ///
+    /// TODO: we need to support partition in data file.
+    pub partition: (),
+    /// field id: 103
+    ///
+    /// Number of records in this file
+    pub record_count: i64,
+    /// field id: 104
+    ///
+    /// Total file size in bytes
+    pub file_size_in_bytes: i64,
+    /// field id: 108
+    /// key field id: 117
+    /// value field id: 118
+    ///
+    /// Map from column id to the total size on disk of all regions that
+    /// store the column. Does not include bytes necessary to read other
+    /// columns, like footers. Leave null for row-oriented formats (Avro)
+    pub column_sizes: Option<HashMap<i32, i64>>,
+    /// field id: 109
+    /// key field id: 119
+    /// value field id: 120
+    ///
+    /// Map from column id to number of values in the column (including null
+    /// and NaN values)
+    pub value_counts: Option<HashMap<i32, i64>>,
+    /// field id: 110
+    /// key field id: 121
+    /// value field id: 122
+    ///
+    /// Map from column id to number of null values in the column
+    pub null_value_counts: Option<HashMap<i32, i64>>,
+    /// field id: 137
+    /// key field id: 138
+    /// value field id: 139
+    ///
+    /// Map from column id to number of NaN values in the column
+    pub nan_value_counts: Option<HashMap<i32, i64>>,
+    /// field id: 111
+    /// key field id: 123
+    /// value field id: 124
+    ///
+    /// Map from column id to number of distinct values in the column;
+    /// distinct counts must be derived using values in the file by counting
+    /// or using sketches, but not using methods like merging existing
+    /// distinct counts
+    pub distinct_counts: Option<HashMap<i32, i64>>,
+    /// field id: 125
+    /// key field id: 126
+    /// value field id: 127
+    ///
+    /// Map from column id to lower bound in the column serialized as binary.
+    /// Each value must be less than or equal to all non-null, non-NaN values
+    /// in the column for the file.
+    ///
+    /// Reference:
+    ///
+    /// - [Binary single-value serialization](https://iceberg.apache.org/spec/#binary-single-value-serialization)
+    pub lower_bounds: Option<HashMap<i32, Vec<u8>>>,
+    /// field id: 128
+    /// key field id: 129
+    /// value field id: 130
+    ///
+    /// Map from column id to upper bound in the column serialized as binary.
+    /// Each value must be greater than or equal to all non-null, non-Nan
+    /// values in the column for the file.
+    ///
+    /// Reference:
+    ///
+    /// - [Binary single-value serialization](https://iceberg.apache.org/spec/#binary-single-value-serialization)
+    pub upper_bounds: Option<HashMap<i32, Vec<u8>>>,
+    /// field id: 131
+    ///
+    /// Implementation-specific key metadata for encryption
+    pub key_metadata: Option<Vec<u8>>,
+    /// field id: 132
+    /// element field id: 133
+    ///
+    /// Split offsets for the data file. For example, all row group offsets
+    /// in a Parquet file. Must be sorted ascending
+    pub split_offsets: Vec<i64>,
+    /// field id: 135
+    /// element field id: 136
+    ///
+    /// Field ids used to determine row equality in equality delete files.
+    /// Required when content is EqualityDeletes and should be null
+    /// otherwise. Fields with ids listed in this column must be present
+    /// in the delete file
+    pub equality_ids: Option<Vec<i32>>,
+    /// field id: 140
+    ///
+    /// ID representing sort order for this file.
+    ///
+    /// If sort order ID is missing or unknown, then the order is assumed to
+    /// be unsorted. Only data files and equality delete files should be
+    /// written with a non-null order id. Position deletes are required to be
+    /// sorted by file and position, not a table order, and should set sort
+    /// order id to null. Readers must ignore sort order id for position
+    /// delete files.
+    pub sort_order_id: Option<i32>,
+}
+
+/// Type of content stored by the data file: data, equality deletes, or
+/// position deletes (all v1 files are data files)
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum DataContentTypeV2 {
+    /// value: 0
+    Data,
+    /// value: 1
+    PostionDeletes,
+    /// value: 2
+    EqualityDeletes,
+}
+
+/// Format of this data.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum DataFileFormat {
+    Avro,
+    Orc,
+    Parquet,
 }
