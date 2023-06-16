@@ -248,7 +248,17 @@ pub enum Transform {
 /// Partition values for a data file must be the same for all records stored
 /// in the data file. (Manifests store data files from any partition, as long
 /// as the partition spec is the same for the data files.)
-pub struct Partition {
+///
+/// Tables are configured with a partition spec that defines how to produce a tuple of partition values from a record.
+pub struct PartitionSpec {
+    /// The spec id.
+    pub id: i32,
+    /// Partition fields.
+    pub fields: Vec<PartitionField>,
+}
+
+/// Field of the specified partition spec.
+pub struct PartitionField {
     /// A source column id from the table’s schema
     pub source_column_id: i32,
     /// A partition field id that is used to identify a partition field
