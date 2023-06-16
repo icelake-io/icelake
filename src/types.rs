@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 /// All data types are either primitives or nested types, which are maps, lists, or structs.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Any {
     /// A Primitive type
     Primitive(Primitive),
@@ -14,7 +14,7 @@ pub enum Any {
 }
 
 /// Primitive Types within a schema.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Primitive {
     /// True or False
     Boolean,
@@ -77,13 +77,13 @@ pub enum Primitive {
 /// - Fields may be any type.
 /// - Fields may have an optional comment or doc string.
 /// - Fields can have default values.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Struct {
     pub fields: Vec<Field>,
 }
 
 /// A Field is the field of a struct.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Field {
     /// An integer id that is unique in the table schema
     pub id: i32,
@@ -102,7 +102,7 @@ pub struct Field {
 /// - The element field has an integer id that is unique in the table schema.
 /// - Elements can be either optional or required.
 /// - Element types may be any type.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct List {
     /// an integer id that is unique in the table schema.
     pub element_id: i32,
@@ -117,7 +117,7 @@ pub struct List {
 /// - Both the key field and value field each have an integer id that is unique in the table schema.
 /// - Map keys are required and map values can be either optional or required.
 /// - Both map keys and map values may be any type, including nested types.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Map {
     /// an integer id that is unique in the table schema
     pub key_id: i32,
@@ -136,7 +136,7 @@ pub struct Map {
 ///
 /// All data types are either primitives or nested types, which are maps, lists, or structs.
 /// A table schema is also a struct type.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct SchemaV2 {
     /// The unique id for this schema.
     pub id: i32,
@@ -333,40 +333,123 @@ pub enum NullOrder {
     Last,
 }
 
+/// Snapshots are embedded in table metadata, but the list of manifests for a
+/// snapshot are stored in a separate manifest list file.
+///
+/// A new manifest list is written for each attempt to commit a snapshot
+/// because the list of manifests always changes to produce a new snapshot.
+/// When a manifest list is written, the (optimistic) sequence number of the
+/// snapshot is written for all new manifest files tracked by the list.
+///
+/// A manifest list includes summary metadata that can be used to avoid
+/// scanning all of the manifests in a snapshot when planning a table scan.
+/// This includes the number of added, existing, and deleted files, and a
+/// summary of values for each field of the partition spec used to write the
+/// manifest.
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct ManifestList {
+    /// field: 500
+    ///
+    /// Location of the manifest file
+    pub manifest_path: String,
+    /// field: 501
+    ///
+    /// Length of the manifest file in bytes
+    pub manifest_length: i64,
+    /// field: 502
+    ///
+    /// ID of a partition spec used to write the manifest; must be listed
+    /// in table metadata partition-specs
+    pub partition_spec_id: i32,
+    /// field: 517
+    ///
+    /// The type of files tracked by the manifest, either data or delete
+    /// files; 0 for all v1 manifests
+    pub content: ManifestContentType,
+    /// field: 515
+    ///
+    /// The sequence number when the manifest was added to the table; use 0
+    /// when reading v1 manifest lists
+    pub sequence_number: i64,
+    /// field: 516
+    ///
+    /// The minimum data sequence number of all live data or delete files in
+    /// the manifest; use 0 when reading v1 manifest lists
+    pub min_sequence_number: i64,
+    /// field: 503
+    ///
+    /// ID of the snapshot where the manifest file was added
+    pub added_snapshot_id: i64,
+    /// field: 504
+    ///
+    /// Number of entries in the manifest that have status ADDED, when null
+    /// this is assumed to be non-zero
+    pub added_files_count: i32,
+    /// field: 505
+    ///
+    /// Number of entries in the manifest that have status EXISTING (0),
+    /// when null this is assumed to be non-zero
+    pub existing_files_count: i32,
+    /// field: 506
+    ///
+    /// Number of entries in the manifest that have status DELETED (2),
+    /// when null this is assumed to be non-zero
+    pub deleted_files_count: i32,
+    /// field: 512
+    ///
+    /// Number of rows in all of files in the manifest that have status
+    /// ADDED, when null this is assumed to be non-zero
+    pub added_rows_count: i64,
+    /// field: 513
+    ///
+    /// Number of rows in all of files in the manifest that have status
+    /// EXISTING, when null this is assumed to be non-zero
+    pub existing_rows_count: i64,
+    /// field: 514
+    ///
+    /// Number of rows in all of files in the manifest that have status
+    /// DELETED, when null this is assumed to be non-zero
+    pub deleted_rows_count: i64,
+    /// field: 507
+    /// element_field: 508
+    ///
+    /// A list of field summaries for each partition field in the spec. Each
+    /// field in the list corresponds to a field in the manifest file’s
+    /// partition spec.
+    pub partitions: Option<Vec<FieldSummary>>,
+    /// field: 519
+    ///
+    /// Implementation-specific key metadata for encryption
+    pub key_metadata: Option<Vec<u8>>,
+}
+
+/// Field summary for partition field in the spec.
+///
+/// Each field in the list corresponds to a field in the manifest file’s partition spec.
+///
+/// TODO: add lower_bound and upper_bound support
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct FieldSummary {
+    /// field: 509
+    ///
+    /// Whether the manifest contains at least one partition with a null
+    /// value for the field
+    pub contains_null: bool,
+    /// field: 518
+    /// Whether the manifest contains at least one partition with a NaN
+    /// value for the field
+    pub contains_nan: Option<bool>,
+}
+
 /// A manifest is an immutable Avro file that lists data files or delete
 /// files, along with each file’s partition data tuple, metrics, and tracking
 /// information.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ManifestV2 {
-    /// The table schema at the time the manifest
-    /// was written
-    pub schema: ManifestEntryV2,
-    /// ID of the schema used to write the manifest as a string
-    pub schema_id: i32,
-    /// The partition spec used to write the manifest
-    pub partition_spec: PartitionSpec,
-    /// ID of the partition spec used to write the manifest as a string
-    pub partition_spec_id: i32,
-    /// Table format version number of the manifest as a string
-    pub format_version: i32,
-    /// Type of content files tracked by the manifest: “data” or “deletes”
-    pub content: ManifestContentType,
-}
-
-/// Type of content files tracked by the manifest
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum ManifestContentType {
-    Data,
-    Deletes,
-}
-
-/// The schema of a manifest file is a struct called manifest_entry.
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub struct ManifestEntryV2 {
     /// field: 0
     ///
     /// Used to track additions and deletions.
-    pub status: ManifestEntryStatus,
+    pub status: ManifestStatus,
     /// field id: 1
     ///
     /// Snapshot id where the file was added, or deleted if status is 2.
@@ -388,9 +471,38 @@ pub struct ManifestEntryV2 {
     pub data_file: DataFileV2,
 }
 
+/// FIXME: partition_spec is not parsed.
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct ManifestMetadata {
+    /// The table schema at the time the manifest
+    /// was written
+    pub schema: SchemaV2,
+    /// ID of the schema used to write the manifest as a string
+    pub schema_id: i32,
+
+    /// The partition spec used  to write the manifest
+    ///
+    /// FIXME: we should parse this field.
+    // pub partition_spec: Option<PartitionSpec>,
+
+    /// ID of the partition spec used to write the manifest as a string
+    pub partition_spec_id: i32,
+    /// Table format version number of the manifest as a string
+    pub format_version: i32,
+    /// Type of content files tracked by the manifest: “data” or “deletes”
+    pub content: ManifestContentType,
+}
+
+/// Type of content files tracked by the manifest
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum ManifestContentType {
+    Data,
+    Deletes,
+}
+
 /// Used to track additions and deletions in ManifestEntry.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum ManifestEntryStatus {
+pub enum ManifestStatus {
     /// Value: 0
     Existing,
     /// Value: 1
