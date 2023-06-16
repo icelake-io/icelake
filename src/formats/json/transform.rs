@@ -33,7 +33,7 @@ pub fn parse_transform(s: &str) -> Result<types::Transform> {
 
             types::Transform::Truncate(width)
         }
-        v => return Err(anyhow!("transform {:?} is not valid transform", v)),
+        v => return Err(anyhow!("transform {:?} is not valid", v)),
     };
 
     Ok(t)
