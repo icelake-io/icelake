@@ -654,3 +654,54 @@ pub enum DataFileFormat {
     Orc,
     Parquet,
 }
+
+/// Snapshot of contains all data of a table at a point in time.
+pub struct Snapshot {
+    /// A unique long ID
+    pub snapshot_id: i64,
+    /// The snapshot ID of the snapshot’s parent. Omitted for any snapshot
+    /// with no parent
+    pub parent_snapshot_id: Option<i64>,
+    /// A monotonically increasing long that tracks the order of changes to a
+    /// table
+    pub sequence_number: i64,
+    /// A timestamp when the snapshot was created, used for garbage
+    /// collection and table inspection
+    pub timestamp_ms: i64,
+    /// The location of a manifest list for this snapshot that tracks
+    /// manifest files with additional metadata
+    pub manifest_list: String,
+    /// A string map that summarizes the snapshot changes, including
+    /// operation (see below)
+    ///
+    /// The snapshot summary’s operation field is used by some operations,
+    /// like snapshot expiration, to skip processing certain snapshots.
+    /// Possible operation values are:
+    ///
+    /// - append – Only data files were added and no files were removed.
+    /// - replace – Data and delete files were added and removed without changing table data; i.e., compaction, changing the data file format, or relocating data files.
+    /// - overwrite – Data and delete files were added and removed in a logical overwrite operation.
+    /// - delete – Data files were removed and their contents logically deleted and/or delete files were added to delete rows.
+    ///
+    /// For example:
+    ///
+    /// ```json
+    ///{
+    ///   "operation" : "append",
+    ///   "spark.app.id" : "local-1686911651377",
+    ///   "added-data-files" : "3",
+    ///   "added-records" : "3",
+    ///   "added-files-size" : "1929",
+    ///   "changed-partition-count" : "1",
+    ///   "total-records" : "3",
+    ///   "total-files-size" : "1929",
+    ///   "total-data-files" : "3",
+    ///   "total-delete-files" : "0",
+    ///   "total-position-deletes" : "0",
+    ///   "total-equality-deletes" : "0"
+    /// }
+    /// ```
+    pub summary: HashMap<String, String>,
+    /// ID of the table’s current schema when the snapshot was created
+    pub schema_id: Option<i64>,
+}
