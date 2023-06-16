@@ -656,6 +656,7 @@ pub enum DataFileFormat {
 }
 
 /// Snapshot of contains all data of a table at a point in time.
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Snapshot {
     /// A unique long ID
     pub snapshot_id: i64,

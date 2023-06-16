@@ -16,4 +16,7 @@ pub use sort_order::parse_sort_order;
 mod transform;
 pub use transform::parse_transform;
 
+mod snapshot;
+pub use snapshot::parse_snapshot;
+
 mod types;
