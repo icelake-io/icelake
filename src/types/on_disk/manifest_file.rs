@@ -76,7 +76,7 @@ pub fn parse_manifest_file(
     let mut entries = Vec::new();
     for value in reader {
         let v = value?;
-        entries.push(from_value::<ManifestEntry>(&v)?.try_into()?);
+        entries.push(from_value::<ManifestFile>(&v)?.try_into()?);
     }
 
     Ok((metadata, entries))
@@ -84,7 +84,7 @@ pub fn parse_manifest_file(
 
 #[derive(Deserialize)]
 #[cfg_attr(test, derive(Debug, PartialEq, Eq))]
-struct ManifestEntry {
+struct ManifestFile {
     status: i32,
     snapshot_id: Option<i64>,
     sequence_number: Option<i64>,
@@ -92,10 +92,10 @@ struct ManifestEntry {
     data_file: DataFile,
 }
 
-impl TryFrom<ManifestEntry> for types::ManifestFile {
+impl TryFrom<ManifestFile> for types::ManifestFile {
     type Error = anyhow::Error;
 
-    fn try_from(v: ManifestEntry) -> Result<Self, Self::Error> {
+    fn try_from(v: ManifestFile) -> Result<Self, Self::Error> {
         Ok(types::ManifestFile {
             status: parse_manifest_status(v.status)?,
             snapshot_id: v.snapshot_id,
@@ -251,7 +251,7 @@ mod tests {
         let mut entries = Vec::new();
         for value in reader {
             let v = value?;
-            entries.push(from_value::<ManifestEntry>(&v)?);
+            entries.push(from_value::<ManifestFile>(&v)?);
         }
 
         assert_eq!(entries.len(), 3);

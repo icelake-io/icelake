@@ -13,13 +13,13 @@ pub fn parse_manifest_list(bs: &[u8]) -> Result<types::ManifestList> {
         .next()
         .ok_or_else(|| anyhow!("manifest list is empty"))??;
 
-    let t = from_value::<ManifestFile>(&value)?;
+    let t = from_value::<ManifestList>(&value)?;
     t.try_into()
 }
 
 #[derive(Deserialize)]
 #[cfg_attr(test, derive(Debug, PartialEq, Eq))]
-struct ManifestFile {
+struct ManifestList {
     manifest_path: String,
     manifest_length: i64,
     partition_spec_id: i32,
@@ -47,10 +47,10 @@ struct ManifestFile {
     key_metadata: Option<Vec<u8>>,
 }
 
-impl TryFrom<ManifestFile> for types::ManifestList {
+impl TryFrom<ManifestList> for types::ManifestList {
     type Error = anyhow::Error;
 
-    fn try_from(v: ManifestFile) -> Result<Self, Self::Error> {
+    fn try_from(v: ManifestList) -> Result<Self, Self::Error> {
         let content = match v.content {
             0 => types::ManifestContentType::Data,
             1 => types::ManifestContentType::Deletes,
@@ -137,13 +137,13 @@ mod tests {
         let mut files = Vec::new();
 
         for value in reader {
-            files.push(from_value::<ManifestFile>(&value?)?);
+            files.push(from_value::<ManifestList>(&value?)?);
         }
 
         assert_eq!(files.len(), 1);
         assert_eq!(
             files[0],
-            ManifestFile {
+            ManifestList {
                 manifest_path: "/opt/bitnami/spark/warehouse/db/table/metadata/10d28031-9739-484c-92db-cdf2975cead4-m0.avro".to_string(),
                 manifest_length: 5806,
                 partition_spec_id: 0,
