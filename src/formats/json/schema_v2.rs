@@ -30,7 +30,7 @@ impl TryFrom<Schema> for types::SchemaV2 {
     type Error = anyhow::Error;
 
     fn try_from(value: Schema) -> Result<Self, Self::Error> {
-        let types: types::Any = (&value.typ).try_into()?;
+        let types: types::Any = value.typ.try_into()?;
         let types = if let types::Any::Struct(v) = types {
             v
         } else {
@@ -158,10 +158,10 @@ where
     deserializer.deserialize_any(StringOrStruct(PhantomData))
 }
 
-impl TryFrom<&Types> for types::Any {
+impl TryFrom<Types> for types::Any {
     type Error = anyhow::Error;
 
-    fn try_from(v: &Types) -> Result<Self, Self::Error> {
+    fn try_from(v: Types) -> Result<Self, Self::Error> {
         let t = match v.typ.as_str() {
             "boolean" => types::Any::Primitive(types::Primitive::Boolean),
             "int" => types::Any::Primitive(types::Primitive::Int),
@@ -208,7 +208,7 @@ impl TryFrom<&Types> for types::Any {
                 types::Any::Primitive(types::Primitive::Decimal { precision, scale })
             }
             "struct" => {
-                let raw_fields = &v.fields;
+                let raw_fields = v.fields;
 
                 let mut fields = Vec::with_capacity(raw_fields.len());
                 for f in raw_fields {
@@ -216,7 +216,7 @@ impl TryFrom<&Types> for types::Any {
                         id: f.id,
                         name: f.name.clone(),
                         required: f.required,
-                        field_type: (&f.typ).try_into()?,
+                        field_type: f.typ.try_into()?,
                         comment: f.doc.clone(),
                     };
 
@@ -230,34 +230,29 @@ impl TryFrom<&Types> for types::Any {
                 let element_required = v.element_required;
                 let element_type = v
                     .element
-                    .as_ref()
                     .ok_or_else(|| anyhow!("element type is required"))?;
 
                 types::Any::List(types::List {
                     element_id,
                     element_required,
-                    element_type: Box::new(element_type.as_ref().try_into()?),
+                    element_type: Box::new((*element_type).try_into()?),
                 })
             }
             "map" => {
                 let key_id = v.key_id;
-                let key_type = v
-                    .key
-                    .as_ref()
-                    .ok_or_else(|| anyhow!("map type key is required"))?;
+                let key_type = v.key.ok_or_else(|| anyhow!("map type key is required"))?;
                 let value_id = v.value_id;
                 let value_required = v.value_required;
                 let value_type = v
                     .value
-                    .as_ref()
                     .ok_or_else(|| anyhow!("map type value is required"))?;
 
                 types::Any::Map(types::Map {
                     key_id,
-                    key_type: Box::new(key_type.as_ref().try_into()?),
+                    key_type: Box::new((*key_type).try_into()?),
                     value_id,
                     value_required,
-                    value_type: Box::new(value_type.as_ref().try_into()?),
+                    value_type: Box::new((*value_type).try_into()?),
                 })
             }
             v => return Err(anyhow!("type {:?} is not valid schema type", v)),
