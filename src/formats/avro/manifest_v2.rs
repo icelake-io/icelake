@@ -4,12 +4,48 @@ use serde::Deserialize;
 use serde_with::serde_as;
 use serde_with::Bytes;
 
-#[derive(Debug, Deserialize)]
-struct Manifest {
-    schema: ManifestEntry,
-    schema_id: i32,
-    format_version: i32,
-    content: String,
+#[derive(Deserialize)]
+#[cfg_attr(test, derive(Debug, PartialEq, Eq))]
+struct ManifestFile {
+    manifest_path: String,
+    manifest_length: i64,
+    partition_spec_id: i32,
+    #[serde(default)]
+    content: i32,
+    #[serde(default)]
+    sequence_number: i64,
+    #[serde(default)]
+    min_sequence_number: i64,
+    #[serde(default)]
+    added_snapshot_id: i64,
+    #[serde(default)]
+    added_files_count: i32,
+    #[serde(default)]
+    existing_files_count: i32,
+    #[serde(default)]
+    deleted_files_count: i32,
+    #[serde(default)]
+    added_rows_count: i64,
+    #[serde(default)]
+    existing_rows_count: i64,
+    #[serde(default)]
+    deleted_rows_count: i64,
+    partitions: Option<Vec<FieldSummary>>,
+    key_metadata: Option<Vec<u8>>,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(test, derive(Debug, PartialEq, Eq))]
+struct FieldSummary {
+    /// field: 509
+    ///
+    /// Whether the manifest contains at least one partition with a null
+    /// value for the field
+    contains_null: bool,
+    /// field: 518
+    /// Whether the manifest contains at least one partition with a NaN
+    /// value for the field
+    contains_nan: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -54,32 +90,14 @@ struct BytesEntry {
 mod tests {
     use std::{env, fs};
 
+    use anyhow::Result;
+    use apache_avro::from_value;
     use apache_avro::Reader;
-    use apache_avro::{from_value, types::Record, Codec, Error, Schema, Writer};
 
     use super::*;
 
     #[test]
-    fn test_load_manifest() {
-        let path = format!(
-            "{}/testdata/simple_table/metadata/10d28031-9739-484c-92db-cdf2975cead4-m0.avro",
-            env::current_dir()
-                .expect("current_dir must exist")
-                .to_string_lossy()
-        );
-
-        let bs = fs::read(path).expect("read_file must succeed");
-
-        let reader = Reader::new(&bs[..]).unwrap();
-
-        for value in reader {
-            let v = value.unwrap();
-            println!("{:?}", from_value::<ManifestEntry>(&v).unwrap());
-        }
-    }
-
-    #[test]
-    fn test_load_manifest_list() {
+    fn test_load_manifest_file() -> Result<()> {
         let path = format!(
             "{}/testdata/simple_table/metadata/snap-1646658105718557341-1-10d28031-9739-484c-92db-cdf2975cead4.avro",
             env::current_dir()
@@ -91,9 +109,60 @@ mod tests {
 
         let reader = Reader::new(&bs[..]).unwrap();
 
+        let mut files = Vec::new();
+
+        for value in reader {
+            files.push(from_value::<ManifestFile>(&value?)?);
+        }
+
+        assert_eq!(files.len(), 1);
+        assert_eq!(
+            files[0],
+            ManifestFile {
+                manifest_path: "/opt/bitnami/spark/warehouse/db/table/metadata/10d28031-9739-484c-92db-cdf2975cead4-m0.avro".to_string(),
+                manifest_length: 5806,
+                partition_spec_id: 0,
+                content: 0,
+                sequence_number: 0,
+                min_sequence_number: 0,
+                added_snapshot_id: 1646658105718557341,
+                added_files_count: 0,
+                existing_files_count: 0,
+                deleted_files_count: 0,
+                added_rows_count: 3,
+                existing_rows_count: 0,
+                deleted_rows_count: 0,
+                partitions: Some(vec![]),
+                key_metadata: None
+            }
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_load_manifest_entry() {
+        let path = format!(
+            "{}/testdata/simple_table/metadata/10d28031-9739-484c-92db-cdf2975cead4-m0.avro",
+            env::current_dir()
+                .expect("current_dir must exist")
+                .to_string_lossy()
+        );
+
+        let bs = fs::read(path).expect("read_file must succeed");
+
+        let reader = Reader::new(&bs[..]).unwrap();
+        println!(
+            "{:?}",
+            reader
+                .user_metadata()
+                .iter()
+                .map(|(k, v)| (k, String::from_utf8_lossy(v)))
+                .collect::<Vec<_>>()
+        );
+
         for value in reader {
             let v = value.unwrap();
-            println!("{:?}", v);
             println!("{:?}", from_value::<ManifestEntry>(&v).unwrap());
         }
     }
