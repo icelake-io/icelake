@@ -6,7 +6,7 @@ use anyhow::Result;
 
 use super::transform::parse_transform;
 
-/// Parse schema_v2 from json bytes.
+/// Parse schema from json bytes.
 pub fn parse_sort_order(bs: &[u8]) -> Result<types::SortOrder> {
     let t: SortOrder = serde_json::from_slice(bs)?;
     t.try_into()

@@ -7,8 +7,8 @@ use anyhow::Result;
 use super::types::string_or_struct;
 use super::types::*;
 
-/// Parse schema_v2 from json bytes.
-pub fn parse_schema_v2(schema: &[u8]) -> Result<types::SchemaV2> {
+/// Parse schema from json bytes.
+pub fn parse_schema(schema: &[u8]) -> Result<types::Schema> {
     let schema: Schema = serde_json::from_slice(schema)?;
     schema.try_into()
 }
@@ -22,7 +22,7 @@ struct Schema {
     typ: Types,
 }
 
-impl TryFrom<Schema> for types::SchemaV2 {
+impl TryFrom<Schema> for types::Schema {
     type Error = anyhow::Error;
 
     fn try_from(value: Schema) -> Result<Self, Self::Error> {
@@ -33,7 +33,7 @@ impl TryFrom<Schema> for types::SchemaV2 {
             return Err(anyhow!("schema type must be struct"));
         };
 
-        Ok(types::SchemaV2 {
+        Ok(types::Schema {
             id: value.schema_id,
             identifier_field_ids: value.identifier_field_ids,
             types,
@@ -46,7 +46,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_parse_schema_v2_struct() {
+    fn test_parse_schema_struct() {
         let schema = r#"
 {
 	"type" : "struct",
@@ -60,7 +60,7 @@ mod tests {
 }
         "#;
 
-        let schema = parse_schema_v2(schema.as_bytes()).unwrap();
+        let schema = parse_schema(schema.as_bytes()).unwrap();
 
         assert_eq!(schema.id, 0);
         assert_eq!(schema.identifier_field_ids, None);
@@ -75,7 +75,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_schema_v2_list() {
+    fn test_parse_schema_list() {
         let schema = r#"
 {
     "type" : "struct",
@@ -96,7 +96,7 @@ mod tests {
 }
         "#;
 
-        let schema = parse_schema_v2(schema.as_bytes()).unwrap();
+        let schema = parse_schema(schema.as_bytes()).unwrap();
 
         assert_eq!(schema.id, 0);
         assert_eq!(schema.identifier_field_ids, None);
@@ -115,7 +115,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_schema_v2_map() {
+    fn test_parse_schema_map() {
         let schema = r#"
 {
     "type" : "struct",
@@ -138,7 +138,7 @@ mod tests {
 }
         "#;
 
-        let schema = parse_schema_v2(schema.as_bytes()).unwrap();
+        let schema = parse_schema(schema.as_bytes()).unwrap();
 
         assert_eq!(schema.id, 0);
         assert_eq!(schema.identifier_field_ids, None);

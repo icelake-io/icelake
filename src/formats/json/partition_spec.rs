@@ -5,7 +5,7 @@ use crate::types;
 use super::transform::parse_transform;
 use anyhow::Result;
 
-/// Parse schema_v2 from json bytes.
+/// Parse schema from json bytes.
 pub fn parse_partition_spec(bs: &[u8]) -> Result<types::PartitionSpec> {
     let t: PartitionSpec = serde_json::from_slice(bs)?;
     t.try_into()
