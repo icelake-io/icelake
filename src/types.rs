@@ -157,6 +157,7 @@ pub struct SchemaV2 {
 /// predicates and partition predicates.
 ///
 /// All transforms must return `null` for a `null` input value.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Transform {
     /// Source value, unmodified
     ///
