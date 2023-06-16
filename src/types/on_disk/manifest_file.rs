@@ -11,7 +11,7 @@ use serde_with::Bytes;
 use super::parse_schema;
 use crate::types;
 
-/// Parse manifest list from avro bytes.
+/// Parse manifest file from avro bytes.
 pub fn parse_manifest_file(
     bs: &[u8],
 ) -> Result<(types::ManifestMetadata, Vec<types::ManifestFile>)> {

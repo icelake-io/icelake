@@ -7,14 +7,17 @@ use apache_avro::from_value;
 use apache_avro::Reader;
 
 /// Parse manifest list from json bytes.
-pub fn parse_manifest_list(bs: &[u8]) -> Result<types::ManifestList> {
-    let mut reader = Reader::new(bs)?;
-    let value = reader
-        .next()
-        .ok_or_else(|| anyhow!("manifest list is empty"))??;
+pub fn parse_manifest_list(bs: &[u8]) -> Result<Vec<types::ManifestList>> {
+    let reader = Reader::new(bs)?;
 
-    let t = from_value::<ManifestList>(&value)?;
-    t.try_into()
+    // Parse manifest entries
+    let mut entries = Vec::new();
+    for value in reader {
+        let v = value?;
+        entries.push(from_value::<ManifestList>(&v)?.try_into()?);
+    }
+
+    Ok(entries)
 }
 
 #[derive(Deserialize)]
@@ -176,10 +179,11 @@ mod tests {
 
         let bs = fs::read(path).expect("read_file must succeed");
 
-        let manifest_list = parse_manifest_list(&bs)?;
+        let entries = parse_manifest_list(&bs)?;
 
+        assert_eq!(entries.len(), 1);
         assert_eq!(
-            manifest_list,
+            entries[0],
             types::ManifestList {
                 manifest_path: "/opt/bitnami/spark/warehouse/db/table/metadata/10d28031-9739-484c-92db-cdf2975cead4-m0.avro".to_string(),
                 manifest_length: 5806,
