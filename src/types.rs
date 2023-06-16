@@ -157,6 +157,7 @@ pub struct SchemaV2 {
 /// predicates and partition predicates.
 ///
 /// All transforms must return `null` for a `null` input value.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Transform {
     /// Source value, unmodified
     ///
@@ -248,7 +249,19 @@ pub enum Transform {
 /// Partition values for a data file must be the same for all records stored
 /// in the data file. (Manifests store data files from any partition, as long
 /// as the partition spec is the same for the data files.)
-pub struct Partition {
+///
+/// Tables are configured with a partition spec that defines how to produce a tuple of partition values from a record.
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct PartitionSpec {
+    /// The spec id.
+    pub id: i32,
+    /// Partition fields.
+    pub fields: Vec<PartitionField>,
+}
+
+/// Field of the specified partition spec.
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct PartitionField {
     /// A source column id from the table’s schema
     pub source_column_id: i32,
     /// A partition field id that is used to identify a partition field
@@ -275,6 +288,7 @@ pub struct Partition {
 /// - Sorting floating-point numbers should produce the following behavior:
 ///   `-NaN` < `-Infinity` < `-value` < `-0` < `0` < `value` < `Infinity`
 ///   < `NaN`
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct SortOrder {
     /// The sort order id of this SortOrder
     pub id: i32,
@@ -284,6 +298,7 @@ pub struct SortOrder {
 }
 
 /// Field of the specified sort order.
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct SortField {
     /// A source column id from the table’s schema
     pub source_column_id: i32,
@@ -302,6 +317,7 @@ pub struct SortField {
 }
 
 /// sort direction, that can only be either `asc` or `desc`
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum SortDirection {
     ASC,
     DESC,
@@ -309,6 +325,7 @@ pub enum SortDirection {
 
 /// A null order that describes the order of null values when sorted.
 /// Can only be either nulls-first or nulls-last
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum NullOrder {
     NullsFirst,
     NullsLast,
