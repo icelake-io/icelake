@@ -8,7 +8,7 @@ use serde::Deserialize;
 use serde_with::serde_as;
 use serde_with::Bytes;
 
-use crate::formats::json::parse_schema;
+use super::parse_schema;
 use crate::types;
 
 /// Parse manifest list from avro bytes.
