@@ -327,6 +327,6 @@ pub enum SortDirection {
 /// Can only be either nulls-first or nulls-last
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum NullOrder {
-    NullsFirst,
-    NullsLast,
+    First,
+    Last,
 }

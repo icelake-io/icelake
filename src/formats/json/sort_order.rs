@@ -71,8 +71,8 @@ fn parse_sort_direction(s: &str) -> Result<types::SortDirection> {
 /// Parse transform string represent into types::Transform enum.
 fn parse_null_order(s: &str) -> Result<types::NullOrder> {
     let t = match s {
-        "nulls-first" => types::NullOrder::NullsFirst,
-        "nulls-last" => types::NullOrder::NullsLast,
+        "nulls-first" => types::NullOrder::First,
+        "nulls-last" => types::NullOrder::Last,
         v => return Err(anyhow!("null order {:?} is not valid", v)),
     };
 
@@ -112,7 +112,7 @@ mod tests {
                 source_column_id: 2,
                 transform: types::Transform::Identity,
                 direction: types::SortDirection::ASC,
-                null_order: types::NullOrder::NullsFirst
+                null_order: types::NullOrder::First
             }
         );
         assert_eq!(
@@ -121,7 +121,7 @@ mod tests {
                 source_column_id: 3,
                 transform: types::Transform::Bucket(4),
                 direction: types::SortDirection::DESC,
-                null_order: types::NullOrder::NullsLast
+                null_order: types::NullOrder::Last
             }
         );
     }
