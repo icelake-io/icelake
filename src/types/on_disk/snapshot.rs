@@ -14,7 +14,7 @@ pub fn parse_snapshot(bs: &[u8]) -> Result<types::Snapshot> {
 #[derive(Deserialize)]
 #[cfg_attr(test, derive(Debug, PartialEq, Eq))]
 #[serde(rename_all = "kebab-case")]
-struct Snapshot {
+pub struct Snapshot {
     snapshot_id: i64,
     parent_snapshot_id: Option<i64>,
     #[serde(default)]

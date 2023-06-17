@@ -19,4 +19,7 @@ pub use transform::parse_transform;
 mod snapshot;
 pub use snapshot::parse_snapshot;
 
+mod table_metadata;
+pub use table_metadata::parse_table_metadata;
+
 mod types;
