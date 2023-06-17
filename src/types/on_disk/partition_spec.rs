@@ -28,7 +28,7 @@ impl TryFrom<PartitionSpec> for types::PartitionSpec {
         }
 
         Ok(types::PartitionSpec {
-            id: v.spec_id,
+            spec_id: v.spec_id,
             fields,
         })
     }
@@ -83,7 +83,7 @@ mod tests {
 
         let v = parse_partition_spec(content.as_bytes()).unwrap();
 
-        assert_eq!(v.id, 1);
+        assert_eq!(v.spec_id, 1);
         assert_eq!(v.fields.len(), 2);
         assert_eq!(
             v.fields[0],

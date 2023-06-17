@@ -275,26 +275,24 @@ mod tests {
             meta,
             types::ManifestMetadata {
                 schema: types::Schema {
-                    id: 0,
+                    schema_id: 0,
                     identifier_field_ids: None,
-                    types: types::Struct {
-                        fields: vec![
-                            types::Field {
-                                id: 1,
-                                name: "id".to_string(),
-                                required: false,
-                                field_type: types::Any::Primitive(types::Primitive::Long),
-                                comment: None
-                            },
-                            types::Field {
-                                id: 2,
-                                name: "data".to_string(),
-                                required: false,
-                                field_type: types::Any::Primitive(types::Primitive::String),
-                                comment: None
-                            }
-                        ]
-                    }
+                    fields: vec![
+                        types::Field {
+                            id: 1,
+                            name: "id".to_string(),
+                            required: false,
+                            field_type: types::Any::Primitive(types::Primitive::Long),
+                            comment: None
+                        },
+                        types::Field {
+                            id: 2,
+                            name: "data".to_string(),
+                            required: false,
+                            field_type: types::Any::Primitive(types::Primitive::String),
+                            comment: None
+                        }
+                    ]
                 },
                 schema_id: 0,
                 partition_spec_id: 0,
