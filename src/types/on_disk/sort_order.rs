@@ -29,7 +29,7 @@ impl TryFrom<SortOrder> for types::SortOrder {
         }
 
         Ok(types::SortOrder {
-            id: v.order_id,
+            order_id: v.order_id,
             fields,
         })
     }
@@ -104,7 +104,7 @@ mod tests {
 
         let v = parse_sort_order(content.as_bytes()).unwrap();
 
-        assert_eq!(v.id, 1);
+        assert_eq!(v.order_id, 1);
         assert_eq!(v.fields.len(), 2);
         assert_eq!(
             v.fields[0],

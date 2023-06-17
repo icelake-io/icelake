@@ -36,94 +36,6 @@ pub struct Types {
     value: Option<Box<Types>>,
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "kebab-case")]
-struct Field {
-    id: i32,
-    name: String,
-    required: bool,
-    #[serde(rename = "type", deserialize_with = "string_or_struct")]
-    typ: Types,
-    doc: Option<String>,
-}
-
-/// We need to support both `T` and `Box<T>` so we can't use
-/// the `std::str::FromStr` trait directly.
-pub trait FromStr {
-    fn from_str(s: &str) -> Self;
-}
-
-impl FromStr for Types {
-    fn from_str(s: &str) -> Self {
-        Types {
-            typ: s.to_string(),
-            ..Default::default()
-        }
-    }
-}
-
-impl FromStr for Box<Types> {
-    fn from_str(s: &str) -> Self {
-        Box::new(Types {
-            typ: s.to_string(),
-            ..Default::default()
-        })
-    }
-}
-
-impl FromStr for Option<Box<Types>> {
-    fn from_str(s: &str) -> Self {
-        Some(Box::new(Types {
-            typ: s.to_string(),
-            ..Default::default()
-        }))
-    }
-}
-
-pub fn string_or_struct<'de, T, D>(deserializer: D) -> Result<T, D::Error>
-where
-    T: Deserialize<'de> + FromStr,
-    D: Deserializer<'de>,
-{
-    // This is a Visitor that forwards string types to T's `FromStr` impl and
-    // forwards map types to T's `Deserialize` impl. The `PhantomData` is to
-    // keep the compiler from complaining about T being an unused generic type
-    // parameter. We need T in order to know the Value type for the Visitor
-    // impl.
-    struct StringOrStruct<T>(PhantomData<fn() -> T>);
-
-    impl<'de, T> Visitor<'de> for StringOrStruct<T>
-    where
-        T: Deserialize<'de> + FromStr,
-    {
-        type Value = T;
-
-        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-            formatter.write_str("string or map")
-        }
-
-        fn visit_str<E>(self, value: &str) -> Result<T, E>
-        where
-            E: de::Error,
-        {
-            Ok(FromStr::from_str(value))
-        }
-
-        fn visit_map<M>(self, map: M) -> Result<T, M::Error>
-        where
-            M: MapAccess<'de>,
-        {
-            // `MapAccessDeserializer` is a wrapper that turns a `MapAccess`
-            // into a `Deserializer`, allowing it to be used as the input to T's
-            // `Deserialize` implementation. T then deserializes itself using
-            // the entries from the map visitor.
-            Deserialize::deserialize(de::value::MapAccessDeserializer::new(map))
-        }
-    }
-
-    deserializer.deserialize_any(StringOrStruct(PhantomData))
-}
-
 impl TryFrom<Types> for types::Any {
     type Error = anyhow::Error;
 
@@ -226,4 +138,108 @@ impl TryFrom<Types> for types::Any {
 
         Ok(t)
     }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct Field {
+    id: i32,
+    name: String,
+    required: bool,
+    #[serde(rename = "type", deserialize_with = "string_or_struct")]
+    typ: Types,
+    doc: Option<String>,
+}
+
+impl TryFrom<Field> for types::Field {
+    type Error = anyhow::Error;
+
+    fn try_from(v: Field) -> Result<Self, Self::Error> {
+        let field = types::Field {
+            id: v.id,
+            name: v.name,
+            required: v.required,
+            field_type: v.typ.try_into()?,
+            comment: v.doc,
+        };
+
+        Ok(field)
+    }
+}
+
+/// We need to support both `T` and `Box<T>` so we can't use
+/// the `std::str::FromStr` trait directly.
+pub trait FromStr {
+    fn from_str(s: &str) -> Self;
+}
+
+impl FromStr for Types {
+    fn from_str(s: &str) -> Self {
+        Types {
+            typ: s.to_string(),
+            ..Default::default()
+        }
+    }
+}
+
+impl FromStr for Box<Types> {
+    fn from_str(s: &str) -> Self {
+        Box::new(Types {
+            typ: s.to_string(),
+            ..Default::default()
+        })
+    }
+}
+
+impl FromStr for Option<Box<Types>> {
+    fn from_str(s: &str) -> Self {
+        Some(Box::new(Types {
+            typ: s.to_string(),
+            ..Default::default()
+        }))
+    }
+}
+
+pub fn string_or_struct<'de, T, D>(deserializer: D) -> Result<T, D::Error>
+where
+    T: Deserialize<'de> + FromStr,
+    D: Deserializer<'de>,
+{
+    // This is a Visitor that forwards string types to T's `FromStr` impl and
+    // forwards map types to T's `Deserialize` impl. The `PhantomData` is to
+    // keep the compiler from complaining about T being an unused generic type
+    // parameter. We need T in order to know the Value type for the Visitor
+    // impl.
+    struct StringOrStruct<T>(PhantomData<fn() -> T>);
+
+    impl<'de, T> Visitor<'de> for StringOrStruct<T>
+    where
+        T: Deserialize<'de> + FromStr,
+    {
+        type Value = T;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("string or map")
+        }
+
+        fn visit_str<E>(self, value: &str) -> Result<T, E>
+        where
+            E: de::Error,
+        {
+            Ok(FromStr::from_str(value))
+        }
+
+        fn visit_map<M>(self, map: M) -> Result<T, M::Error>
+        where
+            M: MapAccess<'de>,
+        {
+            // `MapAccessDeserializer` is a wrapper that turns a `MapAccess`
+            // into a `Deserializer`, allowing it to be used as the input to T's
+            // `Deserialize` implementation. T then deserializes itself using
+            // the entries from the map visitor.
+            Deserialize::deserialize(de::value::MapAccessDeserializer::new(map))
+        }
+    }
+
+    deserializer.deserialize_any(StringOrStruct(PhantomData))
 }
