@@ -13,7 +13,7 @@ pub fn parse_schema(schema: &[u8]) -> Result<types::Schema> {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "kebab-case")]
-struct Schema {
+pub struct Schema {
     schema_id: i32,
     identifier_field_ids: Option<Vec<i32>>,
     fields: Vec<Field>,

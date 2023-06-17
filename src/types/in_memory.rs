@@ -711,8 +711,8 @@ pub struct Snapshot {
 /// snapshot for the table.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct SnapshotLog {
-    timestamp_ms: i64,
-    snapshot_id: i64,
+    pub timestamp_ms: i64,
+    pub snapshot_id: i64,
 }
 
 /// Iceberg tables keep track of branches and tags using snapshot references.
@@ -725,23 +725,23 @@ pub struct SnapshotLog {
 pub struct SnapshotReference {
     /// A reference’s snapshot ID. The tagged snapshot or latest snapshot of
     /// a branch.
-    snapshot_id: i64,
+    pub snapshot_id: i64,
     /// Type of the reference, tag or branch
-    typ: SnapshotReferenceType,
+    pub typ: SnapshotReferenceType,
     /// For branch type only.
     ///
     /// A positive number for the minimum number of snapshots to keep in a
     /// branch while expiring snapshots.
     ///
     /// Defaults to table property `history.expire.min-snapshots-to-keep`.
-    min_snapshots_to_keep: Option<i32>,
+    pub min_snapshots_to_keep: Option<i32>,
     /// For branch type only.
     ///
     /// A positive number for the max age of snapshots to keep when expiring,
     /// including the latest snapshot.
     ///
     /// Defaults to table property `history.expire.max-snapshot-age-ms`.
-    max_snapshot_age_ms: Option<i64>,
+    pub max_snapshot_age_ms: Option<i64>,
     /// For snapshot references except the `main` branch.
     ///
     /// A positive number for the max age of the snapshot reference to keep
@@ -750,7 +750,7 @@ pub struct SnapshotReference {
     /// Defaults to table property `history.expire.max-ref-age-ms`
     ///
     /// The main branch never expires.
-    max_ref_age_ms: Option<i64>,
+    pub max_ref_age_ms: Option<i64>,
 }
 
 /// Type of the reference
@@ -764,8 +764,8 @@ pub enum SnapshotReferenceType {
 /// previous metadata files for the table
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct MetadataLog {
-    timestamp_ms: i64,
-    metadata_file: String,
+    pub timestamp_ms: i64,
+    pub metadata_file: String,
 }
 
 /// Table metadata is stored as JSON. Each table metadata change creates a
@@ -780,55 +780,55 @@ pub struct TableMetadata {
     /// Currently, this can be 1 or 2 based on the spec. Implementations
     /// must throw an exception if a table’s version is higher than the
     /// supported version.
-    format_version: TableFormatVersion,
+    pub format_version: TableFormatVersion,
     /// A UUID that identifies the table, generated when the table is
     /// created. Implementations must throw an exception if a table’s UUID
     /// does not match the expected UUID after refreshing metadata.
-    table_uuid: String,
+    pub table_uuid: String,
     /// The table’s base location.
     ///
     /// This is used by writers to determine where to store data files, manifest files, and table metadata files.
-    location: String,
+    pub location: String,
     /// The table’s highest assigned sequence number, a monotonically
     /// increasing long that tracks the order of snapshots in a table.
-    last_sequence_number: i64,
+    pub last_sequence_number: i64,
     /// Timestamp in milliseconds from the unix epoch when the table was last
     /// updated. Each table metadata file should update this field just
     /// before writing.
-    last_updated_ms: i64,
+    pub last_updated_ms: i64,
     /// The highest assigned column ID for the table.
     ///
     /// This is used to ensure columns are always assigned an unused ID when
     /// evolving schemas.
-    last_column_id: i32,
+    pub last_column_id: i32,
     /// A list of schemas, stored as objects with schema-id.
-    schemas: Vec<Schema>,
+    pub schemas: Vec<Schema>,
     /// ID of the table’s current schema.
-    current_schema_id: i32,
+    pub current_schema_id: i32,
     /// A list of partition specs, stored as full partition spec objects.
-    partition_specs: Vec<PartitionSpec>,
+    pub partition_specs: Vec<PartitionSpec>,
     /// ID of the “current” spec that writers should use by default.
-    default_spec_id: i32,
+    pub default_spec_id: i32,
     /// the highest assigned partition field ID across all partition specs
     /// for the table. This is used to ensure partition fields are always
     /// assigned an unused ID when evolving specs.
-    last_partition_id: i32,
+    pub last_partition_id: i32,
     /// A string to string map of table properties.
     ///
     /// This is used to control settings that affect reading and writing and
     /// is not intended to be used for arbitrary metadata. For example,
     /// `commit.retry.num-retries` is used to control the number of commit
     /// retries.
-    properties: Option<HashMap<String, String>>,
+    pub properties: Option<HashMap<String, String>>,
     /// ID of the current table snapshot; must be the same as the current ID
     /// of the main branch in refs.
-    current_snapshot_id: Option<i64>,
+    pub current_snapshot_id: Option<i64>,
     /// A list of valid snapshots.
     ///
     /// Valid snapshots are snapshots for which all data files exist in the
     /// file system. A data file must not be deleted from the file system
     /// until the last snapshot in which it was listed is garbage collected.
-    snapshots: Option<Vec<Snapshot>>,
+    pub snapshots: Option<Vec<Snapshot>>,
     /// A list (optional) of timestamp and metadata file location pairs that
     /// encodes changes to the previous metadata files for the table.
     ///
@@ -836,7 +836,7 @@ pub struct TableMetadata {
     /// metadata file location should be added to the list. Tables can be
     /// configured to remove oldest metadata log entries and keep a
     /// fixed-size log of the most recent entries after a commit.
-    snapshot_log: Option<Vec<SnapshotLog>>,
+    pub snapshot_log: Option<Vec<SnapshotLog>>,
     /// A list (optional) of timestamp and metadata file location pairs that
     /// encodes changes to the previous metadata files for the table.
     ///
@@ -844,14 +844,14 @@ pub struct TableMetadata {
     /// metadata file location should be added to the list. Tables can be
     /// configured to remove oldest metadata log entries and keep a
     /// fixed-size log of the most recent entries after a commit.
-    metadata_log: Option<Vec<MetadataLog>>,
+    pub metadata_log: Option<Vec<MetadataLog>>,
     /// A list of sort orders, stored as full sort order objects.
-    sort_orders: Vec<SortOrder>,
+    pub sort_orders: Vec<SortOrder>,
     /// Default sort order id of the table.
     ///
     /// Note that this could be used by writers, but is not used when reading
     /// because reads use the specs stored in manifest files.
-    default_sort_order_id: i32,
+    pub default_sort_order_id: i32,
     /// A map of snapshot references.
     ///
     /// The map keys are the unique snapshot reference names in the table,
@@ -859,7 +859,7 @@ pub struct TableMetadata {
     ///
     /// There is always a main branch reference pointing to the
     /// `current-snapshot-id` even if the refs map is null.
-    refs: Option<HashMap<String, SnapshotReference>>,
+    pub refs: Option<HashMap<String, SnapshotReference>>,
 }
 
 /// Table format version number.

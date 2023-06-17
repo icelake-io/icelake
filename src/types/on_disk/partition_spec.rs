@@ -13,7 +13,7 @@ pub fn parse_partition_spec(bs: &[u8]) -> Result<types::PartitionSpec> {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "kebab-case")]
-struct PartitionSpec {
+pub struct PartitionSpec {
     spec_id: i32,
     fields: Vec<PartitionField>,
 }

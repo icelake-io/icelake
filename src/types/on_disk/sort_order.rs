@@ -14,7 +14,7 @@ pub fn parse_sort_order(bs: &[u8]) -> Result<types::SortOrder> {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "kebab-case")]
-struct SortOrder {
+pub struct SortOrder {
     order_id: i32,
     fields: Vec<SortField>,
 }
