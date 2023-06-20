@@ -2,6 +2,8 @@ use std::collections::HashMap;
 
 use anyhow::anyhow;
 use anyhow::Result;
+use opendal::layers::LoggingLayer;
+use opendal::services::Fs;
 use opendal::Operator;
 
 use crate::types;
@@ -48,6 +50,21 @@ impl Table {
         self.table_metadata
             .get(&self.current_version)
             .ok_or_else(|| anyhow!("table metadata not found"))
+    }
+
+    /// Open an iceberg table by uri
+    pub async fn open(uri: &str) -> Result<Table> {
+        // Todo(xudong): inferring storage types by uri
+        let mut builder = Fs::default();
+        builder.root(uri);
+
+        let op = Operator::new(builder)?
+            .layer(LoggingLayer::default())
+            .finish();
+
+        let mut table = Table::new(op);
+        table.load().await?;
+        Ok(table)
     }
 }
 
