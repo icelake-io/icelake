@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use anyhow::anyhow;
 use anyhow::Result;
+use futures::StreamExt;
 use opendal::layers::LoggingLayer;
 use opendal::services::Fs;
 use opendal::Operator;
@@ -12,10 +13,12 @@ use crate::types;
 pub struct Table {
     op: Operator,
 
-    table_metadata: HashMap<i32, types::TableMetadata>,
+    table_metadata: HashMap<i64, types::TableMetadata>,
 
     /// `0` means the version is not loaded yet.
-    current_version: i32,
+    ///
+    /// We use table's `last-updated-ms` to represent the version.
+    current_version: i64,
     current_location: Option<String>,
 }
 
@@ -34,19 +37,41 @@ impl Table {
 
     /// Load metadata and manifest from storage.
     pub async fn load(&mut self) -> Result<()> {
-        let version_hint = self.read_version_hint().await?;
-        if self.current_version == version_hint {
-            return Ok(());
-        }
+        let path = if self.is_version_hint_exist().await? {
+            let version_hint = self.read_version_hint().await?;
+            format!("metadata/v{}.metadata.json", version_hint)
+        } else {
+            let files = self.list_table_metadata_paths().await?;
 
-        let metadata = self.read_table_metadata(version_hint).await?;
-        let location = metadata.location.clone();
+            files
+                .into_iter()
+                .last()
+                .ok_or_else(|| anyhow!("no table metadata found"))?
+        };
 
-        self.table_metadata.insert(version_hint, metadata);
-        self.current_version = version_hint;
-        self.current_location = Some(location);
+        let metadata = self.read_table_metadata(&path).await?;
+        // TODO: check if the metadata is out of date.
+        self.current_version = metadata.last_updated_ms;
+        self.current_location = Some(metadata.location.clone());
+        self.table_metadata
+            .insert(metadata.last_updated_ms, metadata);
 
         Ok(())
+    }
+
+    /// Open an iceberg table by uri
+    pub async fn open(uri: &str) -> Result<Table> {
+        // Todo(xudong): inferring storage types by uri
+        let mut builder = Fs::default();
+        builder.root(uri);
+
+        let op = Operator::new(builder)?
+            .layer(LoggingLayer::default())
+            .finish();
+
+        let mut table = Table::new(op);
+        table.load().await?;
+        Ok(table)
     }
 
     /// Fetch current table metadata.
@@ -97,21 +122,6 @@ impl Table {
         Ok(manifest_files.into_iter().map(|v| v.data_file).collect())
     }
 
-    /// Open an iceberg table by uri
-    pub async fn open(uri: &str) -> Result<Table> {
-        // Todo(xudong): inferring storage types by uri
-        let mut builder = Fs::default();
-        builder.root(uri);
-
-        let op = Operator::new(builder)?
-            .layer(LoggingLayer::default())
-            .finish();
-
-        let mut table = Table::new(op);
-        table.load().await?;
-        Ok(table)
-    }
-
     /// Get the relpath related to the base of table location.
     fn rel_path(&self, path: &str) -> Result<String> {
         let location = self
@@ -129,9 +139,15 @@ impl Table {
             })
             .map(|v| v.to_string())
     }
-}
 
-impl Table {
+    /// Check if version hint file exist.
+    async fn is_version_hint_exist(&self) -> Result<bool> {
+        self.op
+            .is_exist("metadata/version-hint.text")
+            .await
+            .map_err(|e| anyhow!("check if version hint exist failed: {}", e))
+    }
+
     /// Read version hint of table.
     async fn read_version_hint(&self) -> Result<i32> {
         let content = self.op.read("metadata/version-hint.text").await?;
@@ -143,15 +159,41 @@ impl Table {
     }
 
     /// Read table metadata of the given version.
-    async fn read_table_metadata(&self, version: i32) -> Result<types::TableMetadata> {
-        let content = self
-            .op
-            .read(&format!("metadata/v{}.metadata.json", version))
-            .await?;
+    async fn read_table_metadata(&self, path: &str) -> Result<types::TableMetadata> {
+        let content = self.op.read(path).await?;
 
         let metadata = types::parse_table_metadata(&content)?;
 
         Ok(metadata)
+    }
+
+    /// List all paths of table metadata files.
+    ///
+    /// The returned paths are sorted by name.
+    ///
+    /// TODO: we can imporve this by only fetch the latest metadata.
+    async fn list_table_metadata_paths(&self) -> Result<Vec<String>> {
+        let mut lister = self
+            .op
+            .list("metadata/")
+            .await
+            .map_err(|err| anyhow!("list metadata failed: {}", err))?;
+
+        let mut paths = vec![];
+
+        while let Some(entry) = lister.next().await {
+            let entry = entry.map_err(|err| anyhow!("list metadata entry failed: {}", err))?;
+
+            // Only push into paths if the entry is a metadata file.
+            if entry.path().ends_with(".metadata.json") {
+                paths.push(entry.path().to_string());
+            }
+        }
+
+        // Make the returned paths sorted by name.
+        paths.sort();
+
+        Ok(paths)
     }
 }
 
@@ -206,12 +248,16 @@ mod tests {
 
         let table = Table::new(op);
 
-        let table_v1 = table.read_table_metadata(1).await?;
+        let table_v1 = table
+            .read_table_metadata("metadata/v1.metadata.json")
+            .await?;
 
         assert_eq!(table_v1.format_version, types::TableFormatVersion::V1);
         assert_eq!(table_v1.last_updated_ms, 1686911664577);
 
-        let table_v2 = table.read_table_metadata(2).await?;
+        let table_v2 = table
+            .read_table_metadata("metadata/v2.metadata.json")
+            .await?;
         assert_eq!(table_v2.format_version, types::TableFormatVersion::V1);
         assert_eq!(table_v2.last_updated_ms, 1686911671713);
 
@@ -240,6 +286,36 @@ mod tests {
         let table_metadata = table.current_table_metadata()?;
         assert_eq!(table_metadata.format_version, types::TableFormatVersion::V1);
         assert_eq!(table_metadata.last_updated_ms, 1686911671713);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_table_load_without_version_hint() -> Result<()> {
+        let path = format!(
+            "{}/testdata/no_hint_table",
+            env::current_dir()
+                .expect("current_dir must exist")
+                .to_string_lossy()
+        );
+
+        let mut builder = Fs::default();
+        builder.root(&path);
+
+        let op = Operator::new(builder)?
+            .layer(LoggingLayer::default())
+            .finish();
+
+        let mut table = Table::new(op);
+        table.load().await?;
+
+        let table_metadata = table.current_table_metadata()?;
+        assert_eq!(table_metadata.format_version, types::TableFormatVersion::V1);
+        assert_eq!(table_metadata.last_updated_ms, 1672981042425);
+        assert_eq!(
+            table_metadata.location,
+            "s3://testbucket/iceberg_data/iceberg_ctl/iceberg_db/iceberg_tbl"
+        );
 
         Ok(())
     }

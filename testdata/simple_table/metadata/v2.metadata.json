@@ -1,89 +1,107 @@
 {
-  "format-version" : 1,
-  "table-uuid" : "1932a94b-d2bf-43ca-a66f-3158a09baf1f",
-  "location" : "/opt/bitnami/spark/warehouse/db/table",
-  "last-updated-ms" : 1686911671713,
-  "last-column-id" : 2,
-  "schema" : {
-    "type" : "struct",
-    "schema-id" : 0,
-    "fields" : [ {
-      "id" : 1,
-      "name" : "id",
-      "required" : false,
-      "type" : "long"
-    }, {
-      "id" : 2,
-      "name" : "data",
-      "required" : false,
-      "type" : "string"
-    } ]
+  "format-version": 1,
+  "table-uuid": "1932a94b-d2bf-43ca-a66f-3158a09baf1f",
+  "location": "/opt/bitnami/spark/warehouse/db/table",
+  "last-updated-ms": 1686911671713,
+  "last-column-id": 2,
+  "schema": {
+    "type": "struct",
+    "schema-id": 0,
+    "fields": [
+      {
+        "id": 1,
+        "name": "id",
+        "required": false,
+        "type": "long"
+      },
+      {
+        "id": 2,
+        "name": "data",
+        "required": false,
+        "type": "string"
+      }
+    ]
   },
-  "current-schema-id" : 0,
-  "schemas" : [ {
-    "type" : "struct",
-    "schema-id" : 0,
-    "fields" : [ {
-      "id" : 1,
-      "name" : "id",
-      "required" : false,
-      "type" : "long"
-    }, {
-      "id" : 2,
-      "name" : "data",
-      "required" : false,
-      "type" : "string"
-    } ]
-  } ],
-  "partition-spec" : [ ],
-  "default-spec-id" : 0,
-  "partition-specs" : [ {
-    "spec-id" : 0,
-    "fields" : [ ]
-  } ],
-  "last-partition-id" : 999,
-  "default-sort-order-id" : 0,
-  "sort-orders" : [ {
-    "order-id" : 0,
-    "fields" : [ ]
-  } ],
-  "properties" : {
-    "owner" : "spark"
+  "current-schema-id": 0,
+  "schemas": [
+    {
+      "type": "struct",
+      "schema-id": 0,
+      "fields": [
+        {
+          "id": 1,
+          "name": "id",
+          "required": false,
+          "type": "long"
+        },
+        {
+          "id": 2,
+          "name": "data",
+          "required": false,
+          "type": "string"
+        }
+      ]
+    }
+  ],
+  "partition-spec": [],
+  "default-spec-id": 0,
+  "partition-specs": [
+    {
+      "spec-id": 0,
+      "fields": []
+    }
+  ],
+  "last-partition-id": 999,
+  "default-sort-order-id": 0,
+  "sort-orders": [
+    {
+      "order-id": 0,
+      "fields": []
+    }
+  ],
+  "properties": {
+    "owner": "spark"
   },
-  "current-snapshot-id" : 1646658105718557341,
-  "refs" : {
-    "main" : {
-      "snapshot-id" : 1646658105718557341,
-      "type" : "branch"
+  "current-snapshot-id": 1646658105718557341,
+  "refs": {
+    "main": {
+      "snapshot-id": 1646658105718557341,
+      "type": "branch"
     }
   },
-  "snapshots" : [ {
-    "snapshot-id" : 1646658105718557341,
-    "timestamp-ms" : 1686911671713,
-    "summary" : {
-      "operation" : "append",
-      "spark.app.id" : "local-1686911651377",
-      "added-data-files" : "3",
-      "added-records" : "3",
-      "added-files-size" : "1929",
-      "changed-partition-count" : "1",
-      "total-records" : "3",
-      "total-files-size" : "1929",
-      "total-data-files" : "3",
-      "total-delete-files" : "0",
-      "total-position-deletes" : "0",
-      "total-equality-deletes" : "0"
-    },
-    "manifest-list" : "/opt/bitnami/spark/warehouse/db/table/metadata/snap-1646658105718557341-1-10d28031-9739-484c-92db-cdf2975cead4.avro",
-    "schema-id" : 0
-  } ],
-  "statistics" : [ ],
-  "snapshot-log" : [ {
-    "timestamp-ms" : 1686911671713,
-    "snapshot-id" : 1646658105718557341
-  } ],
-  "metadata-log" : [ {
-    "timestamp-ms" : 1686911664577,
-    "metadata-file" : "/opt/bitnami/spark/warehouse/db/table/metadata/v1.metadata.json"
-  } ]
+  "snapshots": [
+    {
+      "snapshot-id": 1646658105718557341,
+      "timestamp-ms": 1686911671713,
+      "summary": {
+        "operation": "append",
+        "spark.app.id": "local-1686911651377",
+        "added-data-files": "3",
+        "added-records": "3",
+        "added-files-size": "1929",
+        "changed-partition-count": "1",
+        "total-records": "3",
+        "total-files-size": "1929",
+        "total-data-files": "3",
+        "total-delete-files": "0",
+        "total-position-deletes": "0",
+        "total-equality-deletes": "0"
+      },
+      "manifest-list": "/opt/bitnami/spark/warehouse/db/table/metadata/snap-1646658105718557341-1-10d28031-9739-484c-92db-cdf2975cead4.avro",
+      "schema-id": 0
+    }
+  ],
+  "statistics": [],
+  "snapshot-log": [
+    {
+      "timestamp-ms": 1686911671713,
+      "snapshot-id": 1646658105718557341
+    }
+  ],
+  "metadata-log": [
+    {
+      "timestamp-ms": 1686911664577,
+      "metadata-file": "/opt/bitnami/spark/warehouse/db/table/metadata/v1.metadata.json"
+    }
+  ]
 }
