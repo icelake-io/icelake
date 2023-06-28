@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [v0.0.3] - 2023-06-28
+
+* feat: Implement table load without version hint by @Xuanwo in https://github.com/icelake-io/icelake/pull/34
+
+## [v0.0.2] - 2023-06-27
+
+* feat: add open table interface and add an example to read table by @xudong963 in https://github.com/icelake-io/icelake/pull/27
+* chore: remove Cargo.lock by @TennyZhuang in https://github.com/icelake-io/icelake/pull/30
+* feat: Add current data files support by @Xuanwo in https://github.com/icelake-io/icelake/pull/31
+* Bump to version 0.0.2 by @Xuanwo in https://github.com/icelake-io/icelake/pull/32
+
 ## v0.0.1 - 2023-06-17
 
 * feat: Add project layout by @Xuanwo in https://github.com/icelake-io/icelake/pull/2
@@ -27,3 +38,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 * feat: Implement parse of table metadata by @Xuanwo in https://github.com/icelake-io/icelake/pull/20
 * feat: Load table metadata from storage by @Xuanwo in https://github.com/icelake-io/icelake/pull/21
 * ci: Add publish CI by @Xuanwo in https://github.com/icelake-io/icelake/pull/23
+
+[v0.0.3]: https://github.com/icelake-io/icelake/compare/v0.0.2...v0.0.3
+[v0.0.2]: https://github.com/icelake-io/icelake/compare/v0.0.1...v0.0.2
