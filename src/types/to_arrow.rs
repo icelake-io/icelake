@@ -112,11 +112,19 @@ impl TryFrom<types::Primitive> for ArrowDataType {
                 Ok(ArrowDataType::Timestamp(TimeUnit::Microsecond, None))
             }
             types::Primitive::Timestampz => {
+                // Timestampz always stored as UTC
                 Ok(ArrowDataType::Timestamp(TimeUnit::Microsecond, None))
             }
             types::Primitive::String => Ok(ArrowDataType::Utf8),
-            types::Primitive::Uuid => Ok(ArrowDataType::Utf8),
-            types::Primitive::Fixed(i) => Ok(ArrowDataType::FixedSizeBinary(i as i32)),
+            types::Primitive::Uuid => Ok(ArrowDataType::FixedSizeBinary(16)),
+            types::Primitive::Fixed(i) => {
+                if i <= i32::MAX as u64 {
+                    // FixedSizeBinary only supports up to i32::MAX bytes
+                    Ok(ArrowDataType::FixedSizeBinary(i as i32))
+                } else {
+                    Ok(ArrowDataType::LargeBinary)
+                }
+            }
             types::Primitive::Binary => Ok(ArrowDataType::LargeBinary),
         }
     }
