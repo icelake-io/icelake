@@ -21,18 +21,18 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Clippy
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --all-targets --all-features -- -D warnings
 
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
       - name: Build
-        run: cargo build
+        run: cargo build --all-features
 
   unit:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
       - name: Test
-        run: cargo test
+        run: cargo test --all-targets --all-features
