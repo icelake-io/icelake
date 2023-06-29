@@ -123,7 +123,7 @@ impl Table {
     }
 
     /// Get the relpath related to the base of table location.
-    fn rel_path(&self, path: &str) -> Result<String> {
+    pub fn rel_path(&self, path: &str) -> Result<String> {
         let location = self
             .current_location
             .as_ref()
