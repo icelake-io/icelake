@@ -7,5 +7,5 @@ pub use in_memory::*;
 mod on_disk;
 pub use on_disk::*;
 
-#[cfg(feature = "arrow")]
+#[cfg(feature = "arrow_schema")]
 mod to_arrow;

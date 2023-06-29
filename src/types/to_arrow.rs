@@ -3,10 +3,9 @@
 
 use super::in_memory as types;
 
-use arrow::datatypes::{
-    DataType as ArrowDataType, Field as ArrowField, Schema as ArrowSchema, TimeUnit,
+use arrow_schema::{
+    ArrowError, DataType as ArrowDataType, Field as ArrowField, Schema as ArrowSchema, TimeUnit,
 };
-use arrow::error::ArrowError;
 use std::convert::TryFrom;
 use std::sync::Arc;
 
