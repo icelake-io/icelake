@@ -1,3 +1,6 @@
+//! on_disk module provides the definition of iceberg on-disk data
+//! formats and the convert functions to in-memory.
+
 mod manifest_file;
 pub use manifest_file::parse_manifest_file;
 

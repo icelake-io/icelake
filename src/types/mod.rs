@@ -6,3 +6,6 @@ pub use in_memory::*;
 
 mod on_disk;
 pub use on_disk::*;
+
+#[cfg(feature = "arrow")]
+mod to_arrow;
