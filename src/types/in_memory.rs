@@ -1,3 +1,5 @@
+//! in_memory module provides the definition of iceberg in-memory data types.
+
 use std::collections::HashMap;
 
 /// All data types are either primitives or nested types, which are maps, lists, or structs.
