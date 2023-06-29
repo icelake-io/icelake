@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [v0.0.5] - 2023-06-29
+
+* refactor: Use arrow schema to reduce dependence tree size by @Xuanwo in https://github.com/icelake-io/icelake/pull/45
+* feat: Add test data generate tools by @Xuanwo in https://github.com/icelake-io/icelake/pull/46
+
 ## [v0.0.4] - 2023-06-29
 
 * feat: Implement convert to Arrow Schema by @Xuanwo in https://github.com/icelake-io/icelake/pull/42
@@ -44,6 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 * feat: Load table metadata from storage by @Xuanwo in https://github.com/icelake-io/icelake/pull/21
 * ci: Add publish CI by @Xuanwo in https://github.com/icelake-io/icelake/pull/23
 
+[v0.0.5]: https://github.com/icelake-io/icelake/compare/v0.0.4...v0.0.5
 [v0.0.4]: https://github.com/icelake-io/icelake/compare/v0.0.3...v0.0.4
 [v0.0.3]: https://github.com/icelake-io/icelake/compare/v0.0.2...v0.0.3
 [v0.0.2]: https://github.com/icelake-io/icelake/compare/v0.0.1...v0.0.2
