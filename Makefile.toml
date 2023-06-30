@@ -1,0 +1,50 @@
+[config]
+skip_core_tasks = true
+
+[tasks.check-fmt]
+private = true
+category = "Check"
+description = "Run cargo fmt check and attempt to fix"
+script = """
+#!/usr/bin/env bash
+
+echo "Running $(tput setaf 4)cargo fmt$(tput sgr0) checks and attempting to fix"
+cargo fmt --all
+test $? -eq 0 || exit 1
+"""
+
+[tasks.check-clippy]
+private = true
+category = "Check"
+description = "Run cargo clippy check"
+script = """
+#!/usr/bin/env bash
+
+echo "Running $(tput setaf 4)cargo clippy$(tput sgr0) checks"
+cargo clippy --all-targets --all-features -- -D warnings
+echo "If cargo clippy check failed or generates warning, please fix it manually if there are any warnings."
+"""
+
+[tasks.check]
+category = "Check"
+dependencies = [
+  "check-fmt",
+  "check-clippy",
+]
+script = """
+#!/usr/bin/env bash
+
+echo "Good job! All checks passed! You can run $(tput setaf 4)cargo make test to run unit tests."
+"""
+description = "🌟 Perform pre-CI checks and try to automatically fix."
+
+[tasks.c]
+alias = "check"
+
+[tasks.test]
+category = "Check"
+description = "Run unit tests"
+script = """
+#!/usr/bin/env bash
+cargo test --all-targets --all-features
+"""
