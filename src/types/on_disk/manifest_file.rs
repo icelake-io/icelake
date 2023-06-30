@@ -254,13 +254,14 @@ fn parse_data_file_format(s: &str) -> Result<types::DataFileFormat> {
 
 #[cfg(test)]
 mod tests {
-    use std::{env, fs};
+    use std::env;
+    use std::fs;
 
+    use anyhow::Result;
     use apache_avro::from_value;
     use apache_avro::Reader;
 
     use super::*;
-    use anyhow::Result;
 
     #[test]
     fn test_load_manifest_entry() -> Result<()> {

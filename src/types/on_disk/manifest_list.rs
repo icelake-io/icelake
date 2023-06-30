@@ -1,11 +1,11 @@
+use apache_avro::from_value;
+use apache_avro::Reader;
 use serde::Deserialize;
 
 use crate::types;
 use crate::Error;
 use crate::ErrorKind;
 use crate::Result;
-use apache_avro::from_value;
-use apache_avro::Reader;
 
 /// Parse manifest list from json bytes.
 ///
@@ -124,7 +124,8 @@ impl TryFrom<FieldSummary> for types::FieldSummary {
 
 #[cfg(test)]
 mod tests {
-    use std::{env, fs};
+    use std::env;
+    use std::fs;
 
     use anyhow::Result;
 

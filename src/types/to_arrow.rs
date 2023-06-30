@@ -1,13 +1,16 @@
 //! to_arrow module provices the convert functions from iceberg in-memory
 //! schema to arrow schema.
 
-use super::in_memory as types;
-
-use arrow_schema::{
-    ArrowError, DataType as ArrowDataType, Field as ArrowField, Schema as ArrowSchema, TimeUnit,
-};
 use std::convert::TryFrom;
 use std::sync::Arc;
+
+use arrow_schema::ArrowError;
+use arrow_schema::DataType as ArrowDataType;
+use arrow_schema::Field as ArrowField;
+use arrow_schema::Schema as ArrowSchema;
+use arrow_schema::TimeUnit;
+
+use super::in_memory as types;
 
 impl TryFrom<types::Schema> for ArrowSchema {
     type Error = ArrowError;
