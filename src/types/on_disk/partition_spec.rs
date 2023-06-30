@@ -3,7 +3,9 @@ use serde::Deserialize;
 use crate::types;
 
 use super::transform::parse_transform;
-use anyhow::Result;
+
+use crate::Error;
+use crate::Result;
 
 /// Parse schema from json bytes.
 pub fn parse_partition_spec(bs: &[u8]) -> Result<types::PartitionSpec> {
@@ -19,9 +21,9 @@ pub struct PartitionSpec {
 }
 
 impl TryFrom<PartitionSpec> for types::PartitionSpec {
-    type Error = anyhow::Error;
+    type Error = Error;
 
-    fn try_from(v: PartitionSpec) -> Result<Self, Self::Error> {
+    fn try_from(v: PartitionSpec) -> Result<Self> {
         let mut fields = Vec::with_capacity(v.fields.len());
         for field in v.fields {
             fields.push(field.try_into()?);
@@ -44,9 +46,9 @@ struct PartitionField {
 }
 
 impl TryFrom<PartitionField> for types::PartitionField {
-    type Error = anyhow::Error;
+    type Error = Error;
 
-    fn try_from(v: PartitionField) -> Result<Self, Self::Error> {
+    fn try_from(v: PartitionField) -> Result<Self> {
         let transform = parse_transform(&v.transform)?;
 
         Ok(types::PartitionField {

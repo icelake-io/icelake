@@ -1,8 +1,9 @@
 use serde::Deserialize;
 
 use crate::types;
-use anyhow::anyhow;
-use anyhow::Result;
+use crate::Error;
+use crate::ErrorKind;
+use crate::Result;
 use apache_avro::from_value;
 use apache_avro::Reader;
 
@@ -15,7 +16,7 @@ pub fn parse_manifest_list(bs: &[u8]) -> Result<types::ManifestList> {
     // Parse manifest entries
     let value = reader
         .next()
-        .ok_or_else(|| anyhow!("manifest list is empty"))??;
+        .ok_or_else(|| Error::new(ErrorKind::IcebergDataInvalid, "manifest list is empty"))??;
 
     from_value::<ManifestList>(&value)?.try_into()
 }
@@ -51,13 +52,18 @@ struct ManifestList {
 }
 
 impl TryFrom<ManifestList> for types::ManifestList {
-    type Error = anyhow::Error;
+    type Error = Error;
 
-    fn try_from(v: ManifestList) -> Result<Self, Self::Error> {
+    fn try_from(v: ManifestList) -> Result<Self> {
         let content = match v.content {
             0 => types::ManifestContentType::Data,
             1 => types::ManifestContentType::Deletes,
-            _ => return Err(anyhow!("content type {} is invalid", v.content)),
+            _ => {
+                return Err(Error::new(
+                    ErrorKind::IcebergDataInvalid,
+                    format!("content type {} is invalid", v.content),
+                ))
+            }
         };
 
         let partitions = match v.partitions {
@@ -106,9 +112,9 @@ struct FieldSummary {
 }
 
 impl TryFrom<FieldSummary> for types::FieldSummary {
-    type Error = anyhow::Error;
+    type Error = Error;
 
-    fn try_from(v: FieldSummary) -> Result<Self, Self::Error> {
+    fn try_from(v: FieldSummary) -> Result<Self> {
         Ok(types::FieldSummary {
             contains_null: v.contains_null,
             contains_nan: v.contains_nan,

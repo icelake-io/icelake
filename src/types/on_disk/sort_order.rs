@@ -1,8 +1,9 @@
 use serde::Deserialize;
 
 use crate::types;
-use anyhow::anyhow;
-use anyhow::Result;
+use crate::Error;
+use crate::ErrorKind;
+use crate::Result;
 
 use super::transform::parse_transform;
 
@@ -20,9 +21,9 @@ pub struct SortOrder {
 }
 
 impl TryFrom<SortOrder> for types::SortOrder {
-    type Error = anyhow::Error;
+    type Error = Error;
 
-    fn try_from(v: SortOrder) -> Result<Self, Self::Error> {
+    fn try_from(v: SortOrder) -> Result<Self> {
         let mut fields = Vec::with_capacity(v.fields.len());
         for field in v.fields {
             fields.push(field.try_into()?);
@@ -45,9 +46,9 @@ struct SortField {
 }
 
 impl TryFrom<SortField> for types::SortField {
-    type Error = anyhow::Error;
+    type Error = Error;
 
-    fn try_from(v: SortField) -> Result<Self, Self::Error> {
+    fn try_from(v: SortField) -> Result<Self> {
         Ok(types::SortField {
             source_column_id: v.source_id,
             transform: parse_transform(&v.transform)?,
@@ -62,7 +63,12 @@ fn parse_sort_direction(s: &str) -> Result<types::SortDirection> {
     let t = match s {
         "asc" => types::SortDirection::ASC,
         "desc" => types::SortDirection::DESC,
-        v => return Err(anyhow!("sort direction {:?} is not valid", v)),
+        v => {
+            return Err(Error::new(
+                ErrorKind::IcebergDataInvalid,
+                format!("sort direction {:?} is invalid", v),
+            ))
+        }
     };
 
     Ok(t)
@@ -73,7 +79,12 @@ fn parse_null_order(s: &str) -> Result<types::NullOrder> {
     let t = match s {
         "nulls-first" => types::NullOrder::First,
         "nulls-last" => types::NullOrder::Last,
-        v => return Err(anyhow!("null order {:?} is not valid", v)),
+        v => {
+            return Err(Error::new(
+                ErrorKind::IcebergDataInvalid,
+                format!("null order {:?} is invalid", v),
+            ))
+        }
     };
 
     Ok(t)

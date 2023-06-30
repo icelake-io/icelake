@@ -1,7 +1,8 @@
 use serde::Deserialize;
 
 use crate::types;
-use anyhow::Result;
+use crate::Error;
+use crate::Result;
 
 use super::types::*;
 
@@ -20,9 +21,9 @@ pub struct Schema {
 }
 
 impl TryFrom<Schema> for types::Schema {
-    type Error = anyhow::Error;
+    type Error = Error;
 
-    fn try_from(value: Schema) -> Result<Self, Self::Error> {
+    fn try_from(value: Schema) -> Result<Self> {
         let mut fields = Vec::with_capacity(value.fields.len());
         for field in value.fields {
             fields.push(field.try_into()?);
