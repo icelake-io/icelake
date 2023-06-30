@@ -8,8 +8,9 @@ use serde::Deserialize;
 use serde::Deserializer;
 
 use crate::types;
-use anyhow::anyhow;
-use anyhow::Result;
+use crate::Error;
+use crate::ErrorKind;
+use crate::Result;
 
 #[derive(Deserialize, Default)]
 #[serde(rename_all = "kebab-case", default)]
@@ -37,9 +38,9 @@ pub struct Types {
 }
 
 impl TryFrom<Types> for types::Any {
-    type Error = anyhow::Error;
+    type Error = Error;
 
-    fn try_from(v: Types) -> Result<Self, Self::Error> {
+    fn try_from(v: Types) -> Result<Self> {
         let t = match v.typ.as_str() {
             "boolean" => types::Any::Primitive(types::Primitive::Boolean),
             "int" => types::Any::Primitive(types::Primitive::Int),
@@ -60,7 +61,13 @@ impl TryFrom<Types> for types::Any {
                     .trim_start_matches('[')
                     .trim_end_matches(']')
                     .parse()
-                    .map_err(|err| anyhow!("fixed type {v:?} is invalid: {err:?}"))?;
+                    .map_err(|err| {
+                        Error::new(
+                            ErrorKind::IcebergDataInvalid,
+                            format!("fixed type {v:?} is invalid"),
+                        )
+                        .set_source(err)
+                    })?;
 
                 types::Any::Primitive(types::Primitive::Fixed(length))
             }
@@ -73,15 +80,26 @@ impl TryFrom<Types> for types::Any {
                     .split(',')
                     .collect::<Vec<_>>();
                 if parts.len() != 2 {
-                    return Err(anyhow!("decimal type {v:?} is invalid"));
+                    return Err(Error::new(
+                        ErrorKind::IcebergDataInvalid,
+                        format!("decimal type {v:?} is invalid"),
+                    ));
                 }
 
-                let precision = parts[0]
-                    .parse()
-                    .map_err(|err| anyhow!("decimal type {v:?} is invalid: {err:?}"))?;
-                let scale = parts[1]
-                    .parse()
-                    .map_err(|err| anyhow!("decimal type {v:?} is invalid: {err:?}"))?;
+                let precision = parts[0].parse().map_err(|err| {
+                    Error::new(
+                        ErrorKind::IcebergDataInvalid,
+                        format!("decimal type {v:?} is invalid"),
+                    )
+                    .set_source(err)
+                })?;
+                let scale = parts[1].parse().map_err(|err| {
+                    Error::new(
+                        ErrorKind::IcebergDataInvalid,
+                        format!("decimal type {v:?} is invalid"),
+                    )
+                    .set_source(err)
+                })?;
 
                 types::Any::Primitive(types::Primitive::Decimal { precision, scale })
             }
@@ -106,9 +124,9 @@ impl TryFrom<Types> for types::Any {
             "list" => {
                 let element_id = v.element_id;
                 let element_required = v.element_required;
-                let element_type = v
-                    .element
-                    .ok_or_else(|| anyhow!("element type is required"))?;
+                let element_type = v.element.ok_or_else(|| {
+                    Error::new(ErrorKind::IcebergDataInvalid, "element type is required")
+                })?;
 
                 types::Any::List(types::List {
                     element_id,
@@ -118,12 +136,14 @@ impl TryFrom<Types> for types::Any {
             }
             "map" => {
                 let key_id = v.key_id;
-                let key_type = v.key.ok_or_else(|| anyhow!("map type key is required"))?;
+                let key_type = v.key.ok_or_else(|| {
+                    Error::new(ErrorKind::IcebergDataInvalid, "map type key is required")
+                })?;
                 let value_id = v.value_id;
                 let value_required = v.value_required;
-                let value_type = v
-                    .value
-                    .ok_or_else(|| anyhow!("map type value is required"))?;
+                let value_type = v.value.ok_or_else(|| {
+                    Error::new(ErrorKind::IcebergDataInvalid, "map type value is required")
+                })?;
 
                 types::Any::Map(types::Map {
                     key_id,
@@ -133,7 +153,12 @@ impl TryFrom<Types> for types::Any {
                     value_type: Box::new((*value_type).try_into()?),
                 })
             }
-            v => return Err(anyhow!("type {:?} is not valid schema type", v)),
+            v => {
+                return Err(Error::new(
+                    ErrorKind::IcebergDataInvalid,
+                    format!("type {:?} is not valid schema type", v),
+                ))
+            }
         };
 
         Ok(t)
@@ -152,9 +177,9 @@ pub struct Field {
 }
 
 impl TryFrom<Field> for types::Field {
-    type Error = anyhow::Error;
+    type Error = Error;
 
-    fn try_from(v: Field) -> Result<Self, Self::Error> {
+    fn try_from(v: Field) -> Result<Self> {
         let field = types::Field {
             id: v.id,
             name: v.name,
@@ -200,7 +225,7 @@ impl FromStr for Option<Box<Types>> {
     }
 }
 
-pub fn string_or_struct<'de, T, D>(deserializer: D) -> Result<T, D::Error>
+pub fn string_or_struct<'de, T, D>(deserializer: D) -> std::result::Result<T, D::Error>
 where
     T: Deserialize<'de> + FromStr,
     D: Deserializer<'de>,
@@ -222,14 +247,14 @@ where
             formatter.write_str("string or map")
         }
 
-        fn visit_str<E>(self, value: &str) -> Result<T, E>
+        fn visit_str<E>(self, value: &str) -> std::result::Result<T, E>
         where
             E: de::Error,
         {
             Ok(FromStr::from_str(value))
         }
 
-        fn visit_map<M>(self, map: M) -> Result<T, M::Error>
+        fn visit_map<M>(self, map: M) -> std::result::Result<T, M::Error>
         where
             M: MapAccess<'de>,
         {

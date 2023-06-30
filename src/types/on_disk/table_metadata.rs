@@ -7,8 +7,9 @@ use super::schema::Schema;
 use super::snapshot::Snapshot;
 use super::sort_order::SortOrder;
 use crate::types;
-use anyhow::anyhow;
-use anyhow::Result;
+use crate::Error;
+use crate::ErrorKind;
+use crate::Result;
 
 /// Parse table metadata from json bytes.
 pub fn parse_table_metadata(bs: &[u8]) -> Result<types::TableMetadata> {
@@ -42,16 +43,16 @@ struct TableMetadata {
 }
 
 impl TryFrom<TableMetadata> for types::TableMetadata {
-    type Error = anyhow::Error;
+    type Error = Error;
 
-    fn try_from(v: TableMetadata) -> Result<Self, Self::Error> {
+    fn try_from(v: TableMetadata) -> Result<Self> {
         let format_version = match v.format_version {
             1 => types::TableFormatVersion::V1,
             2 => types::TableFormatVersion::V2,
             _ => {
-                return Err(anyhow!(
-                    "invalid table format version: {}",
-                    v.format_version
+                return Err(Error::new(
+                    ErrorKind::IcebergDataInvalid,
+                    format!("invalid table format version {}", v.format_version),
                 ))
             }
         };
@@ -147,9 +148,9 @@ struct SnapshotLog {
 }
 
 impl TryFrom<SnapshotLog> for types::SnapshotLog {
-    type Error = anyhow::Error;
+    type Error = Error;
 
-    fn try_from(v: SnapshotLog) -> Result<Self, Self::Error> {
+    fn try_from(v: SnapshotLog) -> Result<Self> {
         Ok(types::SnapshotLog {
             timestamp_ms: v.timestamp_ms,
             snapshot_id: v.snapshot_id,
@@ -165,9 +166,9 @@ struct MetadataLog {
 }
 
 impl TryFrom<MetadataLog> for types::MetadataLog {
-    type Error = anyhow::Error;
+    type Error = Error;
 
-    fn try_from(v: MetadataLog) -> Result<Self, Self::Error> {
+    fn try_from(v: MetadataLog) -> Result<Self> {
         Ok(types::MetadataLog {
             timestamp_ms: v.timestamp_ms,
             metadata_file: v.metadata_file,
@@ -187,13 +188,18 @@ struct SnapshotReference {
 }
 
 impl TryFrom<SnapshotReference> for types::SnapshotReference {
-    type Error = anyhow::Error;
+    type Error = Error;
 
-    fn try_from(v: SnapshotReference) -> Result<Self, Self::Error> {
+    fn try_from(v: SnapshotReference) -> Result<Self> {
         let typ = match v.typ.as_str() {
             "tag" => types::SnapshotReferenceType::Tag,
             "branch" => types::SnapshotReferenceType::Branch,
-            v => return Err(anyhow!("invalid snapshot reference type: {}", v)),
+            v => {
+                return Err(Error::new(
+                    ErrorKind::IcebergDataInvalid,
+                    format!("invalid snapshot reference type: {}", v),
+                ))
+            }
         };
 
         Ok(types::SnapshotReference {

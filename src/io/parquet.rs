@@ -1,4 +1,4 @@
-use anyhow::Result;
+use crate::Result;
 use arrow_array::RecordBatch;
 use arrow_schema::SchemaRef;
 use opendal::Writer;

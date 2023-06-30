@@ -1,7 +1,5 @@
 use std::collections::HashMap;
 
-use anyhow::anyhow;
-use anyhow::Result;
 use apache_avro::from_value;
 use apache_avro::Reader;
 use serde::Deserialize;
@@ -10,6 +8,9 @@ use serde_with::Bytes;
 
 use super::parse_schema;
 use crate::types;
+use crate::Error;
+use crate::ErrorKind;
+use crate::Result;
 
 /// Parse manifest file from avro bytes.
 pub fn parse_manifest_file(
@@ -20,17 +21,24 @@ pub fn parse_manifest_file(
     // Parse manifest metadata
     let meta = reader.user_metadata();
     let metadata = types::ManifestMetadata {
-        schema: parse_schema(
-            meta.get("schema")
-                .ok_or_else(|| anyhow!("schema is required in manifest metadata but not found"))?,
-        )?,
+        schema: parse_schema(meta.get("schema").ok_or_else(|| {
+            Error::new(
+                ErrorKind::IcebergDataInvalid,
+                "schema is required in manifest metadata but not found",
+            )
+        })?)?,
         schema_id: {
             match meta.get("schema-id") {
                 None => 0,
                 Some(v) => {
                     let v = String::from_utf8_lossy(v);
-                    v.parse()
-                        .map_err(|err| anyhow!("schema-id {:?} is invalid: {:?}", v, err))?
+                    v.parse().map_err(|err| {
+                        Error::new(
+                            ErrorKind::IcebergDataInvalid,
+                            format!("schema-id {:?} is invalid", v),
+                        )
+                        .set_source(err)
+                    })?
                 }
             }
         },
@@ -39,8 +47,13 @@ pub fn parse_manifest_file(
                 None => 0,
                 Some(v) => {
                     let v = String::from_utf8_lossy(v);
-                    v.parse()
-                        .map_err(|err| anyhow!("partition-spec-id {:?} is invalid: {:?}", v, err))?
+                    v.parse().map_err(|err| {
+                        Error::new(
+                            ErrorKind::IcebergDataInvalid,
+                            format!("partition-spec-id {:?} is invalid", v),
+                        )
+                        .set_source(err)
+                    })?
                 }
             }
         },
@@ -49,8 +62,13 @@ pub fn parse_manifest_file(
                 None => 0,
                 Some(v) => {
                     let v = String::from_utf8_lossy(v);
-                    v.parse()
-                        .map_err(|err| anyhow!("format-version {:?} is invalid: {:?}", v, err))?
+                    v.parse().map_err(|err| {
+                        Error::new(
+                            ErrorKind::IcebergDataInvalid,
+                            format!("format-version {:?} is invalid", v),
+                        )
+                        .set_source(err)
+                    })?
                 }
             }
         },
@@ -59,15 +77,25 @@ pub fn parse_manifest_file(
                 None => 0,
                 Some(v) => {
                     let v = String::from_utf8_lossy(v);
-                    v.parse()
-                        .map_err(|err| anyhow!("partition-spec-id {:?} is invalid: {:?}", v, err))?
+                    v.parse().map_err(|err| {
+                        Error::new(
+                            ErrorKind::IcebergDataInvalid,
+                            format!("partition-spec-id {:?} is invalid", v),
+                        )
+                        .set_source(err)
+                    })?
                 }
             };
 
             match c {
                 0 => types::ManifestContentType::Data,
                 1 => types::ManifestContentType::Deletes,
-                _ => return Err(anyhow!("content type {} is invalid", c)),
+                _ => {
+                    return Err(Error::new(
+                        ErrorKind::IcebergDataInvalid,
+                        format!("content type {} is invalid", c),
+                    ))
+                }
             }
         },
     };
@@ -93,9 +121,9 @@ struct ManifestFile {
 }
 
 impl TryFrom<ManifestFile> for types::ManifestFile {
-    type Error = anyhow::Error;
+    type Error = Error;
 
-    fn try_from(v: ManifestFile) -> Result<Self, Self::Error> {
+    fn try_from(v: ManifestFile) -> Result<Self> {
         Ok(types::ManifestFile {
             status: parse_manifest_status(v.status)?,
             snapshot_id: v.snapshot_id,
@@ -131,9 +159,9 @@ struct DataFile {
 }
 
 impl TryFrom<DataFile> for types::DataFile {
-    type Error = anyhow::Error;
+    type Error = Error;
 
-    fn try_from(v: DataFile) -> Result<Self, Self::Error> {
+    fn try_from(v: DataFile) -> Result<Self> {
         Ok(types::DataFile {
             content: parse_data_content_type(v.content)?,
             file_path: v.file_path,
@@ -193,7 +221,10 @@ fn parse_manifest_status(v: i32) -> Result<types::ManifestStatus> {
         0 => Ok(types::ManifestStatus::Existing),
         1 => Ok(types::ManifestStatus::Added),
         2 => Ok(types::ManifestStatus::Deleted),
-        _ => Err(anyhow!("manifest status {} is invalid", v)),
+        _ => Err(Error::new(
+            ErrorKind::IcebergDataInvalid,
+            format!("manifest status {} is invalid", v),
+        )),
     }
 }
 
@@ -202,7 +233,10 @@ fn parse_data_content_type(v: i32) -> Result<types::DataContentType> {
         0 => Ok(types::DataContentType::Data),
         1 => Ok(types::DataContentType::PostionDeletes),
         2 => Ok(types::DataContentType::EqualityDeletes),
-        _ => Err(anyhow!("data content type {} is invalid", v)),
+        _ => Err(Error::new(
+            ErrorKind::IcebergDataInvalid,
+            format!("data content type {} is invalid", v),
+        )),
     }
 }
 
@@ -211,7 +245,10 @@ fn parse_data_file_format(s: &str) -> Result<types::DataFileFormat> {
         "avro" => Ok(types::DataFileFormat::Avro),
         "orc" => Ok(types::DataFileFormat::Orc),
         "parquet" => Ok(types::DataFileFormat::Parquet),
-        v => Err(anyhow!("data file format {:?} is not supported", v)),
+        v => Err(Error::new(
+            ErrorKind::IcebergFeatureUnsupported,
+            format!("data file format {:?} is not supported", v),
+        )),
     }
 }
 
@@ -223,6 +260,7 @@ mod tests {
     use apache_avro::Reader;
 
     use super::*;
+    use anyhow::Result;
 
     #[test]
     fn test_load_manifest_entry() -> Result<()> {

@@ -3,7 +3,8 @@ use std::collections::HashMap;
 use serde::Deserialize;
 
 use crate::types;
-use anyhow::Result;
+use crate::Error;
+use crate::Result;
 
 /// Parse snapshot from json bytes.
 pub fn parse_snapshot(bs: &[u8]) -> Result<types::Snapshot> {
@@ -26,9 +27,9 @@ pub struct Snapshot {
 }
 
 impl TryFrom<Snapshot> for types::Snapshot {
-    type Error = anyhow::Error;
+    type Error = Error;
 
-    fn try_from(v: Snapshot) -> Result<Self, Self::Error> {
+    fn try_from(v: Snapshot) -> Result<Self> {
         Ok(types::Snapshot {
             snapshot_id: v.snapshot_id,
             parent_snapshot_id: v.parent_snapshot_id,

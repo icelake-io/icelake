@@ -1,6 +1,7 @@
 use crate::types;
-use anyhow::anyhow;
-use anyhow::Result;
+use crate::Error;
+use crate::ErrorKind;
+use crate::Result;
 
 /// Parse transform string represent into types::Transform enum.
 pub fn parse_transform(s: &str) -> Result<types::Transform> {
@@ -18,7 +19,13 @@ pub fn parse_transform(s: &str) -> Result<types::Transform> {
                 .trim_start_matches('[')
                 .trim_end_matches(']')
                 .parse()
-                .map_err(|err| anyhow!("transform bucket type {v:?} is invalid: {err:?}"))?;
+                .map_err(|err| {
+                    Error::new(
+                        ErrorKind::IcebergDataInvalid,
+                        format!("transform bucket type {v:?} is invalid"),
+                    )
+                    .set_source(err)
+                })?;
 
             types::Transform::Bucket(length)
         }
@@ -29,11 +36,22 @@ pub fn parse_transform(s: &str) -> Result<types::Transform> {
                 .trim_start_matches('[')
                 .trim_end_matches(']')
                 .parse()
-                .map_err(|err| anyhow!("transform truncate type {v:?} is invalid: {err:?}"))?;
+                .map_err(|err| {
+                    Error::new(
+                        ErrorKind::IcebergDataInvalid,
+                        format!("transform truncate type {v:?} is invalid"),
+                    )
+                    .set_source(err)
+                })?;
 
             types::Transform::Truncate(width)
         }
-        v => return Err(anyhow!("transform {:?} is not valid", v)),
+        v => {
+            return Err(Error::new(
+                ErrorKind::IcebergDataInvalid,
+                format!("transform {v:?} is invalid"),
+            ))
+        }
     };
 
     Ok(t)
