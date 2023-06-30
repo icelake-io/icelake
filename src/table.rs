@@ -201,7 +201,8 @@ impl Table {
 mod tests {
     use std::env;
 
-    use opendal::{layers::LoggingLayer, services::Fs};
+    use opendal::layers::LoggingLayer;
+    use opendal::services::Fs;
 
     use super::*;
 

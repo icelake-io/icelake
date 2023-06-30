@@ -1,6 +1,7 @@
+use std::env;
+
 use anyhow::Result;
 use icelake::Table;
-use std::env;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {

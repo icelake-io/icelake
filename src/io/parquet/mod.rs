@@ -1,3 +1,7 @@
-mod writer;
-pub use writer::ParquetWriter;
-pub use writer::ParquetWriterBuilder;
+mod write;
+pub use write::ParquetWriter;
+pub use write::ParquetWriterBuilder;
+
+mod stream;
+pub use stream::ParquetStream;
+pub use stream::ParquetStreamBuilder;

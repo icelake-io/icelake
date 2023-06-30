@@ -214,7 +214,8 @@ impl TryFrom<SnapshotReference> for types::SnapshotReference {
 
 #[cfg(test)]
 mod tests {
-    use std::{env, fs};
+    use std::env;
+    use std::fs;
 
     use super::*;
 

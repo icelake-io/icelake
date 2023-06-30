@@ -1,11 +1,10 @@
 use serde::Deserialize;
 
+use super::transform::parse_transform;
 use crate::types;
 use crate::Error;
 use crate::ErrorKind;
 use crate::Result;
-
-use super::transform::parse_transform;
 
 /// Parse schema from json bytes.
 pub fn parse_sort_order(bs: &[u8]) -> Result<types::SortOrder> {

@@ -1,10 +1,9 @@
 use serde::Deserialize;
 
+use super::types::*;
 use crate::types;
 use crate::Error;
 use crate::Result;
-
-use super::types::*;
 
 /// Parse schema from json bytes.
 pub fn parse_schema(schema: &[u8]) -> Result<types::Schema> {

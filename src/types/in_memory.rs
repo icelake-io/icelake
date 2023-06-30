@@ -689,7 +689,7 @@ pub struct Snapshot {
     /// For example:
     ///
     /// ```json
-    ///{
+    /// {
     ///   "operation" : "append",
     ///   "spark.app.id" : "local-1686911651377",
     ///   "added-data-files" : "3",
