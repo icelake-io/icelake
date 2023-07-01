@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::str::FromStr;
 
 use apache_avro::from_value;
 use apache_avro::Reader;
@@ -241,15 +242,7 @@ fn parse_data_content_type(v: i32) -> Result<types::DataContentType> {
 }
 
 fn parse_data_file_format(s: &str) -> Result<types::DataFileFormat> {
-    match s.to_lowercase().as_str() {
-        "avro" => Ok(types::DataFileFormat::Avro),
-        "orc" => Ok(types::DataFileFormat::Orc),
-        "parquet" => Ok(types::DataFileFormat::Parquet),
-        v => Err(Error::new(
-            ErrorKind::IcebergFeatureUnsupported,
-            format!("data file format {:?} is not supported", v),
-        )),
-    }
+    types::DataFileFormat::from_str(s)
 }
 
 #[cfg(test)]
