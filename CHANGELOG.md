@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [v0.0.6] - 2023-07-01
+
+* feat: Add support for writing parquet by @ZENOTME in https://github.com/icelake-io/icelake/pull/50
+* feat(io/parquet): Polish API by @Xuanwo in https://github.com/icelake-io/icelake/pull/53
+* feat: Add icelake own error type by @Xuanwo in https://github.com/icelake-io/icelake/pull/54
+* chore: Promote parquet as a mod by @Xuanwo in https://github.com/icelake-io/icelake/pull/55
+* feat: Implement parquet stream by @Xuanwo in https://github.com/icelake-io/icelake/pull/59
+* chore: add .vscode in .gitignore by @ZENOTME in https://github.com/icelake-io/icelake/pull/61
+
 ## [v0.0.5] - 2023-06-29
 
 * refactor: Use arrow schema to reduce dependence tree size by @Xuanwo in https://github.com/icelake-io/icelake/pull/45
@@ -49,6 +58,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 * feat: Load table metadata from storage by @Xuanwo in https://github.com/icelake-io/icelake/pull/21
 * ci: Add publish CI by @Xuanwo in https://github.com/icelake-io/icelake/pull/23
 
+[v0.0.6]: https://github.com/icelake-io/icelake/compare/v0.0.5...v0.0.6
 [v0.0.5]: https://github.com/icelake-io/icelake/compare/v0.0.4...v0.0.5
 [v0.0.4]: https://github.com/icelake-io/icelake/compare/v0.0.3...v0.0.4
 [v0.0.3]: https://github.com/icelake-io/icelake/compare/v0.0.2...v0.0.3
