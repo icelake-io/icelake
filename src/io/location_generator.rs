@@ -1,3 +1,6 @@
+//! location_generator is used to generate a related file location for
+//! the writer.
+
 use std::str::FromStr;
 use std::sync::atomic::AtomicUsize;
 
@@ -11,6 +14,7 @@ const DEFAULT_FILE_FORMAT_DEFAULT: &str = "parquet";
 const WRITE_DATA_LOCATION: &str = "write.data.path";
 const WRITE_FOLDER_STORAGE_LOCATION: &str = "write.folder-storage.path";
 
+/// DataFileLocationGenerator will generate a file location for the writer.
 pub struct DataFileLocationGenerator {
     file_count: AtomicUsize,
     partition_id: usize,
@@ -23,6 +27,7 @@ pub struct DataFileLocationGenerator {
 }
 
 impl DataFileLocationGenerator {
+    /// Try to create a new file location generator.
     pub fn try_new(
         table_metatdata: TableMetadata,
         partition_id: usize,

@@ -85,6 +85,7 @@ pub enum Primitive {
 /// - Fields can have default values.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Struct {
+    /// Fields contained in this struct.
     pub fields: Vec<Field>,
 }
 
@@ -327,7 +328,9 @@ pub struct SortField {
 /// sort direction, that can only be either `asc` or `desc`
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum SortDirection {
+    /// Ascending order
     ASC,
+    /// Descending order
     DESC,
 }
 
@@ -335,7 +338,9 @@ pub enum SortDirection {
 /// Can only be either nulls-first or nulls-last
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum NullOrder {
+    /// Nulls are sorted before non-null values
     First,
+    /// Nulls are sorted after non-null values
     Last,
 }
 
@@ -502,7 +507,9 @@ pub struct ManifestMetadata {
 /// Type of content files tracked by the manifest
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum ManifestContentType {
+    /// The manifest content is data.
     Data,
+    /// The manifest content is deletes.
     Deletes,
 }
 
@@ -656,8 +663,11 @@ pub enum DataContentType {
 /// Format of this data.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum DataFileFormat {
+    /// Avro file format: https://avro.apache.org/
     Avro,
+    /// Orc file format: https://orc.apache.org/
     Orc,
+    /// Parquet file format: https://parquet.apache.org/
     Parquet,
 }
 
@@ -744,7 +754,11 @@ pub struct Snapshot {
 /// snapshot for the table.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct SnapshotLog {
+    /// The timestamp of this snapshot log.
+    ///
+    /// TODO: we should use `chrono::DateTime` instead of `i64`.
     pub timestamp_ms: i64,
+    /// The snapshot ID of this snapshot log.
     pub snapshot_id: i64,
 }
 
@@ -789,7 +803,9 @@ pub struct SnapshotReference {
 /// Type of the reference
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum SnapshotReferenceType {
+    /// Tag is used to reference to a specfic tag.
     Tag,
+    /// Branch is used to reference to a specfic branch, like `master`.
     Branch,
 }
 
@@ -797,7 +813,9 @@ pub enum SnapshotReferenceType {
 /// previous metadata files for the table
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct MetadataLog {
+    /// Related timestamp for this metadata log.
     pub timestamp_ms: i64,
+    /// The metadata file's location.
     pub metadata_file: String,
 }
 
@@ -898,6 +916,8 @@ pub struct TableMetadata {
 /// Table format version number.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum TableFormatVersion {
+    /// The V1 Table Format Version.
     V1,
+    /// The V2 Table Format Version.
     V2,
 }

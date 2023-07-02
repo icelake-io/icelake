@@ -1,3 +1,9 @@
+//! icelake is a library for reading and writing data lake table formats
+//! like [Apache Iceberg](https://iceberg.apache.org/).
+
+// Make sure all our public APIs have docs.
+#![deny(missing_docs)]
+
 mod table;
 pub use table::Table;
 mod error;
