@@ -1,6 +1,10 @@
 //! in_memory module provides the definition of iceberg in-memory data types.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, str::FromStr};
+
+use crate::Error;
+use crate::ErrorKind;
+use crate::Result;
 
 /// All data types are either primitives or nested types, which are maps, lists, or structs.
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -655,6 +659,33 @@ pub enum DataFileFormat {
     Avro,
     Orc,
     Parquet,
+}
+
+impl FromStr for DataFileFormat {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        match s.to_lowercase().as_str() {
+            "avro" => Ok(Self::Avro),
+            "orc" => Ok(Self::Orc),
+            "parquet" => Ok(Self::Parquet),
+            _ => Err(Error::new(
+                ErrorKind::IcebergFeatureUnsupported,
+                format!("Unsupported data file format: {}", s),
+            )),
+        }
+    }
+}
+
+impl ToString for DataFileFormat {
+    fn to_string(&self) -> String {
+        match self {
+            DataFileFormat::Avro => "avro",
+            DataFileFormat::Orc => "orc",
+            DataFileFormat::Parquet => "parquet",
+        }
+        .to_string()
+    }
 }
 
 /// Snapshot of contains all data of a table at a point in time.
