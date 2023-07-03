@@ -27,6 +27,19 @@ pub enum Any {
     Map(Map),
 }
 
+/// All data values are either primitives or nested values, which are maps, lists, or structs.
+#[derive(Debug, PartialEq, Clone)]
+pub enum AnyValue {
+    /// A Primitive type
+    Primitive(PrimitiveValue),
+    /// A Struct type
+    Struct(StructValue),
+    /// A list type.
+    List(ListValue),
+    /// A map type.
+    Map(MapValue),
+}
+
 /// Primitive Types within a schema.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Primitive {
@@ -148,6 +161,15 @@ pub struct Struct {
     pub fields: Vec<Field>,
 }
 
+/// A struct is a tuple of typed values.
+///
+/// struct value carries the value of a struct type, could be used as
+/// default value.
+///
+/// struct value stores as a map from field id to field value.
+#[derive(Debug, PartialEq, Clone)]
+pub struct StructValue(HashMap<i32, AnyValue>);
+
 /// A Field is the field of a struct.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Field {
@@ -178,6 +200,13 @@ pub struct List {
     pub element_type: Box<Any>,
 }
 
+/// A list is a list of typed values.
+///
+/// list value carries the value of a list type, could be used as
+/// default value.
+#[derive(Debug, PartialEq, Clone)]
+pub struct ListValue(Vec<AnyValue>);
+
 /// A map is a collection of key-value pairs with a key type and a value type.
 ///
 /// - Both the key field and value field each have an integer id that is unique in the table schema.
@@ -196,6 +225,18 @@ pub struct Map {
     pub value_required: bool,
     /// Both map keys and map values may be any type, including nested types.
     pub value_type: Box<Any>,
+}
+
+/// A map is a collection of key-value pairs with a key type and a value type.
+///
+/// map value carries the value of a map type, could be used as
+/// default value.
+#[derive(Debug, PartialEq, Clone)]
+pub struct MapValue {
+    /// All keys in this map.
+    pub keys: Vec<AnyValue>,
+    /// All values in this map.
+    pub values: Vec<AnyValue>,
 }
 
 /// A table’s schema is a list of named columns.
