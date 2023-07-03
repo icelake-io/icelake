@@ -2,6 +2,14 @@
 
 use std::{collections::HashMap, str::FromStr};
 
+use chrono::DateTime;
+use chrono::NaiveDate;
+use chrono::NaiveDateTime;
+use chrono::NaiveTime;
+use chrono::Utc;
+use rust_decimal::Decimal;
+use uuid::Uuid;
+
 use crate::Error;
 use crate::ErrorKind;
 use crate::Result;
@@ -74,6 +82,57 @@ pub enum Primitive {
     Fixed(u64),
     /// Arbitrary-length byte array.
     Binary,
+}
+
+/// Primitive Values within a schema.
+///
+/// Used to represent the value of a primitive type, like as default value.
+#[derive(Debug, PartialEq, Clone)]
+pub enum PrimitiveValue {
+    /// True or False
+    Boolean(bool),
+    /// 32-bit signed integer, Can promote to long
+    Int(i32),
+    /// 64-bit signed integer
+    Long(i64),
+    /// 32-bit IEEE 753 floating bit, Can promote to double
+    Float(f32),
+    /// 64-bit IEEE 753 floating bit.
+    Double(f64),
+    /// Fixed point decimal
+    Decimal(Decimal),
+    /// Calendar date without timezone or time
+    Data(NaiveDate),
+    /// Time of day without date or timezone.
+    ///
+    /// Time values are stored with microsecond precision.
+    Time(NaiveTime),
+    /// Timestamp without timezone
+    ///
+    /// Timestamp values are stored with microsecond precision.
+    ///
+    /// Timestamps without time zone represent a date and time of day regardless of zone:
+    /// the time value is independent of zone adjustments (`2017-11-16 17:10:34` is always retrieved as `2017-11-16 17:10:34`).
+    /// Timestamp values are stored as a long that encodes microseconds from the unix epoch.
+    Timestamp(NaiveDateTime),
+    /// Timestamp with timezone
+    ///
+    /// Timestampz values are stored with microsecond precision.
+    ///
+    /// Timestamps with time zone represent a point in time:
+    /// values are stored as UTC and do not retain a source time zone
+    /// (`2017-11-16 17:10:34 PST` is stored/retrieved as `2017-11-17 01:10:34 UTC` and these values are considered identical).
+    Timestampz(DateTime<Utc>),
+    /// Arbitrary-length character sequences, Encoded with UTF-8
+    ///
+    /// Character strings must be stored as UTF-8 encoded byte arrays.
+    String(String),
+    /// Universally Unique Identifiers, Should use 16-byte fixed
+    Uuid(Uuid),
+    /// Fixed-length byte array of length.
+    Fixed(Vec<u8>),
+    /// Arbitrary-length byte array.
+    Binary(Vec<u8>),
 }
 
 /// A struct is a tuple of typed values.
