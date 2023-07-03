@@ -165,6 +165,8 @@ pub struct Struct {
 ///
 /// struct value carries the value of a struct type, could be used as
 /// default value.
+///
+/// struct value stores as a map from field id to field value.
 #[derive(Debug, PartialEq, Clone)]
 pub struct StructValue(HashMap<i32, AnyValue>);
 
