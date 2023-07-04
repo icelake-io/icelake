@@ -754,11 +754,11 @@ pub enum DataContentType {
 /// Format of this data.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum DataFileFormat {
-    /// Avro file format: https://avro.apache.org/
+    /// Avro file format: <https://avro.apache.org/>
     Avro,
-    /// Orc file format: https://orc.apache.org/
+    /// Orc file format: <https://orc.apache.org/>
     Orc,
-    /// Parquet file format: https://parquet.apache.org/
+    /// Parquet file format: <https://parquet.apache.org/>
     Parquet,
 }
 
