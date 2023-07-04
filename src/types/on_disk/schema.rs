@@ -70,6 +70,45 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_schema_struct_with_default() {
+        let schema = r#"
+{
+	"type" : "struct",
+	"schema-id" : 0,
+   	"fields" : [ {
+  		"id" : 1,
+		"name" : "VendorID",
+  		"required" : false,
+ 		"type" : "long",
+        "initial-default": 123,
+        "write-default": 456
+ 	} ]
+}
+        "#;
+
+        let schema = parse_schema(schema.as_bytes()).unwrap();
+
+        assert_eq!(schema.schema_id, 0);
+        assert_eq!(schema.identifier_field_ids, None);
+        assert_eq!(schema.fields.len(), 1);
+        assert_eq!(schema.fields[0].id, 1);
+        assert_eq!(schema.fields[0].name, "VendorID");
+        assert!(!schema.fields[0].required);
+        assert_eq!(
+            schema.fields[0].field_type,
+            types::Any::Primitive(types::Primitive::Long)
+        );
+        assert_eq!(
+            schema.fields[0].initial_default,
+            Some(types::AnyValue::Primitive(types::PrimitiveValue::Long(123)))
+        );
+        assert_eq!(
+            schema.fields[0].write_default,
+            Some(types::AnyValue::Primitive(types::PrimitiveValue::Long(456)))
+        );
+    }
+
+    #[test]
     fn test_parse_schema_list() {
         let schema = r#"
 {
