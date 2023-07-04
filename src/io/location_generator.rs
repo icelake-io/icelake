@@ -85,7 +85,7 @@ impl DataFileLocationGenerator {
     /// # TODO
     ///
     /// - Only support to generate file name for unpartitioned write.
-    /// - May need a way(e.g LocationProvider) to generate custom file name in future. It's useful in some case: https://github.com/apache/iceberg/issues/1911.
+    /// - May need a way(e.g LocationProvider) to generate custom file name in future. It's useful in some case: <https://github.com/apache/iceberg/issues/1911>.
     pub fn generate_name(&self) -> String {
         let suffix = if let Some(suffix) = &self.suffix {
             format!("-{}", suffix)
