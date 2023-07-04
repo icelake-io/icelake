@@ -315,14 +315,18 @@ mod tests {
                             name: "id".to_string(),
                             required: false,
                             field_type: types::Any::Primitive(types::Primitive::Long),
-                            comment: None
+                            comment: None,
+                            initial_default: None,
+                            write_default: None,
                         },
                         types::Field {
                             id: 2,
                             name: "data".to_string(),
                             required: false,
                             field_type: types::Any::Primitive(types::Primitive::String),
-                            comment: None
+                            comment: None,
+                            initial_default: None,
+                            write_default: None,
                         }
                     ]
                 },

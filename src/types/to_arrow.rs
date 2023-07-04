@@ -146,6 +146,8 @@ mod tests {
                     id: 0,
                     required: true,
                     comment: None,
+                    initial_default: None,
+                    write_default: None,
                 },
                 types::Field {
                     name: "data".to_string(),
@@ -153,6 +155,8 @@ mod tests {
                     id: 1,
                     required: false,
                     comment: None,
+                    initial_default: None,
+                    write_default: None,
                 },
             ],
             schema_id: 0,
