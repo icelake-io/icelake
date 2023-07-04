@@ -114,6 +114,8 @@ impl TryFrom<Types> for types::Any {
                         required: f.required,
                         field_type: f.typ.try_into()?,
                         comment: f.doc.clone(),
+                        initial_default: None,
+                        write_default: None,
                     };
 
                     fields.push(field);
@@ -186,6 +188,8 @@ impl TryFrom<Field> for types::Field {
             required: v.required,
             field_type: v.typ.try_into()?,
             comment: v.doc,
+            initial_default: None,
+            write_default: None,
         };
 
         Ok(field)

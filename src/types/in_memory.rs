@@ -15,7 +15,7 @@ use crate::ErrorKind;
 use crate::Result;
 
 /// All data types are either primitives or nested types, which are maps, lists, or structs.
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Any {
     /// A Primitive type
     Primitive(Primitive),
@@ -155,7 +155,7 @@ pub enum PrimitiveValue {
 /// - Fields may be any type.
 /// - Fields may have an optional comment or doc string.
 /// - Fields can have default values.
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Struct {
     /// Fields contained in this struct.
     pub fields: Vec<Field>,
@@ -171,7 +171,7 @@ pub struct Struct {
 pub struct StructValue(HashMap<i32, AnyValue>);
 
 /// A Field is the field of a struct.
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Field {
     /// An integer id that is unique in the table schema
     pub id: i32,
@@ -183,6 +183,12 @@ pub struct Field {
     pub field_type: Any,
     /// Fields can have any optional comment or doc string.
     pub comment: Option<String>,
+    /// `initial-default` is used to populate the field’s value for all records that were written before the field was added to the schema
+    pub initial_default: Option<AnyValue>,
+    /// `write-default` is used to populate the field’s value for any
+    /// records written after the field was added to the schema, if the
+    /// writer does not supply the field’s value
+    pub write_default: Option<AnyValue>,
 }
 
 /// A list is a collection of values with some element type.
@@ -190,7 +196,7 @@ pub struct Field {
 /// - The element field has an integer id that is unique in the table schema.
 /// - Elements can be either optional or required.
 /// - Element types may be any type.
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct List {
     /// an integer id that is unique in the table schema.
     pub element_id: i32,
@@ -212,7 +218,7 @@ pub struct ListValue(Vec<AnyValue>);
 /// - Both the key field and value field each have an integer id that is unique in the table schema.
 /// - Map keys are required and map values can be either optional or required.
 /// - Both map keys and map values may be any type, including nested types.
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Map {
     /// an integer id that is unique in the table schema
     pub key_id: i32,
@@ -243,7 +249,7 @@ pub struct MapValue {
 ///
 /// All data types are either primitives or nested types, which are maps, lists, or structs.
 /// A table schema is also a struct type.
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Schema {
     /// The unique id for this schema.
     pub schema_id: i32,
@@ -457,7 +463,7 @@ pub enum NullOrder {
 /// This includes the number of added, existing, and deleted files, and a
 /// summary of values for each field of the partition spec used to write the
 /// manifest.
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct ManifestList {
     /// field: 500
     ///
@@ -583,7 +589,7 @@ pub struct ManifestFile {
 }
 
 /// FIXME: partition_spec is not parsed.
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct ManifestMetadata {
     /// The table schema at the time the manifest
     /// was written
@@ -926,7 +932,7 @@ pub struct MetadataLog {
 /// table versions and ensures that concurrent writes are not lost.
 ///
 /// TODO: statistics is not supported.
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct TableMetadata {
     /// Currently, this can be 1 or 2 based on the spec. Implementations
     /// must throw an exception if a table’s version is higher than the
