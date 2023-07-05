@@ -21,10 +21,7 @@ pub struct DataFileWriter {
     arrow_schema: SchemaRef,
 
     rows_divisor: usize,
-    /// # TODO
-    ///
-    /// Using `target_file_size_in_bytes`. The `ParquetWriter` can't support to track file size in bytes now.
-    target_file_row_num: usize,
+    target_file_size_in_bytes: u64,
 
     /// # TODO
     ///
@@ -44,14 +41,14 @@ impl DataFileWriter {
         location_generator: DataFileLocationGenerator,
         arrow_schema: SchemaRef,
         rows_divisor: usize,
-        target_file_row_num: usize,
+        target_file_size_in_bytes: u64,
     ) -> Result<Self> {
         let mut writer = Self {
             operator,
             location_generator,
             arrow_schema,
             rows_divisor,
-            target_file_row_num,
+            target_file_size_in_bytes,
             current_writer: None,
             current_row_num: 0,
             current_location: String::new(),
@@ -85,12 +82,13 @@ impl DataFileWriter {
 
     fn should_split(&self) -> bool {
         self.current_row_num % self.rows_divisor == 0
-            && self.current_row_num >= self.target_file_row_num
+            && self.current_writer.as_ref().unwrap().get_written_size()
+                >= self.target_file_size_in_bytes
     }
 
     async fn close_current_writer(&mut self) -> Result<()> {
         let current_writer = self.current_writer.take().expect("Should not be none here");
-        let meta_data = current_writer.close().await?;
+        let (meta_data, written_size) = current_writer.close().await?;
 
         // Check if this file is empty
         if meta_data.num_rows == 0 {
@@ -101,7 +99,7 @@ impl DataFileWriter {
             return Ok(());
         }
 
-        let file = self.convert_meta_to_datafile(meta_data);
+        let file = self.convert_meta_to_datafile(meta_data, written_size);
         self.result.push(file);
         Ok(())
     }
@@ -123,7 +121,7 @@ impl DataFileWriter {
     /// # TODO
     ///
     /// This function may be refactor when we support more file format.
-    fn convert_meta_to_datafile(&self, meta_data: FileMetaData) -> DataFile {
+    fn convert_meta_to_datafile(&self, meta_data: FileMetaData, written_size: u64) -> DataFile {
         let (column_sizes, value_counts, null_value_counts, distinct_counts) = {
             // how to decide column id
             let mut per_col_size: HashMap<i32, _> = HashMap::new();
@@ -178,6 +176,7 @@ impl DataFileWriter {
             null_value_counts: Some(null_value_counts),
             distinct_counts: Some(distinct_counts),
             key_metadata: meta_data.footer_signing_key_metadata,
+            file_size_in_bytes: written_size as i64,
             /// # TODO
             ///
             /// Following fields unsupported now:
@@ -189,7 +188,6 @@ impl DataFileWriter {
                 .iter()
                 .filter_map(|group| group.file_offset)
                 .collect(),
-            file_size_in_bytes: 0,
             nan_value_counts: None,
             lower_bounds: None,
             upper_bounds: None,
@@ -239,15 +237,16 @@ mod test {
             DataFileLocationGenerator::try_new(metadata, 0, 0, None)?
         };
 
-        let col = Arc::new(Int64Array::from_iter_values(vec![1; 4])) as ArrayRef;
-        let to_write = RecordBatch::try_from_iter([("col", col)]).unwrap();
+        let data = (0..1024 * 1024).collect::<Vec<_>>();
+        let col = Arc::new(Int64Array::from_iter_values(data)) as ArrayRef;
+        let to_write = RecordBatch::try_from_iter([("col", col.clone())]).unwrap();
 
         let mut writer = data_file_writer::DataFileWriter::try_new(
             op.clone(),
             location_generator,
             to_write.schema(),
-            4,
-            4,
+            1024,
+            1024 * 1024,
         )
         .await?;
 
@@ -256,19 +255,21 @@ mod test {
         writer.write(to_write.clone()).await?;
         let data_files = writer.close().await?;
 
-        assert_eq!(data_files.len(), 3);
+        let mut row_num = 0;
         for data_file in data_files {
             let res = op
                 .read(data_file.file_path.strip_prefix("/tmp/table").unwrap())
                 .await?;
             let res = Bytes::from(res);
-            let mut reader = ParquetRecordBatchReaderBuilder::try_new(res)
+            let reader = ParquetRecordBatchReaderBuilder::try_new(res)
                 .unwrap()
                 .build()
                 .unwrap();
-            let res = reader.next().unwrap().unwrap();
-            assert_eq!(res, to_write);
+            reader.into_iter().for_each(|batch| {
+                row_num += batch.unwrap().num_rows();
+            });
         }
+        assert_eq!(row_num, 1024 * 1024 * 3);
 
         Ok(())
     }
