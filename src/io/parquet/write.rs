@@ -1,3 +1,6 @@
+use std::sync::atomic::AtomicU64;
+use std::sync::Arc;
+
 use arrow_array::RecordBatch;
 use arrow_schema::SchemaRef;
 use opendal::Writer;
@@ -6,6 +9,8 @@ use parquet::file::properties::WriterProperties;
 use parquet::format::FileMetaData;
 
 use crate::Result;
+
+use super::track_writer::TrackWriter;
 
 /// ParquetWriterBuilder is used to builder a [`ParquetWriter`]
 pub struct ParquetWriterBuilder {
@@ -52,14 +57,16 @@ impl ParquetWriterBuilder {
 
     /// Consume the current builder to build a new writer.
     pub fn build(self) -> Result<ParquetWriter> {
-        let writer = AsyncArrowWriter::try_new(
-            self.writer,
-            self.arrow_schema,
-            self.buffer_size,
-            self.props,
-        )?;
+        let writer = TrackWriter::new(self.writer);
+        let written_size = writer.get_wrriten_size();
 
-        Ok(ParquetWriter { writer })
+        let writer =
+            AsyncArrowWriter::try_new(writer, self.arrow_schema, self.buffer_size, self.props)?;
+
+        Ok(ParquetWriter {
+            writer,
+            written_size,
+        })
     }
 }
 
@@ -67,7 +74,8 @@ impl ParquetWriterBuilder {
 ///
 /// Initiate a new writer with `ParquetWriterBuilder::new()`.
 pub struct ParquetWriter {
-    writer: AsyncArrowWriter<Writer>,
+    writer: AsyncArrowWriter<TrackWriter>,
+    written_size: Arc<AtomicU64>,
 }
 
 impl ParquetWriter {
@@ -84,8 +92,17 @@ impl ParquetWriter {
     /// # Note
     ///
     /// This function must be called before complete the write process.
-    pub async fn close(self) -> Result<FileMetaData> {
-        Ok(self.writer.close().await?)
+    pub async fn close(self) -> Result<(FileMetaData, u64)> {
+        let written_size = self.get_written_size();
+        Ok((self.writer.close().await?, written_size))
+    }
+
+    /// Return the written size.
+    ///
+    /// # Note
+    /// The size is incorrect until we call close (data could be still in buffer). It is only used as a suggestion.
+    pub fn get_written_size(&self) -> u64 {
+        self.written_size.load(std::sync::atomic::Ordering::Relaxed)
     }
 }
 
