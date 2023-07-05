@@ -3,6 +3,7 @@ use arrow_schema::SchemaRef;
 use opendal::Writer;
 use parquet::arrow::AsyncArrowWriter;
 use parquet::file::properties::WriterProperties;
+use parquet::format::FileMetaData;
 
 use crate::Result;
 
@@ -83,13 +84,8 @@ impl ParquetWriter {
     /// # Note
     ///
     /// This function must be called before complete the write process.
-    ///
-    /// # TODO
-    ///
-    /// Maybe we can return the `FileMetaData` to the user after close.
-    pub async fn close(self) -> Result<()> {
-        let _ = self.writer.close().await?;
-        Ok(())
+    pub async fn close(self) -> Result<FileMetaData> {
+        Ok(self.writer.close().await?)
     }
 }
 
