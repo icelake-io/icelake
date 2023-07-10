@@ -78,6 +78,13 @@ impl Table {
         Ok(table)
     }
 
+    /// Open an iceberg table by operator
+    pub async fn open_with_op(op: Operator) -> Result<Table> {
+        let mut table = Table::new(op);
+        table.load().await?;
+        Ok(table)
+    }
+
     /// Fetch current table metadata.
     pub fn current_table_metadata(&self) -> Result<&types::TableMetadata> {
         if self.current_version == 0 {
