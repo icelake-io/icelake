@@ -6,24 +6,24 @@ use crate::types;
 use crate::Error;
 use crate::ErrorKind;
 use crate::Result;
+use crate::types::ManifestList;
 
 /// Parse manifest list from json bytes.
 ///
 /// QUESTION: Will we have more than one manifest list in a single file?
-pub fn parse_manifest_list(bs: &[u8]) -> Result<types::ManifestList> {
-    let mut reader = Reader::new(bs)?;
-
+pub fn parse_manifest_list(bs: &[u8]) -> Result<ManifestList> {
     // Parse manifest entries
-    let value = reader
-        .next()
-        .ok_or_else(|| Error::new(ErrorKind::IcebergDataInvalid, "manifest list is empty"))??;
+    let entries = Reader::new(bs)?
+        .map(|v| v.and_then(|value| from_value::<ManifestListEntry>(&value)).map_err(|e| Error::new(ErrorKind::IcebergDataInvalid, "Failed to parse manifest list entry").set_source(e)))
+        .map(|v| v.and_then(types::ManifestListEntry::try_from))
+        .collect::<Result<Vec<_>>>()?;
 
-    from_value::<ManifestList>(&value)?.try_into()
+    Ok(ManifestList { entries })
 }
 
 #[derive(Deserialize)]
 #[cfg_attr(test, derive(Debug, PartialEq, Eq))]
-struct ManifestList {
+struct ManifestListEntry {
     manifest_path: String,
     manifest_length: i64,
     partition_spec_id: i32,
@@ -51,10 +51,10 @@ struct ManifestList {
     key_metadata: Option<Vec<u8>>,
 }
 
-impl TryFrom<ManifestList> for types::ManifestList {
+impl TryFrom<ManifestListEntry> for types::ManifestListEntry {
     type Error = Error;
 
-    fn try_from(v: ManifestList) -> Result<Self> {
+    fn try_from(v: ManifestListEntry) -> Result<Self> {
         let content = match v.content {
             0 => types::ManifestContentType::Data,
             1 => types::ManifestContentType::Deletes,
@@ -62,7 +62,7 @@ impl TryFrom<ManifestList> for types::ManifestList {
                 return Err(Error::new(
                     ErrorKind::IcebergDataInvalid,
                     format!("content type {} is invalid", v.content),
-                ))
+                ));
             }
         };
 
@@ -77,7 +77,7 @@ impl TryFrom<ManifestList> for types::ManifestList {
             None => None,
         };
 
-        Ok(types::ManifestList {
+        Ok(types::ManifestListEntry {
             manifest_path: v.manifest_path,
             manifest_length: v.manifest_length,
             partition_spec_id: v.partition_spec_id,
@@ -147,13 +147,13 @@ mod tests {
         let mut files = Vec::new();
 
         for value in reader {
-            files.push(from_value::<ManifestList>(&value?)?);
+            files.push(from_value::<ManifestListEntry>(&value?)?);
         }
 
         assert_eq!(files.len(), 1);
         assert_eq!(
             files[0],
-            ManifestList {
+            ManifestListEntry {
                 manifest_path: "/opt/bitnami/spark/warehouse/db/table/metadata/10d28031-9739-484c-92db-cdf2975cead4-m0.avro".to_string(),
                 manifest_length: 5806,
                 partition_spec_id: 0,
@@ -168,7 +168,7 @@ mod tests {
                 existing_rows_count: 0,
                 deleted_rows_count: 0,
                 partitions: Some(vec![]),
-                key_metadata: None
+                key_metadata: None,
             }
         );
 
@@ -188,9 +188,11 @@ mod tests {
 
         let manifest_list = parse_manifest_list(&bs)?;
 
+        assert_eq!(1, manifest_list.entries.len());
+
         assert_eq!(
-           manifest_list,
-            types::ManifestList {
+            manifest_list.entries[0],
+            types::ManifestListEntry {
                 manifest_path: "/opt/bitnami/spark/warehouse/db/table/metadata/10d28031-9739-484c-92db-cdf2975cead4-m0.avro".to_string(),
                 manifest_length: 5806,
                 partition_spec_id: 0,
@@ -205,7 +207,7 @@ mod tests {
                 existing_rows_count: 0,
                 deleted_rows_count: 0,
                 partitions: Some(vec![]),
-                key_metadata: None
+                key_metadata: None,
             }
         );
 

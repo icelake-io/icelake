@@ -16,7 +16,7 @@ use crate::Result;
 /// Parse manifest file from avro bytes.
 pub fn parse_manifest_file(
     bs: &[u8],
-) -> Result<(types::ManifestMetadata, Vec<types::ManifestFile>)> {
+) -> Result<types::ManifestFile> {
     let reader = Reader::new(bs)?;
 
     // Parse manifest metadata
@@ -38,7 +38,7 @@ pub fn parse_manifest_file(
                             ErrorKind::IcebergDataInvalid,
                             format!("schema-id {:?} is invalid", v),
                         )
-                        .set_source(err)
+                            .set_source(err)
                     })?
                 }
             }
@@ -53,7 +53,7 @@ pub fn parse_manifest_file(
                             ErrorKind::IcebergDataInvalid,
                             format!("partition-spec-id {:?} is invalid", v),
                         )
-                        .set_source(err)
+                            .set_source(err)
                     })?
                 }
             }
@@ -68,7 +68,7 @@ pub fn parse_manifest_file(
                             ErrorKind::IcebergDataInvalid,
                             format!("format-version {:?} is invalid", v),
                         )
-                        .set_source(err)
+                            .set_source(err)
                     })?
                 }
             }
@@ -83,7 +83,7 @@ pub fn parse_manifest_file(
                             ErrorKind::IcebergDataInvalid,
                             format!("partition-spec-id {:?} is invalid", v),
                         )
-                        .set_source(err)
+                            .set_source(err)
                     })?
                 }
             };
@@ -95,25 +95,25 @@ pub fn parse_manifest_file(
                     return Err(Error::new(
                         ErrorKind::IcebergDataInvalid,
                         format!("content type {} is invalid", c),
-                    ))
+                    ));
                 }
             }
         },
     };
 
     // Parse manifest entries
-    let mut entries = Vec::new();
+    let mut entries = Vec::<types::ManifestEntry>::new();
     for value in reader {
         let v = value?;
-        entries.push(from_value::<ManifestFile>(&v)?.try_into()?);
+        entries.push(from_value::<ManifestEntry>(&v)?.try_into()?);
     }
 
-    Ok((metadata, entries))
+    Ok(types::ManifestFile { metadata, entries })
 }
 
 #[derive(Deserialize)]
 #[cfg_attr(test, derive(Debug, PartialEq, Eq))]
-struct ManifestFile {
+struct ManifestEntry {
     status: i32,
     snapshot_id: Option<i64>,
     sequence_number: Option<i64>,
@@ -121,11 +121,11 @@ struct ManifestFile {
     data_file: DataFile,
 }
 
-impl TryFrom<ManifestFile> for types::ManifestFile {
+impl TryFrom<ManifestEntry> for types::ManifestEntry {
     type Error = Error;
 
-    fn try_from(v: ManifestFile) -> Result<Self> {
-        Ok(types::ManifestFile {
+    fn try_from(v: ManifestEntry) -> Result<Self> {
+        Ok(types::ManifestEntry {
             status: parse_manifest_status(v.status)?,
             snapshot_id: v.snapshot_id,
             sequence_number: v.sequence_number,
@@ -253,6 +253,7 @@ mod tests {
     use anyhow::Result;
     use apache_avro::from_value;
     use apache_avro::Reader;
+    use crate::types::ManifestFile;
 
     use super::*;
 
@@ -283,7 +284,7 @@ mod tests {
         let mut entries = Vec::new();
         for value in reader {
             let v = value?;
-            entries.push(from_value::<ManifestFile>(&v)?);
+            entries.push(from_value::<ManifestEntry>(&v)?);
         }
 
         assert_eq!(entries.len(), 3);
@@ -301,10 +302,10 @@ mod tests {
 
         let bs = fs::read(path).expect("read_file must succeed");
 
-        let (meta, manifests) = parse_manifest_file(&bs)?;
+        let ManifestFile { metadata,  entries } = parse_manifest_file(&bs)?;
 
         assert_eq!(
-            meta,
+            metadata,
             types::ManifestMetadata {
                 schema: types::Schema {
                     schema_id: 0,
@@ -327,20 +328,20 @@ mod tests {
                             comment: None,
                             initial_default: None,
                             write_default: None,
-                        }
-                    ]
+                        },
+                    ],
                 },
                 schema_id: 0,
                 partition_spec_id: 0,
                 format_version: 1,
-                content: types::ManifestContentType::Data
+                content: types::ManifestContentType::Data,
             }
         );
 
-        assert_eq!(manifests.len(), 3);
-        assert_eq!(manifests[0].data_file.file_path, "/opt/bitnami/spark/warehouse/db/table/data/00000-0-b8982382-f016-467a-84e4-5e6bbe0ff19a-00001.parquet");
-        assert_eq!(manifests[1].data_file.file_path, "/opt/bitnami/spark/warehouse/db/table/data/00001-1-b8982382-f016-467a-84e4-5e6bbe0ff19a-00001.parquet");
-        assert_eq!(manifests[2].data_file.file_path, "/opt/bitnami/spark/warehouse/db/table/data/00002-2-b8982382-f016-467a-84e4-5e6bbe0ff19a-00001.parquet");
+        assert_eq!(entries.len(), 3);
+        assert_eq!(entries[0].data_file.file_path, "/opt/bitnami/spark/warehouse/db/table/data/00000-0-b8982382-f016-467a-84e4-5e6bbe0ff19a-00001.parquet");
+        assert_eq!(entries[1].data_file.file_path, "/opt/bitnami/spark/warehouse/db/table/data/00001-1-b8982382-f016-467a-84e4-5e6bbe0ff19a-00001.parquet");
+        assert_eq!(entries[2].data_file.file_path, "/opt/bitnami/spark/warehouse/db/table/data/00002-2-b8982382-f016-467a-84e4-5e6bbe0ff19a-00001.parquet");
 
         Ok(())
     }
