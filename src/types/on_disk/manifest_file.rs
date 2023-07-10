@@ -14,9 +14,7 @@ use crate::ErrorKind;
 use crate::Result;
 
 /// Parse manifest file from avro bytes.
-pub fn parse_manifest_file(
-    bs: &[u8],
-) -> Result<types::ManifestFile> {
+pub fn parse_manifest_file(bs: &[u8]) -> Result<types::ManifestFile> {
     let reader = Reader::new(bs)?;
 
     // Parse manifest metadata
@@ -38,7 +36,7 @@ pub fn parse_manifest_file(
                             ErrorKind::IcebergDataInvalid,
                             format!("schema-id {:?} is invalid", v),
                         )
-                            .set_source(err)
+                        .set_source(err)
                     })?
                 }
             }
@@ -53,7 +51,7 @@ pub fn parse_manifest_file(
                             ErrorKind::IcebergDataInvalid,
                             format!("partition-spec-id {:?} is invalid", v),
                         )
-                            .set_source(err)
+                        .set_source(err)
                     })?
                 }
             }
@@ -68,7 +66,7 @@ pub fn parse_manifest_file(
                             ErrorKind::IcebergDataInvalid,
                             format!("format-version {:?} is invalid", v),
                         )
-                            .set_source(err)
+                        .set_source(err)
                     })?
                 }
             }
@@ -83,7 +81,7 @@ pub fn parse_manifest_file(
                             ErrorKind::IcebergDataInvalid,
                             format!("partition-spec-id {:?} is invalid", v),
                         )
-                            .set_source(err)
+                        .set_source(err)
                     })?
                 }
             };
@@ -250,10 +248,10 @@ mod tests {
     use std::env;
     use std::fs;
 
+    use crate::types::ManifestFile;
     use anyhow::Result;
     use apache_avro::from_value;
     use apache_avro::Reader;
-    use crate::types::ManifestFile;
 
     use super::*;
 
@@ -302,7 +300,7 @@ mod tests {
 
         let bs = fs::read(path).expect("read_file must succeed");
 
-        let ManifestFile { metadata,  entries } = parse_manifest_file(&bs)?;
+        let ManifestFile { metadata, entries } = parse_manifest_file(&bs)?;
 
         assert_eq!(
             metadata,

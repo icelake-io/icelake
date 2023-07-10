@@ -214,7 +214,7 @@ impl Table {
             self.task_id,
             None,
         )
-            .await?;
+        .await?;
         self.task_id += 1;
         Ok(task_writer)
     }

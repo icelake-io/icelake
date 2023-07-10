@@ -3,10 +3,10 @@ use apache_avro::Reader;
 use serde::Deserialize;
 
 use crate::types;
+use crate::types::ManifestList;
 use crate::Error;
 use crate::ErrorKind;
 use crate::Result;
-use crate::types::ManifestList;
 
 /// Parse manifest list from json bytes.
 ///
@@ -14,7 +14,16 @@ use crate::types::ManifestList;
 pub fn parse_manifest_list(bs: &[u8]) -> Result<ManifestList> {
     // Parse manifest entries
     let entries = Reader::new(bs)?
-        .map(|v| v.and_then(|value| from_value::<ManifestListEntry>(&value)).map_err(|e| Error::new(ErrorKind::IcebergDataInvalid, "Failed to parse manifest list entry").set_source(e)))
+        .map(|v| {
+            v.and_then(|value| from_value::<ManifestListEntry>(&value))
+                .map_err(|e| {
+                    Error::new(
+                        ErrorKind::IcebergDataInvalid,
+                        "Failed to parse manifest list entry",
+                    )
+                    .set_source(e)
+                })
+        })
         .map(|v| v.and_then(types::ManifestListEntry::try_from))
         .collect::<Result<Vec<_>>>()?;
 
