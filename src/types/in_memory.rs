@@ -450,6 +450,13 @@ pub enum NullOrder {
 /// manifest.
 #[derive(Debug, PartialEq, Clone)]
 pub struct ManifestList {
+    /// Entries in a manifest list.
+    pub entries: Vec<ManifestListEntry>,
+}
+
+/// Entry in a manifest list.
+#[derive(Debug, PartialEq, Clone)]
+pub struct ManifestListEntry {
     /// field: 500
     ///
     /// Location of the manifest file
@@ -547,7 +554,7 @@ pub struct FieldSummary {
 /// files, along with each file’s partition data tuple, metrics, and tracking
 /// information.
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct ManifestFile {
+pub struct ManifestEntry {
     /// field: 0
     ///
     /// Used to track additions and deletions.
@@ -593,6 +600,15 @@ pub struct ManifestMetadata {
     pub format_version: i32,
     /// Type of content files tracked by the manifest: “data” or “deletes”
     pub content: ManifestContentType,
+}
+
+/// A manifest contains metadata and a list of entries.
+#[derive(Debug, PartialEq, Clone)]
+pub struct ManifestFile {
+    /// Metadata of a manifest file.
+    pub metadata: ManifestMetadata,
+    /// Entries in manifest file.
+    pub entries: Vec<ManifestEntry>,
 }
 
 /// Type of content files tracked by the manifest

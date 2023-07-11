@@ -9,6 +9,7 @@ use opendal::Operator;
 
 use crate::io::task_writer::TaskWriter;
 use crate::types;
+use crate::types::DataFile;
 
 /// Table is the main entry point for the IceLake.
 pub struct Table {
@@ -126,11 +127,15 @@ impl Table {
         let manifest_list_content = self.op.read(&manifest_list_path).await?;
         let manifest_list = types::parse_manifest_list(&manifest_list_content)?;
 
-        let manifest_path = self.rel_path(&manifest_list.manifest_path)?;
-        let manifest_content = self.op.read(&manifest_path).await?;
-        let (_, manifest_files) = types::parse_manifest_file(&manifest_content)?;
+        let mut data_files: Vec<DataFile> = Vec::new();
+        for manifest_list_entry in manifest_list.entries {
+            let manifest_path = self.rel_path(&manifest_list_entry.manifest_path)?;
+            let manifest_content = self.op.read(&manifest_path).await?;
+            let manifest = types::parse_manifest_file(&manifest_content)?;
+            data_files.extend(manifest.entries.into_iter().map(|v| v.data_file));
+        }
 
-        Ok(manifest_files.into_iter().map(|v| v.data_file).collect())
+        Ok(data_files)
     }
 
     /// Get the relpath related to the base of table location.
