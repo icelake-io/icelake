@@ -35,11 +35,18 @@ impl TaskWriter {
         task_id: usize,
         suffix: Option<String>,
     ) -> Result<Self> {
-        if !table_metadata.partition_specs.is_empty() {
-            return Err(crate::error::Error::new(
-                crate::ErrorKind::IcebergFeatureUnsupported,
-                "Partitioned write is not supported yet",
-            ));
+        // # TODO
+        // Support partitioned write.
+        if let Some(partition_spec) = table_metadata
+            .partition_specs
+            .get(table_metadata.default_spec_id as usize)
+        {
+            if !partition_spec.fields.is_empty() {
+                return Err(crate::error::Error::new(
+                    crate::ErrorKind::IcebergFeatureUnsupported,
+                    "Partitioned write is not supported yet",
+                ));
+            }
         }
 
         let schema: ArrowSchema = table_metadata
