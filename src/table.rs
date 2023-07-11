@@ -41,7 +41,7 @@ impl Table {
     }
 
     /// Load metadata and manifest from storage.
-    pub async fn load(&mut self) -> Result<()> {
+    async fn load(&mut self) -> Result<()> {
         let path = if self.is_version_hint_exist().await? {
             let version_hint = self.read_version_hint().await?;
             format!("metadata/v{}.metadata.json", version_hint)
@@ -56,6 +56,11 @@ impl Table {
 
         let metadata = self.read_table_metadata(&path).await?;
         // TODO: check if the metadata is out of date.
+        if metadata.last_updated_ms == 0 {
+            return Err(anyhow!(
+                "Timestamp when the table was last updated is invalid"
+            ));
+        }
         self.current_version = metadata.last_updated_ms;
         self.current_location = Some(metadata.location.clone());
         self.table_metadata
@@ -88,9 +93,10 @@ impl Table {
 
     /// Fetch current table metadata.
     pub fn current_table_metadata(&self) -> Result<&types::TableMetadata> {
-        if self.current_version == 0 {
-            return Err(anyhow!("table metadata not loaded yet"));
-        }
+        assert!(
+            self.current_version != 0,
+            "table current version must be valid"
+        );
 
         self.table_metadata
             .get(&self.current_version)
@@ -103,9 +109,10 @@ impl Table {
     ///
     /// Currently, we just return all data files of the current version.
     pub async fn current_data_files(&self) -> Result<Vec<types::DataFile>> {
-        if self.current_version == 0 {
-            return Err(anyhow!("table metadata not loaded yet"));
-        }
+        assert!(
+            self.current_version != 0,
+            "table current version must be valid"
+        );
 
         let meta = self
             .table_metadata
