@@ -1,0 +1,109 @@
+{
+  "format-version" : 1,
+  "table-uuid" : "1f2965ff-eb85-4901-8a33-a1102bdcaf31",
+  "location" : "s3://testbucket/prod/db/sample",
+  "last-updated-ms" : 1689073582232,
+  "last-column-id" : 3,
+  "schema" : {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 2,
+      "name" : "data",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 3,
+      "name" : "category",
+      "required" : false,
+      "type" : "string"
+    } ]
+  },
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 2,
+      "name" : "data",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 3,
+      "name" : "category",
+      "required" : false,
+      "type" : "string"
+    } ]
+  } ],
+  "partition-spec" : [ {
+    "name" : "category",
+    "transform" : "identity",
+    "source-id" : 3,
+    "field-id" : 1000
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ {
+      "name" : "category",
+      "transform" : "identity",
+      "source-id" : 3,
+      "field-id" : 1000
+    } ]
+  } ],
+  "last-partition-id" : 1000,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "owner" : "root"
+  },
+  "current-snapshot-id" : 8205833995881562618,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 8205833995881562618,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "snapshot-id" : 8205833995881562618,
+    "timestamp-ms" : 1689073582232,
+    "summary" : {
+      "operation" : "append",
+      "spark.app.id" : "local-1689073133395",
+      "added-data-files" : "1",
+      "added-records" : "1",
+      "added-files-size" : "874",
+      "changed-partition-count" : "1",
+      "total-records" : "1",
+      "total-files-size" : "874",
+      "total-data-files" : "1",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "s3://testbucket/prod/db/sample/metadata/snap-8205833995881562618-1-b60343c9-e792-4e41-993e-0f3cd2aab484.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1689073582232,
+    "snapshot-id" : 8205833995881562618
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1689073162940,
+    "metadata-file" : "s3://testbucket/prod/db/sample/metadata/00000-8e744276-bd72-4cb1-a7c8-c5bb250c5fa4.metadata.json"
+  } ]
+}
