@@ -165,11 +165,13 @@ impl DataFileWriter {
                 per_col_distinct_val_num,
             )
         };
+
         DataFile {
             content: crate::types::DataContentType::Data,
             file_path: format!("{}/{}", self.operator.info().root(), self.current_location),
             file_format: crate::types::DataFileFormat::Parquet,
-            partition: (),
+            // TODO: we should store partion correctly.
+            partition: None,
             record_count: meta_data.num_rows,
             column_sizes: Some(column_sizes),
             value_counts: Some(value_counts),

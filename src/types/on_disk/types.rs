@@ -23,9 +23,10 @@ use crate::Result;
 
 #[derive(Deserialize, Default)]
 #[serde(rename_all = "kebab-case", default)]
+#[cfg_attr(test, derive(Debug, PartialEq))]
 pub struct Types {
     #[serde(rename = "type")]
-    typ: String,
+    pub typ: String,
 
     /// Only available when typ == "struct"
     fields: Vec<Field>,
@@ -178,6 +179,7 @@ impl TryFrom<Types> for types::Any {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "kebab-case")]
+#[cfg_attr(test, derive(Debug, PartialEq))]
 pub struct Field {
     id: i32,
     name: String,
