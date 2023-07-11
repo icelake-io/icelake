@@ -8,7 +8,6 @@ use serde_with::serde_as;
 use serde_with::Bytes;
 
 use super::parse_schema;
-use super::types::Types;
 use crate::types;
 use crate::Error;
 use crate::ErrorKind;
@@ -111,7 +110,7 @@ pub fn parse_manifest_file(bs: &[u8]) -> Result<types::ManifestFile> {
 }
 
 #[derive(Deserialize)]
-#[cfg_attr(test, derive(Debug, PartialEq))]
+#[cfg_attr(test, derive(Debug, PartialEq, Eq))]
 struct ManifestEntry {
     status: i32,
     snapshot_id: Option<i64>,
@@ -136,13 +135,12 @@ impl TryFrom<ManifestEntry> for types::ManifestEntry {
 
 #[serde_as]
 #[derive(Deserialize)]
-#[cfg_attr(test, derive(Debug, PartialEq))]
+#[cfg_attr(test, derive(Debug, PartialEq, Eq))]
 struct DataFile {
     #[serde(default)]
     content: i32,
     file_path: String,
     file_format: String,
-    partition: Types,
     record_count: i64,
     file_size_in_bytes: i64,
     column_sizes: Option<Vec<I64Entry>>,
@@ -167,22 +165,7 @@ impl TryFrom<DataFile> for types::DataFile {
             content: parse_data_content_type(v.content)?,
             file_path: v.file_path,
             file_format: parse_data_file_format(&v.file_format)?,
-            partition: {
-                if v.partition.typ.is_empty() {
-                    None
-                } else {
-                    let p = v.partition.try_into()?;
-                    match p {
-                        types::Any::Struct(p) => Some(p),
-                        _ => {
-                            return Err(Error::new(
-                                ErrorKind::IcebergDataInvalid,
-                                format!("partition {:?} is invalid", p),
-                            ));
-                        }
-                    }
-                }
-            },
+            partition: (),
             record_count: v.record_count,
             file_size_in_bytes: v.file_size_in_bytes,
             column_sizes: v.column_sizes.map(parse_i64_entry),

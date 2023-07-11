@@ -553,7 +553,7 @@ pub struct FieldSummary {
 /// A manifest is an immutable Avro file that lists data files or delete
 /// files, along with each file’s partition data tuple, metrics, and tracking
 /// information.
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ManifestEntry {
     /// field: 0
     ///
@@ -621,7 +621,7 @@ pub enum ManifestContentType {
 }
 
 /// Used to track additions and deletions in ManifestEntry.
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum ManifestStatus {
     /// Value: 0
     Existing,
@@ -634,7 +634,7 @@ pub enum ManifestStatus {
 }
 
 /// Data file carries data file path, partition tuple, metrics, …
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct DataFile {
     /// field id: 134
     ///
@@ -653,7 +653,9 @@ pub struct DataFile {
     ///
     /// Partition data tuple, schema based on the partition spec output using
     /// partition field ids for the struct field ids
-    pub partition: Option<Struct>,
+    ///
+    /// TODO: we need to support partition in data file.
+    pub partition: (),
     /// field id: 103
     ///
     /// Number of records in this file
