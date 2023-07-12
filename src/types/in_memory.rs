@@ -10,9 +10,11 @@ use chrono::Utc;
 use rust_decimal::Decimal;
 use uuid::Uuid;
 
-use crate::Error;
+use crate::{Error};
 use crate::ErrorKind;
 use crate::Result;
+
+use int_enum::IntEnum;
 
 /// All data types are either primitives or nested types, which are maps, lists, or structs.
 #[derive(Debug, PartialEq, Clone)]
@@ -597,7 +599,7 @@ pub struct ManifestMetadata {
     /// ID of the partition spec used to write the manifest as a string
     pub partition_spec_id: i32,
     /// Table format version number of the manifest as a string
-    pub format_version: i32,
+    pub format_version: Option<TableFormatVersion>,
     /// Type of content files tracked by the manifest: “data” or “deletes”
     pub content: ManifestContentType,
 }
@@ -801,7 +803,7 @@ impl ToString for DataFileFormat {
             DataFileFormat::Orc => "orc",
             DataFileFormat::Parquet => "parquet",
         }
-        .to_string()
+            .to_string()
     }
 }
 
@@ -1021,10 +1023,23 @@ pub struct TableMetadata {
 }
 
 /// Table format version number.
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[repr(u8)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, IntEnum)]
 pub enum TableFormatVersion {
     /// The V1 Table Format Version.
-    V1,
+    V1 = 1,
     /// The V2 Table Format Version.
-    V2,
+    V2 = 2,
+}
+
+impl TryFrom<u8> for TableFormatVersion {
+    type Error = Error;
+
+    fn try_from(value: u8) -> Result<TableFormatVersion> {
+        TableFormatVersion::from_int(value).map_err(|e|
+            Error::new(ErrorKind::IcebergDataInvalid,
+                       format!("Unknown table format: {value}"))
+                .set_source(e)
+        )
+    }
 }

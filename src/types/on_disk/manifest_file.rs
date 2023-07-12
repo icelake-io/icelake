@@ -12,6 +12,7 @@ use crate::types;
 use crate::Error;
 use crate::ErrorKind;
 use crate::Result;
+use crate::types::TableFormatVersion;
 
 /// Parse manifest file from avro bytes.
 pub fn parse_manifest_file(bs: &[u8]) -> Result<types::ManifestFile> {
@@ -36,7 +37,7 @@ pub fn parse_manifest_file(bs: &[u8]) -> Result<types::ManifestFile> {
                             ErrorKind::IcebergDataInvalid,
                             format!("schema-id {:?} is invalid", v),
                         )
-                        .set_source(err)
+                            .set_source(err)
                     })?
                 }
             }
@@ -51,25 +52,23 @@ pub fn parse_manifest_file(bs: &[u8]) -> Result<types::ManifestFile> {
                             ErrorKind::IcebergDataInvalid,
                             format!("partition-spec-id {:?} is invalid", v),
                         )
-                        .set_source(err)
+                            .set_source(err)
                     })?
                 }
             }
         },
         format_version: {
-            match meta.get("format-version") {
-                None => 0,
-                Some(v) => {
-                    let v = String::from_utf8_lossy(v);
-                    v.parse().map_err(|err| {
-                        Error::new(
-                            ErrorKind::IcebergDataInvalid,
-                            format!("format-version {:?} is invalid", v),
-                        )
+            meta.get("format-version").map(|v| {
+                let v = String::from_utf8_lossy(v);
+                v.parse::<u8>().map_err(|err| {
+                    Error::new(
+                        ErrorKind::IcebergDataInvalid,
+                        format!("format-version {:?} is invalid", v),
+                    )
                         .set_source(err)
-                    })?
-                }
-            }
+                })
+                    .and_then(TableFormatVersion::try_from)
+            }).transpose()?
         },
         content: {
             let c = match meta.get("partition-spec-id") {
@@ -81,7 +80,7 @@ pub fn parse_manifest_file(bs: &[u8]) -> Result<types::ManifestFile> {
                             ErrorKind::IcebergDataInvalid,
                             format!("partition-spec-id {:?} is invalid", v),
                         )
-                        .set_source(err)
+                            .set_source(err)
                     })?
                 }
             };
@@ -331,7 +330,7 @@ mod tests {
                 },
                 schema_id: 0,
                 partition_spec_id: 0,
-                format_version: 1,
+                format_version: Some(TableFormatVersion::V1),
                 content: types::ManifestContentType::Data,
             }
         );

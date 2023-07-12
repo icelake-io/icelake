@@ -30,6 +30,7 @@ parquet = { version = ">=40, <43", features = ["async"], optional = true }
 rust_decimal = "1.30"
 chrono = "0.4"
 faster-hex = "0.8.0"
+int-enum = "0.5"
 
 [dev-dependencies]
 once_cell = "1"
