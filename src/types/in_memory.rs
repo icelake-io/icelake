@@ -14,8 +14,6 @@ use crate::Error;
 use crate::ErrorKind;
 use crate::Result;
 
-use crate::types::TableFormatVersion::{V1, V2};
-
 /// All data types are either primitives or nested types, which are maps, lists, or structs.
 #[derive(Debug, PartialEq, Clone)]
 pub enum Any {
@@ -1036,8 +1034,8 @@ impl TryFrom<u8> for TableFormatVersion {
 
     fn try_from(value: u8) -> Result<TableFormatVersion> {
         match value {
-            1 => Ok(V1),
-            2 => Ok(V2),
+            1 => Ok(TableFormatVersion::V1),
+            2 => Ok(TableFormatVersion::V2),
             _ => Err(Error::new(
                 ErrorKind::IcebergDataInvalid,
                 format!("Unknown table format: {value}"),
