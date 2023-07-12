@@ -14,6 +14,8 @@ use crate::Error;
 use crate::ErrorKind;
 use crate::Result;
 
+pub(crate) const UNASSIGNED_SEQ_NUM: i64 = -1;
+
 /// All data types are either primitives or nested types, which are maps, lists, or structs.
 #[derive(Debug, PartialEq, Clone)]
 pub enum Any {
@@ -195,6 +197,42 @@ pub struct Field {
     pub write_default: Option<AnyValue>,
 }
 
+impl Field {
+    fn required(id: i32, name: impl Into<String>, r#type: Any) -> Self {
+        Self {
+            id,
+            name: name.into(),
+            required: true,
+            field_type: r#type,
+            comment: None,
+            initial_default: None,
+            write_default: None,
+        }
+    }
+
+    fn optional(id: i32, name: impl Into<String>, r#type: Any) -> Self {
+        Self {
+            id,
+            name: name.into(),
+            required: false,
+            field_type: r#type,
+            comment: None,
+            initial_default: None,
+            write_default: None,
+        }
+    }
+
+    fn with_comment(mut self, doc: impl Into<String>) -> Self {
+        self.comment = Some(doc.into());
+        self
+    }
+
+    fn with_required(mut self) -> Self {
+        self.required = true;
+        self
+    }
+}
+
 /// A list is a collection of values with some element type.
 ///
 /// - The element field has an integer id that is unique in the table schema.
@@ -342,6 +380,18 @@ pub enum Transform {
     Void,
 }
 
+impl Transform {
+    fn result_type(&self, input_type: &Any) -> Result<Any> {
+        match self {
+            Transform::Identity => Ok(input_type.clone()),
+            _ => Err(Error::new(
+                ErrorKind::IcebergFeatureUnsupported,
+                format!("Transform {:?} not supported yet!", &self),
+            )),
+        }
+    }
+}
+
 /// Data files are stored in manifests with a tuple of partition values
 /// that are used in scans to filter out files that cannot contain records
 ///  that match the scan’s filter predicate.
@@ -357,6 +407,37 @@ pub struct PartitionSpec {
     pub spec_id: i32,
     /// Partition fields.
     pub fields: Vec<PartitionField>,
+}
+
+impl PartitionSpec {
+    pub(crate) fn partition_type(&self, schema: &Schema) -> Result<Struct> {
+        let mut fields = Vec::with_capacity(self.fields.len());
+        for partition_field in &self.fields {
+            let source_field = schema
+                .fields
+                .iter()
+                .find(|f| f.id == partition_field.source_column_id)
+                .ok_or_else(|| {
+                    Error::new(
+                        ErrorKind::IcebergDataInvalid,
+                        format!(
+                            "Can't find field id {} in schema",
+                            partition_field.source_column_id
+                        ),
+                    )
+                })?;
+            let result_type = partition_field
+                .transform
+                .result_type(&source_field.field_type)?;
+            fields.push(Field::optional(
+                partition_field.partition_field_id,
+                partition_field.name.as_str(),
+                result_type,
+            ));
+        }
+
+        Ok(Struct { fields })
+    }
 }
 
 /// Field of the specified partition spec.
@@ -580,6 +661,33 @@ pub struct ManifestEntry {
     pub data_file: DataFile,
 }
 
+impl ManifestEntry {
+    /// Check if this manifest entry is deleted.
+    pub fn is_alive(&self) -> bool {
+        matches!(
+            self.status,
+            ManifestStatus::Added | ManifestStatus::Existing
+        )
+    }
+}
+
+mod manifest_file {
+    use super::*;
+    use lazy_static::lazy_static;
+    lazy_static! {
+        pub static ref STATUS: Field = Field::required(0, "status", Any::Primitive(Primitive::Int));
+        pub static ref SNAPSHOT_ID: Field =
+            Field::optional(1, "snapshot_id", Any::Primitive(Primitive::Long));
+        pub static ref SEQUENCE_NUMBER: Field =
+            Field::optional(3, "sequence_number", Any::Primitive(Primitive::Long));
+        pub static ref FILE_SEQUENCE_NUMBER: Field =
+            Field::optional(4, "file_sequence_number", Any::Primitive(Primitive::Long));
+    }
+
+    pub const DATA_FILE_ID: i32 = 2;
+    pub const DATA_FILE_NAME: &str = "data_file";
+}
+
 /// FIXME: partition_spec is not parsed.
 #[derive(Debug, PartialEq, Clone)]
 pub struct ManifestMetadata {
@@ -611,6 +719,79 @@ pub struct ManifestFile {
     pub entries: Vec<ManifestEntry>,
 }
 
+impl ManifestFile {
+    pub(crate) fn v1_schema(partition_type: Struct) -> Schema {
+        Schema {
+            schema_id: 0,
+            identifier_field_ids: None,
+            fields: vec![
+                manifest_file::STATUS.clone(),
+                manifest_file::SNAPSHOT_ID.clone(),
+                Field::required(
+                    manifest_file::DATA_FILE_ID,
+                    manifest_file::DATA_FILE_NAME,
+                    Any::Struct(Struct {
+                        fields: vec![
+                            datafile::FILE_PATH.clone(),
+                            datafile::FILE_FORMAT.clone(),
+                            DataFile::partition_field(partition_type),
+                            datafile::RECORD_COUNT.clone(),
+                            datafile::FILE_SIZE.clone(),
+                            datafile::BLOCK_SIZE.clone(),
+                            datafile::COLUMN_SIZES.clone(),
+                            datafile::VALUE_COUNTS.clone(),
+                            datafile::NULL_VALUE_COUNTS.clone(),
+                            datafile::NAN_VALUE_COUNTS.clone(),
+                            datafile::LOWER_BOUNDS.clone(),
+                            datafile::UPPER_BOUNDS.clone(),
+                            datafile::KEY_METADATA.clone(),
+                            datafile::SPLIT_OFFSETS.clone(),
+                            datafile::SORT_ORDER_ID.clone(),
+                        ],
+                    }),
+                ),
+            ],
+        }
+    }
+
+    pub(crate) fn v2_schema(partition_type: Struct) -> Schema {
+        Schema {
+            schema_id: 0,
+            identifier_field_ids: None,
+            fields: vec![
+                manifest_file::STATUS.clone(),
+                manifest_file::SNAPSHOT_ID.clone(),
+                manifest_file::SEQUENCE_NUMBER.clone(),
+                manifest_file::FILE_SEQUENCE_NUMBER.clone(),
+                Field::required(
+                    manifest_file::DATA_FILE_ID,
+                    manifest_file::DATA_FILE_NAME,
+                    Any::Struct(Struct {
+                        fields: vec![
+                            datafile::CONTENT.clone().with_required(),
+                            datafile::FILE_PATH.clone(),
+                            datafile::FILE_FORMAT.clone(),
+                            DataFile::partition_field(partition_type),
+                            datafile::RECORD_COUNT.clone(),
+                            datafile::FILE_SIZE.clone(),
+                            datafile::COLUMN_SIZES.clone(),
+                            datafile::VALUE_COUNTS.clone(),
+                            datafile::NULL_VALUE_COUNTS.clone(),
+                            datafile::NAN_VALUE_COUNTS.clone(),
+                            datafile::LOWER_BOUNDS.clone(),
+                            datafile::UPPER_BOUNDS.clone(),
+                            datafile::KEY_METADATA.clone(),
+                            datafile::SPLIT_OFFSETS.clone(),
+                            datafile::EQUALITY_IDS.clone(),
+                            datafile::SORT_ORDER_ID.clone(),
+                        ],
+                    }),
+                ),
+            ],
+        }
+    }
+}
+
 /// Type of content files tracked by the manifest
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum ManifestContentType {
@@ -624,13 +805,29 @@ pub enum ManifestContentType {
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum ManifestStatus {
     /// Value: 0
-    Existing,
+    Existing = 0,
     /// Value: 1
-    Added,
+    Added = 1,
     /// Value: 2
     ///
     /// Deletes are informational only and not used in scans.
-    Deleted,
+    Deleted = 2,
+}
+
+impl TryFrom<u8> for ManifestStatus {
+    type Error = Error;
+
+    fn try_from(v: u8) -> Result<ManifestStatus> {
+        match v {
+            0 => Ok(ManifestStatus::Existing),
+            1 => Ok(ManifestStatus::Added),
+            2 => Ok(ManifestStatus::Deleted),
+            _ => Err(Error::new(
+                ErrorKind::IcebergDataInvalid,
+                format!("manifest status {} is invalid", v),
+            )),
+        }
+    }
 }
 
 /// Data file carries data file path, partition tuple, metrics, …
@@ -755,16 +952,165 @@ pub struct DataFile {
     pub sort_order_id: Option<i32>,
 }
 
+mod datafile {
+    use super::*;
+    use lazy_static::lazy_static;
+    lazy_static! {
+        pub static ref CONTENT: Field =
+            Field::optional(134, "content", Any::Primitive(Primitive::Int)).with_comment(
+                "Contents of the file: 0=data, 1=position deletes, 2=equality deletes"
+            );
+        pub static ref FILE_PATH: Field =
+            Field::required(100, "file_path", Any::Primitive(Primitive::String))
+                .with_comment("Location URI with FS scheme");
+        pub static ref FILE_FORMAT: Field =
+            Field::required(101, "file_format", Any::Primitive(Primitive::String))
+                .with_comment("File format name: avro, orc, or parquet");
+        pub static ref RECORD_COUNT: Field =
+            Field::required(103, "record_count", Any::Primitive(Primitive::Long))
+                .with_comment("Number of records in the file");
+        pub static ref FILE_SIZE: Field =
+            Field::required(104, "file_size_in_bytes", Any::Primitive(Primitive::Long))
+                .with_comment("Total file size in bytes");
+        pub static ref BLOCK_SIZE: Field =
+            Field::required(105, "block_size_in_bytes", Any::Primitive(Primitive::Long));
+        pub static ref COLUMN_SIZES: Field = Field::optional(
+            108,
+            "column_sizes",
+            Any::Map(Map {
+                key_id: 117,
+                key_type: Box::new(Any::Primitive(Primitive::Int)),
+                value_id: 118,
+                value_type: Box::new(Any::Primitive(Primitive::Long)),
+                value_required: true,
+            }),
+        )
+        .with_comment("Map of column id to total size on disk");
+        pub static ref VALUE_COUNTS: Field = Field::optional(
+            109,
+            "value_counts",
+            Any::Map(Map {
+                key_id: 119,
+                key_type: Box::new(Any::Primitive(Primitive::Int)),
+                value_id: 120,
+                value_type: Box::new(Any::Primitive(Primitive::Long)),
+                value_required: true,
+            }),
+        )
+        .with_comment("Map of column id to total count, including null and NaN");
+        pub static ref NULL_VALUE_COUNTS: Field = Field::optional(
+            110,
+            "null_value_counts",
+            Any::Map(Map {
+                key_id: 121,
+                key_type: Box::new(Any::Primitive(Primitive::Int)),
+                value_id: 122,
+                value_type: Box::new(Any::Primitive(Primitive::Long)),
+                value_required: true,
+            }),
+        )
+        .with_comment("Map of column id to null value count");
+        pub static ref NAN_VALUE_COUNTS: Field = Field::optional(
+            137,
+            "nan_value_counts",
+            Any::Map(Map {
+                key_id: 138,
+                key_type: Box::new(Any::Primitive(Primitive::Int)),
+                value_id: 139,
+                value_type: Box::new(Any::Primitive(Primitive::Long)),
+                value_required: true,
+            }),
+        )
+        .with_comment("Map of column id to number of NaN values in the column");
+        pub static ref LOWER_BOUNDS: Field = Field::optional(
+            125,
+            "lower_bounds",
+            Any::Map(Map {
+                key_id: 126,
+                key_type: Box::new(Any::Primitive(Primitive::Int)),
+                value_id: 127,
+                value_type: Box::new(Any::Primitive(Primitive::Binary)),
+                value_required: true,
+            }),
+        )
+        .with_comment("Map of column id to lower bound");
+        pub static ref UPPER_BOUNDS: Field = Field::optional(
+            128,
+            "upper_bounds",
+            Any::Map(Map {
+                key_id: 129,
+                key_type: Box::new(Any::Primitive(Primitive::Int)),
+                value_id: 130,
+                value_type: Box::new(Any::Primitive(Primitive::Binary)),
+                value_required: true,
+            }),
+        )
+        .with_comment("Map of column id to upper bound");
+        pub static ref KEY_METADATA: Field =
+            Field::optional(131, "key_metadata", Any::Primitive(Primitive::Binary))
+                .with_comment("Encryption key metadata blob");
+        pub static ref SPLIT_OFFSETS: Field = Field::optional(
+            132,
+            "split_offsets",
+            Any::List(List {
+                element_id: 133,
+                element_required: true,
+                element_type: Box::new(Any::Primitive(Primitive::Long)),
+            }),
+        )
+        .with_comment("Splittable offsets");
+        pub static ref EQUALITY_IDS: Field = Field::optional(
+            135,
+            "equality_ids",
+            Any::List(List {
+                element_id: 136,
+                element_required: true,
+                element_type: Box::new(Any::Primitive(Primitive::Int)),
+            }),
+        )
+        .with_comment("Equality comparison field IDs");
+        pub static ref SORT_ORDER_ID: Field =
+            Field::optional(140, "sort_order_id", Any::Primitive(Primitive::Int))
+                .with_comment("Sort order ID");
+        pub static ref SPEC_ID: Field =
+            Field::optional(141, "spec_id", Any::Primitive(Primitive::Int))
+                .with_comment("Partition spec ID");
+    }
+}
+
+impl DataFile {
+    pub(crate) fn partition_field(partition_type: Struct) -> Field {
+        Field::required(102, "partition", Any::Struct(partition_type))
+            .with_comment("Partition data tuple, schema based on the partition spec")
+    }
+}
+
 /// Type of content stored by the data file: data, equality deletes, or
 /// position deletes (all v1 files are data files)
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum DataContentType {
     /// value: 0
-    Data,
+    Data = 0,
     /// value: 1
-    PostionDeletes,
+    PostionDeletes = 1,
     /// value: 2
-    EqualityDeletes,
+    EqualityDeletes = 2,
+}
+
+impl TryFrom<u8> for DataContentType {
+    type Error = Error;
+
+    fn try_from(v: u8) -> Result<DataContentType> {
+        match v {
+            0 => Ok(DataContentType::Data),
+            1 => Ok(DataContentType::PostionDeletes),
+            2 => Ok(DataContentType::EqualityDeletes),
+            _ => Err(Error::new(
+                ErrorKind::IcebergDataInvalid,
+                format!("data content type {} is invalid", v),
+            )),
+        }
+    }
 }
 
 /// Format of this data.
@@ -1040,6 +1386,15 @@ impl TryFrom<u8> for TableFormatVersion {
                 ErrorKind::IcebergDataInvalid,
                 format!("Unknown table format: {value}"),
             )),
+        }
+    }
+}
+
+impl ToString for TableFormatVersion {
+    fn to_string(&self) -> String {
+        match self {
+            TableFormatVersion::V1 => "1".to_string(),
+            TableFormatVersion::V2 => "2".to_string(),
         }
     }
 }

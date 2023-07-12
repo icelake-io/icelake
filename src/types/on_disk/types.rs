@@ -9,19 +9,20 @@ use chrono::NaiveDateTime;
 use chrono::NaiveTime;
 use chrono::Utc;
 use rust_decimal::Decimal;
-use serde::de;
 use serde::de::MapAccess;
 use serde::de::Visitor;
 use serde::Deserialize;
 use serde::Deserializer;
+use serde::{de, Serialize};
 use uuid::Uuid;
 
 use crate::types;
+use crate::types::Any;
 use crate::Error;
 use crate::ErrorKind;
 use crate::Result;
 
-#[derive(Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default)]
 #[serde(rename_all = "kebab-case", default)]
 pub struct Types {
     #[serde(rename = "type")]
@@ -176,7 +177,18 @@ impl TryFrom<Types> for types::Any {
     }
 }
 
-#[derive(Deserialize)]
+impl TryFrom<Any> for Types {
+    type Error = Error;
+
+    fn try_from(_value: Any) -> Result<Self> {
+        Err(Error::new(
+            ErrorKind::IcebergFeatureUnsupported,
+            "Serializing data types!",
+        ))
+    }
+}
+
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct Field {
     id: i32,
@@ -216,6 +228,16 @@ impl TryFrom<Field> for types::Field {
         };
 
         Ok(field)
+    }
+}
+
+impl TryFrom<types::Field> for Field {
+    type Error = Error;
+    fn try_from(_value: types::Field) -> Result<Self> {
+        Err(Error::new(
+            ErrorKind::IcebergFeatureUnsupported,
+            "Serializing Field!",
+        ))
     }
 }
 

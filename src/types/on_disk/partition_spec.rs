@@ -1,9 +1,9 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::transform::parse_transform;
-use crate::types;
 use crate::Error;
 use crate::Result;
+use crate::{types, ErrorKind};
 
 /// Parse schema from json bytes.
 pub fn parse_partition_spec(bs: &[u8]) -> Result<types::PartitionSpec> {
@@ -11,7 +11,7 @@ pub fn parse_partition_spec(bs: &[u8]) -> Result<types::PartitionSpec> {
     t.try_into()
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct PartitionSpec {
     spec_id: i32,
@@ -34,7 +34,17 @@ impl TryFrom<PartitionSpec> for types::PartitionSpec {
     }
 }
 
-#[derive(Deserialize)]
+impl<'a> TryFrom<&'a types::PartitionSpec> for PartitionSpec {
+    type Error = Error;
+    fn try_from(_value: &'a types::PartitionSpec) -> Result<Self> {
+        Err(Error::new(
+            ErrorKind::IcebergFeatureUnsupported,
+            "Serializing partition spec!",
+        ))
+    }
+}
+
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 struct PartitionField {
     source_id: i32,
@@ -55,6 +65,17 @@ impl TryFrom<PartitionField> for types::PartitionField {
             transform,
             name: v.name,
         })
+    }
+}
+
+impl<'a> TryFrom<&'a types::PartitionField> for PartitionField {
+    type Error = Error;
+
+    fn try_from(_v: &'a types::PartitionField) -> Result<Self> {
+        Err(Error::new(
+            ErrorKind::IcebergFeatureUnsupported,
+            "Serializing partition field!",
+        ))
     }
 }
 
