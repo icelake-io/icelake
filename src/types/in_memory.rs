@@ -14,7 +14,7 @@ use crate::Error;
 use crate::ErrorKind;
 use crate::Result;
 
-use int_enum::IntEnum;
+use crate::types::TableFormatVersion::{V1, V2};
 
 /// All data types are either primitives or nested types, which are maps, lists, or structs.
 #[derive(Debug, PartialEq, Clone)]
@@ -1023,8 +1023,7 @@ pub struct TableMetadata {
 }
 
 /// Table format version number.
-#[repr(u8)]
-#[derive(Debug, PartialEq, Eq, Clone, Copy, IntEnum)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum TableFormatVersion {
     /// The V1 Table Format Version.
     V1 = 1,
@@ -1036,12 +1035,13 @@ impl TryFrom<u8> for TableFormatVersion {
     type Error = Error;
 
     fn try_from(value: u8) -> Result<TableFormatVersion> {
-        TableFormatVersion::from_int(value).map_err(|e| {
-            Error::new(
+        match value {
+            1 => Ok(V1),
+            2 => Ok(V2),
+            _ => Err(Error::new(
                 ErrorKind::IcebergDataInvalid,
                 format!("Unknown table format: {value}"),
-            )
-            .set_source(e)
-        })
+            )),
+        }
     }
 }
