@@ -10,7 +10,7 @@ use chrono::Utc;
 use rust_decimal::Decimal;
 use uuid::Uuid;
 
-use crate::{Error};
+use crate::Error;
 use crate::ErrorKind;
 use crate::Result;
 
@@ -803,7 +803,7 @@ impl ToString for DataFileFormat {
             DataFileFormat::Orc => "orc",
             DataFileFormat::Parquet => "parquet",
         }
-            .to_string()
+        .to_string()
     }
 }
 
@@ -1036,10 +1036,12 @@ impl TryFrom<u8> for TableFormatVersion {
     type Error = Error;
 
     fn try_from(value: u8) -> Result<TableFormatVersion> {
-        TableFormatVersion::from_int(value).map_err(|e|
-            Error::new(ErrorKind::IcebergDataInvalid,
-                       format!("Unknown table format: {value}"))
-                .set_source(e)
-        )
+        TableFormatVersion::from_int(value).map_err(|e| {
+            Error::new(
+                ErrorKind::IcebergDataInvalid,
+                format!("Unknown table format: {value}"),
+            )
+            .set_source(e)
+        })
     }
 }

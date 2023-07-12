@@ -9,10 +9,10 @@ use serde_with::Bytes;
 
 use super::parse_schema;
 use crate::types;
+use crate::types::TableFormatVersion;
 use crate::Error;
 use crate::ErrorKind;
 use crate::Result;
-use crate::types::TableFormatVersion;
 
 /// Parse manifest file from avro bytes.
 pub fn parse_manifest_file(bs: &[u8]) -> Result<types::ManifestFile> {
@@ -37,7 +37,7 @@ pub fn parse_manifest_file(bs: &[u8]) -> Result<types::ManifestFile> {
                             ErrorKind::IcebergDataInvalid,
                             format!("schema-id {:?} is invalid", v),
                         )
-                            .set_source(err)
+                        .set_source(err)
                     })?
                 }
             }
@@ -52,23 +52,26 @@ pub fn parse_manifest_file(bs: &[u8]) -> Result<types::ManifestFile> {
                             ErrorKind::IcebergDataInvalid,
                             format!("partition-spec-id {:?} is invalid", v),
                         )
-                            .set_source(err)
+                        .set_source(err)
                     })?
                 }
             }
         },
         format_version: {
-            meta.get("format-version").map(|v| {
-                let v = String::from_utf8_lossy(v);
-                v.parse::<u8>().map_err(|err| {
-                    Error::new(
-                        ErrorKind::IcebergDataInvalid,
-                        format!("format-version {:?} is invalid", v),
-                    )
-                        .set_source(err)
+            meta.get("format-version")
+                .map(|v| {
+                    let v = String::from_utf8_lossy(v);
+                    v.parse::<u8>()
+                        .map_err(|err| {
+                            Error::new(
+                                ErrorKind::IcebergDataInvalid,
+                                format!("format-version {:?} is invalid", v),
+                            )
+                            .set_source(err)
+                        })
+                        .and_then(TableFormatVersion::try_from)
                 })
-                    .and_then(TableFormatVersion::try_from)
-            }).transpose()?
+                .transpose()?
         },
         content: {
             let c = match meta.get("partition-spec-id") {
@@ -80,7 +83,7 @@ pub fn parse_manifest_file(bs: &[u8]) -> Result<types::ManifestFile> {
                             ErrorKind::IcebergDataInvalid,
                             format!("partition-spec-id {:?} is invalid", v),
                         )
-                            .set_source(err)
+                        .set_source(err)
                     })?
                 }
             };
