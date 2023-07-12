@@ -597,7 +597,7 @@ pub struct ManifestMetadata {
     /// ID of the partition spec used to write the manifest as a string
     pub partition_spec_id: i32,
     /// Table format version number of the manifest as a string
-    pub format_version: i32,
+    pub format_version: Option<TableFormatVersion>,
     /// Type of content files tracked by the manifest: “data” or “deletes”
     pub content: ManifestContentType,
 }
@@ -1024,7 +1024,22 @@ pub struct TableMetadata {
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum TableFormatVersion {
     /// The V1 Table Format Version.
-    V1,
+    V1 = 1,
     /// The V2 Table Format Version.
-    V2,
+    V2 = 2,
+}
+
+impl TryFrom<u8> for TableFormatVersion {
+    type Error = Error;
+
+    fn try_from(value: u8) -> Result<TableFormatVersion> {
+        match value {
+            1 => Ok(TableFormatVersion::V1),
+            2 => Ok(TableFormatVersion::V2),
+            _ => Err(Error::new(
+                ErrorKind::IcebergDataInvalid,
+                format!("Unknown table format: {value}"),
+            )),
+        }
+    }
 }
