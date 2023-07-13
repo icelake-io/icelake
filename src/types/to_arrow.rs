@@ -4,18 +4,18 @@
 use std::convert::TryFrom;
 use std::sync::Arc;
 
-use crate::types::in_memory;
-use crate::types::in_memory::{Any, Schema};
 use arrow_schema::ArrowError;
 use arrow_schema::DataType as ArrowDataType;
 use arrow_schema::Field as ArrowField;
 use arrow_schema::Schema as ArrowSchema;
 use arrow_schema::TimeUnit;
 
-impl TryFrom<Schema> for ArrowSchema {
+use super::in_memory as types;
+
+impl TryFrom<types::Schema> for ArrowSchema {
     type Error = ArrowError;
 
-    fn try_from(value: Schema) -> Result<Self, Self::Error> {
+    fn try_from(value: types::Schema) -> Result<Self, Self::Error> {
         let fields = value
             .fields
             .into_iter()
@@ -26,10 +26,10 @@ impl TryFrom<Schema> for ArrowSchema {
     }
 }
 
-impl TryFrom<in_memory::Field> for ArrowField {
+impl TryFrom<types::Field> for ArrowField {
     type Error = ArrowError;
 
-    fn try_from(value: in_memory::Field) -> Result<Self, Self::Error> {
+    fn try_from(value: types::Field) -> Result<Self, Self::Error> {
         Ok(ArrowField::new_dict(
             value.name,
             value.field_type.try_into()?,
@@ -40,20 +40,20 @@ impl TryFrom<in_memory::Field> for ArrowField {
     }
 }
 
-impl TryFrom<in_memory::Any> for ArrowDataType {
+impl TryFrom<types::Any> for ArrowDataType {
     type Error = ArrowError;
 
-    fn try_from(value: in_memory::Any) -> Result<Self, Self::Error> {
+    fn try_from(value: types::Any) -> Result<Self, Self::Error> {
         match value {
-            Any::Primitive(v) => v.try_into(),
-            Any::Struct(v) => {
+            super::Any::Primitive(v) => v.try_into(),
+            super::Any::Struct(v) => {
                 let mut fields = vec![];
                 for f in v.fields {
                     fields.push(ArrowField::try_from(f)?);
                 }
                 Ok(ArrowDataType::Struct(fields.into()))
             }
-            Any::List(v) => {
+            super::Any::List(v) => {
                 let field = ArrowField::new_dict(
                     "item",
                     (*v.element_type).try_into()?,
@@ -64,7 +64,7 @@ impl TryFrom<in_memory::Any> for ArrowDataType {
 
                 Ok(ArrowDataType::List(Arc::new(field)))
             }
-            Any::Map(v) => {
+            super::Any::Map(v) => {
                 let field = ArrowField::new(
                     "entries",
                     ArrowDataType::Struct(
@@ -95,31 +95,31 @@ impl TryFrom<in_memory::Any> for ArrowDataType {
     }
 }
 
-impl TryFrom<in_memory::Primitive> for ArrowDataType {
+impl TryFrom<types::Primitive> for ArrowDataType {
     type Error = ArrowError;
 
-    fn try_from(value: in_memory::Primitive) -> Result<Self, Self::Error> {
+    fn try_from(value: types::Primitive) -> Result<Self, Self::Error> {
         match value {
-            in_memory::Primitive::Boolean => Ok(ArrowDataType::Boolean),
-            in_memory::Primitive::Int => Ok(ArrowDataType::Int32),
-            in_memory::Primitive::Long => Ok(ArrowDataType::Int64),
-            in_memory::Primitive::Float => Ok(ArrowDataType::Float32),
-            in_memory::Primitive::Double => Ok(ArrowDataType::Float64),
-            in_memory::Primitive::Decimal { precision, scale } => {
+            types::Primitive::Boolean => Ok(ArrowDataType::Boolean),
+            types::Primitive::Int => Ok(ArrowDataType::Int32),
+            types::Primitive::Long => Ok(ArrowDataType::Int64),
+            types::Primitive::Float => Ok(ArrowDataType::Float32),
+            types::Primitive::Double => Ok(ArrowDataType::Float64),
+            types::Primitive::Decimal { precision, scale } => {
                 Ok(ArrowDataType::Decimal128(precision, scale as i8))
             }
-            in_memory::Primitive::Date => Ok(ArrowDataType::Date32),
-            in_memory::Primitive::Time => Ok(ArrowDataType::Time32(TimeUnit::Microsecond)),
-            in_memory::Primitive::Timestamp => {
+            types::Primitive::Date => Ok(ArrowDataType::Date32),
+            types::Primitive::Time => Ok(ArrowDataType::Time32(TimeUnit::Microsecond)),
+            types::Primitive::Timestamp => {
                 Ok(ArrowDataType::Timestamp(TimeUnit::Microsecond, None))
             }
-            in_memory::Primitive::Timestampz => {
+            types::Primitive::Timestampz => {
                 // Timestampz always stored as UTC
                 Ok(ArrowDataType::Timestamp(TimeUnit::Microsecond, None))
             }
-            in_memory::Primitive::String => Ok(ArrowDataType::Utf8),
-            in_memory::Primitive::Uuid => Ok(ArrowDataType::FixedSizeBinary(16)),
-            in_memory::Primitive::Fixed(i) => {
+            types::Primitive::String => Ok(ArrowDataType::Utf8),
+            types::Primitive::Uuid => Ok(ArrowDataType::FixedSizeBinary(16)),
+            types::Primitive::Fixed(i) => {
                 if i <= i32::MAX as u64 {
                     // FixedSizeBinary only supports up to i32::MAX bytes
                     Ok(ArrowDataType::FixedSizeBinary(i as i32))
@@ -127,7 +127,7 @@ impl TryFrom<in_memory::Primitive> for ArrowDataType {
                     Ok(ArrowDataType::LargeBinary)
                 }
             }
-            in_memory::Primitive::Binary => Ok(ArrowDataType::LargeBinary),
+            types::Primitive::Binary => Ok(ArrowDataType::LargeBinary),
         }
     }
 }
@@ -135,24 +135,23 @@ impl TryFrom<in_memory::Primitive> for ArrowDataType {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::in_memory;
 
     #[test]
     fn test_try_into_arrow_schema() {
-        let schema = Schema {
+        let schema = types::Schema {
             fields: vec![
-                in_memory::Field {
+                types::Field {
                     name: "id".to_string(),
-                    field_type: in_memory::Any::Primitive(in_memory::Primitive::Long),
+                    field_type: types::Any::Primitive(types::Primitive::Long),
                     id: 0,
                     required: true,
                     comment: None,
                     initial_default: None,
                     write_default: None,
                 },
-                in_memory::Field {
+                types::Field {
                     name: "data".to_string(),
-                    field_type: in_memory::Any::Primitive(in_memory::Primitive::String),
+                    field_type: types::Any::Primitive(types::Primitive::String),
                     id: 1,
                     required: false,
                     comment: None,
