@@ -16,7 +16,7 @@ use serde::Deserialize;
 use serde::Deserializer;
 use uuid::Uuid;
 
-use crate::types::in_memory;
+use crate::types;
 use crate::Error;
 use crate::ErrorKind;
 use crate::Result;
@@ -46,23 +46,23 @@ pub struct Types {
     value: Option<Box<Types>>,
 }
 
-impl TryFrom<Types> for in_memory::Any {
+impl TryFrom<Types> for types::Any {
     type Error = Error;
 
     fn try_from(v: Types) -> Result<Self> {
         let t = match v.typ.as_str() {
-            "boolean" => in_memory::Any::Primitive(in_memory::Primitive::Boolean),
-            "int" => in_memory::Any::Primitive(in_memory::Primitive::Int),
-            "long" => in_memory::Any::Primitive(in_memory::Primitive::Long),
-            "float" => in_memory::Any::Primitive(in_memory::Primitive::Float),
-            "double" => in_memory::Any::Primitive(in_memory::Primitive::Double),
-            "date" => in_memory::Any::Primitive(in_memory::Primitive::Date),
-            "time" => in_memory::Any::Primitive(in_memory::Primitive::Time),
-            "timestamp" => in_memory::Any::Primitive(in_memory::Primitive::Timestamp),
-            "timestamptz" => in_memory::Any::Primitive(in_memory::Primitive::Timestampz),
-            "string" => in_memory::Any::Primitive(in_memory::Primitive::String),
-            "uuid" => in_memory::Any::Primitive(in_memory::Primitive::Uuid),
-            "binary" => in_memory::Any::Primitive(in_memory::Primitive::Binary),
+            "boolean" => types::Any::Primitive(types::Primitive::Boolean),
+            "int" => types::Any::Primitive(types::Primitive::Int),
+            "long" => types::Any::Primitive(types::Primitive::Long),
+            "float" => types::Any::Primitive(types::Primitive::Float),
+            "double" => types::Any::Primitive(types::Primitive::Double),
+            "date" => types::Any::Primitive(types::Primitive::Date),
+            "time" => types::Any::Primitive(types::Primitive::Time),
+            "timestamp" => types::Any::Primitive(types::Primitive::Timestamp),
+            "timestamptz" => types::Any::Primitive(types::Primitive::Timestampz),
+            "string" => types::Any::Primitive(types::Primitive::String),
+            "uuid" => types::Any::Primitive(types::Primitive::Uuid),
+            "binary" => types::Any::Primitive(types::Primitive::Binary),
             v if v.starts_with("fixed") => {
                 let length = v
                     .strip_prefix("fixed")
@@ -78,7 +78,7 @@ impl TryFrom<Types> for in_memory::Any {
                         .set_source(err)
                     })?;
 
-                in_memory::Any::Primitive(in_memory::Primitive::Fixed(length))
+                types::Any::Primitive(types::Primitive::Fixed(length))
             }
             v if v.starts_with("decimal") => {
                 let parts = v
@@ -110,14 +110,14 @@ impl TryFrom<Types> for in_memory::Any {
                     .set_source(err)
                 })?;
 
-                in_memory::Any::Primitive(in_memory::Primitive::Decimal { precision, scale })
+                types::Any::Primitive(types::Primitive::Decimal { precision, scale })
             }
             "struct" => {
                 let raw_fields = v.fields;
 
                 let mut fields = Vec::with_capacity(raw_fields.len());
                 for f in raw_fields {
-                    let field = in_memory::Field {
+                    let field = types::Field {
                         id: f.id,
                         name: f.name.clone(),
                         required: f.required,
@@ -130,7 +130,7 @@ impl TryFrom<Types> for in_memory::Any {
                     fields.push(field);
                 }
 
-                in_memory::Any::Struct(in_memory::Struct { fields })
+                types::Any::Struct(types::Struct { fields })
             }
             "list" => {
                 let element_id = v.element_id;
@@ -139,7 +139,7 @@ impl TryFrom<Types> for in_memory::Any {
                     Error::new(ErrorKind::IcebergDataInvalid, "element type is required")
                 })?;
 
-                in_memory::Any::List(in_memory::List {
+                types::Any::List(types::List {
                     element_id,
                     element_required,
                     element_type: Box::new((*element_type).try_into()?),
@@ -156,7 +156,7 @@ impl TryFrom<Types> for in_memory::Any {
                     Error::new(ErrorKind::IcebergDataInvalid, "map type value is required")
                 })?;
 
-                in_memory::Any::Map(in_memory::Map {
+                types::Any::Map(types::Map {
                     key_id,
                     key_type: Box::new((*key_type).try_into()?),
                     value_id,
@@ -189,7 +189,7 @@ pub struct Field {
     write_default: Option<serde_json::Value>,
 }
 
-impl TryFrom<Field> for in_memory::Field {
+impl TryFrom<Field> for types::Field {
     type Error = Error;
 
     fn try_from(v: Field) -> Result<Self> {
@@ -205,7 +205,7 @@ impl TryFrom<Field> for in_memory::Field {
             .map(|v| parse_json_value(&field_type, v))
             .transpose()?;
 
-        let field = in_memory::Field {
+        let field = types::Field {
             id: v.id,
             name: v.name,
             required: v.required,
@@ -222,40 +222,37 @@ impl TryFrom<Field> for in_memory::Field {
 /// parse_json_value will parse given json value into icelake AnyValue.
 ///
 /// Reference: <https://iceberg.apache.org/spec/#json-single-value-serialization>
-fn parse_json_value(
-    expect_type: &in_memory::Any,
-    value: serde_json::Value,
-) -> Result<in_memory::AnyValue> {
+fn parse_json_value(expect_type: &types::Any, value: serde_json::Value) -> Result<types::AnyValue> {
     match expect_type {
-        in_memory::Any::Primitive(v) => match v {
-            in_memory::Primitive::Boolean => parse_json_value_to_boolean(value),
-            in_memory::Primitive::Int => parse_json_value_to_int(value),
-            in_memory::Primitive::Long => parse_json_value_to_long(value),
-            in_memory::Primitive::Float => parse_json_value_to_float(value),
-            in_memory::Primitive::Double => parse_json_value_to_double(value),
-            in_memory::Primitive::Decimal { .. } => parse_json_value_to_decimal(value),
-            in_memory::Primitive::Date => parse_json_value_to_date(value),
-            in_memory::Primitive::Time => parse_json_value_to_time(value),
-            in_memory::Primitive::Timestamp => parse_json_value_to_timestamp(value),
-            in_memory::Primitive::Timestampz => parse_json_value_to_timestampz(value),
-            in_memory::Primitive::String => parse_json_value_to_string(value),
-            in_memory::Primitive::Uuid => parse_json_value_to_uuid(value),
-            in_memory::Primitive::Fixed(size) => parse_json_value_to_fixed(value, *size),
-            in_memory::Primitive::Binary => parse_json_value_to_binary(value),
+        types::Any::Primitive(v) => match v {
+            types::Primitive::Boolean => parse_json_value_to_boolean(value),
+            types::Primitive::Int => parse_json_value_to_int(value),
+            types::Primitive::Long => parse_json_value_to_long(value),
+            types::Primitive::Float => parse_json_value_to_float(value),
+            types::Primitive::Double => parse_json_value_to_double(value),
+            types::Primitive::Decimal { .. } => parse_json_value_to_decimal(value),
+            types::Primitive::Date => parse_json_value_to_date(value),
+            types::Primitive::Time => parse_json_value_to_time(value),
+            types::Primitive::Timestamp => parse_json_value_to_timestamp(value),
+            types::Primitive::Timestampz => parse_json_value_to_timestampz(value),
+            types::Primitive::String => parse_json_value_to_string(value),
+            types::Primitive::Uuid => parse_json_value_to_uuid(value),
+            types::Primitive::Fixed(size) => parse_json_value_to_fixed(value, *size),
+            types::Primitive::Binary => parse_json_value_to_binary(value),
         },
-        in_memory::Any::Struct(v) => parse_json_value_to_struct(v, value),
-        in_memory::Any::List(v) => parse_json_value_to_list(v, value),
-        in_memory::Any::Map(v) => parse_json_value_to_map(v, value),
+        types::Any::Struct(v) => parse_json_value_to_struct(v, value),
+        types::Any::List(v) => parse_json_value_to_list(v, value),
+        types::Any::Map(v) => parse_json_value_to_map(v, value),
     }
 }
 
 /// JSON single-value serialization requires boolean been stored
 /// as bool.
 #[inline]
-fn parse_json_value_to_boolean(value: serde_json::Value) -> Result<in_memory::AnyValue> {
+fn parse_json_value_to_boolean(value: serde_json::Value) -> Result<types::AnyValue> {
     match value {
-        serde_json::Value::Bool(v) => Ok(in_memory::AnyValue::Primitive(
-            in_memory::PrimitiveValue::Boolean(v),
+        serde_json::Value::Bool(v) => Ok(types::AnyValue::Primitive(
+            types::PrimitiveValue::Boolean(v),
         )),
         _ => Err(Error::new(
             ErrorKind::IcebergDataInvalid,
@@ -267,7 +264,7 @@ fn parse_json_value_to_boolean(value: serde_json::Value) -> Result<in_memory::An
 /// JSON single-value serialization requires int been stored
 /// as number.
 #[inline]
-fn parse_json_value_to_int(value: serde_json::Value) -> Result<in_memory::AnyValue> {
+fn parse_json_value_to_int(value: serde_json::Value) -> Result<types::AnyValue> {
     let expect_type = "`Int`";
 
     match value {
@@ -293,9 +290,9 @@ fn parse_json_value_to_int(value: serde_json::Value) -> Result<in_memory::AnyVal
                     ));
                 }
 
-                Ok(in_memory::AnyValue::Primitive(
-                    in_memory::PrimitiveValue::Int(v as i32),
-                ))
+                Ok(types::AnyValue::Primitive(types::PrimitiveValue::Int(
+                    v as i32,
+                )))
             } else {
                 Err(Error::new(
                     ErrorKind::IcebergDataInvalid,
@@ -313,15 +310,13 @@ fn parse_json_value_to_int(value: serde_json::Value) -> Result<in_memory::AnyVal
 /// JSON single-value serialization requires long been stored
 /// as number.
 #[inline]
-fn parse_json_value_to_long(value: serde_json::Value) -> Result<in_memory::AnyValue> {
+fn parse_json_value_to_long(value: serde_json::Value) -> Result<types::AnyValue> {
     let expect_type = "`Long`";
 
     match value {
         serde_json::Value::Number(v) => {
             if let Some(v) = v.as_i64() {
-                Ok(in_memory::AnyValue::Primitive(
-                    in_memory::PrimitiveValue::Long(v),
-                ))
+                Ok(types::AnyValue::Primitive(types::PrimitiveValue::Long(v)))
             } else {
                 Err(Error::new(
                     ErrorKind::IcebergDataInvalid,
@@ -339,7 +334,7 @@ fn parse_json_value_to_long(value: serde_json::Value) -> Result<in_memory::AnyVa
 /// JSON single-value serialization requires float been stored
 /// as number.
 #[inline]
-fn parse_json_value_to_float(value: serde_json::Value) -> Result<in_memory::AnyValue> {
+fn parse_json_value_to_float(value: serde_json::Value) -> Result<types::AnyValue> {
     let expect_type = "`Float`";
 
     match value {
@@ -365,9 +360,9 @@ fn parse_json_value_to_float(value: serde_json::Value) -> Result<in_memory::AnyV
                     ));
                 }
 
-                Ok(in_memory::AnyValue::Primitive(
-                    in_memory::PrimitiveValue::Float(v as f32),
-                ))
+                Ok(types::AnyValue::Primitive(types::PrimitiveValue::Float(
+                    v as f32,
+                )))
             } else {
                 Err(Error::new(
                     ErrorKind::IcebergDataInvalid,
@@ -385,15 +380,13 @@ fn parse_json_value_to_float(value: serde_json::Value) -> Result<in_memory::AnyV
 /// JSON single-value serialization requires float been stored
 /// as number.
 #[inline]
-fn parse_json_value_to_double(value: serde_json::Value) -> Result<in_memory::AnyValue> {
+fn parse_json_value_to_double(value: serde_json::Value) -> Result<types::AnyValue> {
     let expect_type = "`Double`";
 
     match value {
         serde_json::Value::Number(v) => {
             if let Some(v) = v.as_f64() {
-                Ok(in_memory::AnyValue::Primitive(
-                    in_memory::PrimitiveValue::Double(v),
-                ))
+                Ok(types::AnyValue::Primitive(types::PrimitiveValue::Double(v)))
             } else {
                 Err(Error::new(
                     ErrorKind::IcebergDataInvalid,
@@ -415,7 +408,7 @@ fn parse_json_value_to_double(value: serde_json::Value) -> Result<in_memory::Any
 ///
 /// we should check the precision and scale.
 #[inline]
-fn parse_json_value_to_decimal(value: serde_json::Value) -> Result<in_memory::AnyValue> {
+fn parse_json_value_to_decimal(value: serde_json::Value) -> Result<types::AnyValue> {
     let expect_type = "`Decimal`";
 
     match value {
@@ -429,9 +422,9 @@ fn parse_json_value_to_decimal(value: serde_json::Value) -> Result<in_memory::An
             })?;
 
             // TODO: we should check the precision and scale here.
-            Ok(in_memory::AnyValue::Primitive(
-                in_memory::PrimitiveValue::Decimal(d),
-            ))
+            Ok(types::AnyValue::Primitive(types::PrimitiveValue::Decimal(
+                d,
+            )))
         }
         _ => Err(Error::new(
             ErrorKind::IcebergDataInvalid,
@@ -443,7 +436,7 @@ fn parse_json_value_to_decimal(value: serde_json::Value) -> Result<in_memory::An
 /// JSON single-value serialization requires Date been stored
 /// as string in ISO-8601 standard date, like `2017-11-16`.
 #[inline]
-fn parse_json_value_to_date(value: serde_json::Value) -> Result<in_memory::AnyValue> {
+fn parse_json_value_to_date(value: serde_json::Value) -> Result<types::AnyValue> {
     let expect_type = "`Date`";
 
     match value {
@@ -456,9 +449,9 @@ fn parse_json_value_to_date(value: serde_json::Value) -> Result<in_memory::AnyVa
                 .set_source(err)
             })?;
 
-            Ok(in_memory::AnyValue::Primitive(
-                in_memory::PrimitiveValue::Date(date),
-            ))
+            Ok(types::AnyValue::Primitive(types::PrimitiveValue::Date(
+                date,
+            )))
         }
         _ => Err(Error::new(
             ErrorKind::IcebergDataInvalid,
@@ -470,7 +463,7 @@ fn parse_json_value_to_date(value: serde_json::Value) -> Result<in_memory::AnyVa
 /// JSON single-value serialization requires Time been stored
 /// as string in ISO-8601 standard time, like `22:31:08.123456`.
 #[inline]
-fn parse_json_value_to_time(value: serde_json::Value) -> Result<in_memory::AnyValue> {
+fn parse_json_value_to_time(value: serde_json::Value) -> Result<types::AnyValue> {
     let expect_type = "`Time`";
 
     match value {
@@ -483,9 +476,9 @@ fn parse_json_value_to_time(value: serde_json::Value) -> Result<in_memory::AnyVa
                 .set_source(err)
             })?;
 
-            Ok(in_memory::AnyValue::Primitive(
-                in_memory::PrimitiveValue::Time(time),
-            ))
+            Ok(types::AnyValue::Primitive(types::PrimitiveValue::Time(
+                time,
+            )))
         }
         _ => Err(Error::new(
             ErrorKind::IcebergDataInvalid,
@@ -498,7 +491,7 @@ fn parse_json_value_to_time(value: serde_json::Value) -> Result<in_memory::AnyVa
 /// stored as string in ISO-8601 standard time, like
 /// `2017-11-16T22:31:08.123456`.
 #[inline]
-fn parse_json_value_to_timestamp(value: serde_json::Value) -> Result<in_memory::AnyValue> {
+fn parse_json_value_to_timestamp(value: serde_json::Value) -> Result<types::AnyValue> {
     let expect_type = "`Timestamp`";
 
     match value {
@@ -511,8 +504,8 @@ fn parse_json_value_to_timestamp(value: serde_json::Value) -> Result<in_memory::
                 .set_source(err)
             })?;
 
-            Ok(in_memory::AnyValue::Primitive(
-                in_memory::PrimitiveValue::Timestamp(v),
+            Ok(types::AnyValue::Primitive(
+                types::PrimitiveValue::Timestamp(v),
             ))
         }
         _ => Err(Error::new(
@@ -526,7 +519,7 @@ fn parse_json_value_to_timestamp(value: serde_json::Value) -> Result<in_memory::
 /// stored as string in ISO-8601 standard time with timezone, like
 /// `2017-11-16T22:31:08.123456+00:00`.
 #[inline]
-fn parse_json_value_to_timestampz(value: serde_json::Value) -> Result<in_memory::AnyValue> {
+fn parse_json_value_to_timestampz(value: serde_json::Value) -> Result<types::AnyValue> {
     let expect_type = "`Timestampz`";
 
     match value {
@@ -539,8 +532,8 @@ fn parse_json_value_to_timestampz(value: serde_json::Value) -> Result<in_memory:
                 .set_source(err)
             })?;
 
-            Ok(in_memory::AnyValue::Primitive(
-                in_memory::PrimitiveValue::Timestampz(v),
+            Ok(types::AnyValue::Primitive(
+                types::PrimitiveValue::Timestampz(v),
             ))
         }
         _ => Err(Error::new(
@@ -553,13 +546,13 @@ fn parse_json_value_to_timestampz(value: serde_json::Value) -> Result<in_memory:
 /// JSON single-value serialization requires String been
 /// stored as string.
 #[inline]
-fn parse_json_value_to_string(value: serde_json::Value) -> Result<in_memory::AnyValue> {
+fn parse_json_value_to_string(value: serde_json::Value) -> Result<types::AnyValue> {
     let expect_type = "`String`";
 
     match value {
-        serde_json::Value::String(v) => Ok(in_memory::AnyValue::Primitive(
-            in_memory::PrimitiveValue::String(v),
-        )),
+        serde_json::Value::String(v) => {
+            Ok(types::AnyValue::Primitive(types::PrimitiveValue::String(v)))
+        }
         _ => Err(Error::new(
             ErrorKind::IcebergDataInvalid,
             format!("expect type {:?} but got {:?}", expect_type, value),
@@ -570,7 +563,7 @@ fn parse_json_value_to_string(value: serde_json::Value) -> Result<in_memory::Any
 /// JSON single-value serialization requires Uuid been
 /// stored as lowercase uuid string, like `f79c3e09-677c-4bbd-a479-3f349cb785e7`
 #[inline]
-fn parse_json_value_to_uuid(value: serde_json::Value) -> Result<in_memory::AnyValue> {
+fn parse_json_value_to_uuid(value: serde_json::Value) -> Result<types::AnyValue> {
     let expect_type = "`Uuid`";
 
     match value {
@@ -583,9 +576,7 @@ fn parse_json_value_to_uuid(value: serde_json::Value) -> Result<in_memory::AnyVa
                 .set_source(err)
             })?;
 
-            Ok(in_memory::AnyValue::Primitive(
-                in_memory::PrimitiveValue::Uuid(v),
-            ))
+            Ok(types::AnyValue::Primitive(types::PrimitiveValue::Uuid(v)))
         }
         _ => Err(Error::new(
             ErrorKind::IcebergDataInvalid,
@@ -597,7 +588,7 @@ fn parse_json_value_to_uuid(value: serde_json::Value) -> Result<in_memory::AnyVa
 /// JSON single-value serialization requires Fixed been
 /// stored as hexadecimal string like `000102ff`.
 #[inline]
-fn parse_json_value_to_fixed(value: serde_json::Value, size: u64) -> Result<in_memory::AnyValue> {
+fn parse_json_value_to_fixed(value: serde_json::Value, size: u64) -> Result<types::AnyValue> {
     let expect_type = "`Fixed`";
 
     match value {
@@ -621,9 +612,7 @@ fn parse_json_value_to_fixed(value: serde_json::Value, size: u64) -> Result<in_m
                 ));
             }
 
-            Ok(in_memory::AnyValue::Primitive(
-                in_memory::PrimitiveValue::Fixed(bs),
-            ))
+            Ok(types::AnyValue::Primitive(types::PrimitiveValue::Fixed(bs)))
         }
         _ => Err(Error::new(
             ErrorKind::IcebergDataInvalid,
@@ -635,7 +624,7 @@ fn parse_json_value_to_fixed(value: serde_json::Value, size: u64) -> Result<in_m
 /// JSON single-value serialization requires Binary been
 /// stored as hexadecimal string lie `000102ff`.
 #[inline]
-fn parse_json_value_to_binary(value: serde_json::Value) -> Result<in_memory::AnyValue> {
+fn parse_json_value_to_binary(value: serde_json::Value) -> Result<types::AnyValue> {
     let expect_type = "`Binary`";
 
     match value {
@@ -649,9 +638,9 @@ fn parse_json_value_to_binary(value: serde_json::Value) -> Result<in_memory::Any
                 .set_source(err)
             })?;
 
-            Ok(in_memory::AnyValue::Primitive(
-                in_memory::PrimitiveValue::Binary(bs),
-            ))
+            Ok(types::AnyValue::Primitive(types::PrimitiveValue::Binary(
+                bs,
+            )))
         }
         _ => Err(Error::new(
             ErrorKind::IcebergDataInvalid,
@@ -668,9 +657,9 @@ fn parse_json_value_to_binary(value: serde_json::Value) -> Result<in_memory::Any
 ///
 /// For example: `{"1": 1, "2": "bar"}`
 fn parse_json_value_to_struct(
-    expect_struct: &in_memory::Struct,
+    expect_struct: &types::Struct,
     value: serde_json::Value,
-) -> Result<in_memory::AnyValue> {
+) -> Result<types::AnyValue> {
     let fields = expect_struct
         .fields
         .iter()
@@ -710,7 +699,7 @@ fn parse_json_value_to_struct(
         }
     }
 
-    Ok(in_memory::AnyValue::Struct(values))
+    Ok(types::AnyValue::Struct(values))
 }
 
 /// JSON single-value serialization requires List been
@@ -719,9 +708,9 @@ fn parse_json_value_to_struct(
 ///
 /// For example: `[1, 2, 3]`
 fn parse_json_value_to_list(
-    expect_list: &in_memory::List,
+    expect_list: &types::List,
     value: serde_json::Value,
-) -> Result<in_memory::AnyValue> {
+) -> Result<types::AnyValue> {
     let expect_type = &expect_list.element_type;
 
     match value {
@@ -732,7 +721,7 @@ fn parse_json_value_to_list(
                 values.push(v);
             }
 
-            Ok(in_memory::AnyValue::List(values))
+            Ok(types::AnyValue::List(values))
         }
         _ => Err(Error::new(
             ErrorKind::IcebergDataInvalid,
@@ -747,9 +736,9 @@ fn parse_json_value_to_list(
 ///
 /// For example: `{ "keys": ["a", "b"], "values": [1, 2] }`
 fn parse_json_value_to_map(
-    expect_map: &in_memory::Map,
+    expect_map: &types::Map,
     value: serde_json::Value,
-) -> Result<in_memory::AnyValue> {
+) -> Result<types::AnyValue> {
     #[derive(Deserialize)]
     #[serde(rename_all = "kebab-case")]
     struct MapValue {
@@ -773,7 +762,7 @@ fn parse_json_value_to_map(
         values.push(parse_json_value(value_type, v)?)
     }
 
-    Ok(in_memory::AnyValue::Map { keys, values })
+    Ok(types::AnyValue::Map { keys, values })
 }
 
 /// We need to support both `T` and `Box<T>` so we can't use

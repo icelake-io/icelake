@@ -250,7 +250,7 @@ mod tests {
     use std::env;
     use std::fs;
 
-    use crate::types::{in_memory, ManifestFile};
+    use crate::types::ManifestFile;
     use anyhow::Result;
     use apache_avro::from_value;
     use apache_avro::Reader;
@@ -307,24 +307,24 @@ mod tests {
         assert_eq!(
             metadata,
             types::ManifestMetadata {
-                schema: in_memory::Schema {
+                schema: types::Schema {
                     schema_id: 0,
                     identifier_field_ids: None,
                     fields: vec![
-                        in_memory::Field {
+                        types::Field {
                             id: 1,
                             name: "id".to_string(),
                             required: false,
-                            field_type: in_memory::Any::Primitive(in_memory::Primitive::Long),
+                            field_type: types::Any::Primitive(types::Primitive::Long),
                             comment: None,
                             initial_default: None,
                             write_default: None,
                         },
-                        in_memory::Field {
+                        types::Field {
                             id: 2,
                             name: "data".to_string(),
                             required: false,
-                            field_type: in_memory::Any::Primitive(in_memory::Primitive::String),
+                            field_type: types::Any::Primitive(types::Primitive::String),
                             comment: None,
                             initial_default: None,
                             write_default: None,
