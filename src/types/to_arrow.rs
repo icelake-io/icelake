@@ -4,8 +4,8 @@
 use std::convert::TryFrom;
 use std::sync::Arc;
 
-use crate::datatypes;
-use crate::datatypes::{Any, Schema};
+use crate::types::in_memory;
+use crate::types::in_memory::{Any, Schema};
 use arrow_schema::ArrowError;
 use arrow_schema::DataType as ArrowDataType;
 use arrow_schema::Field as ArrowField;
@@ -26,10 +26,10 @@ impl TryFrom<Schema> for ArrowSchema {
     }
 }
 
-impl TryFrom<datatypes::Field> for ArrowField {
+impl TryFrom<in_memory::Field> for ArrowField {
     type Error = ArrowError;
 
-    fn try_from(value: datatypes::Field) -> Result<Self, Self::Error> {
+    fn try_from(value: in_memory::Field) -> Result<Self, Self::Error> {
         Ok(ArrowField::new_dict(
             value.name,
             value.field_type.try_into()?,
@@ -40,10 +40,10 @@ impl TryFrom<datatypes::Field> for ArrowField {
     }
 }
 
-impl TryFrom<datatypes::Any> for ArrowDataType {
+impl TryFrom<in_memory::Any> for ArrowDataType {
     type Error = ArrowError;
 
-    fn try_from(value: datatypes::Any) -> Result<Self, Self::Error> {
+    fn try_from(value: in_memory::Any) -> Result<Self, Self::Error> {
         match value {
             Any::Primitive(v) => v.try_into(),
             Any::Struct(v) => {
@@ -95,31 +95,31 @@ impl TryFrom<datatypes::Any> for ArrowDataType {
     }
 }
 
-impl TryFrom<datatypes::Primitive> for ArrowDataType {
+impl TryFrom<in_memory::Primitive> for ArrowDataType {
     type Error = ArrowError;
 
-    fn try_from(value: datatypes::Primitive) -> Result<Self, Self::Error> {
+    fn try_from(value: in_memory::Primitive) -> Result<Self, Self::Error> {
         match value {
-            datatypes::Primitive::Boolean => Ok(ArrowDataType::Boolean),
-            datatypes::Primitive::Int => Ok(ArrowDataType::Int32),
-            datatypes::Primitive::Long => Ok(ArrowDataType::Int64),
-            datatypes::Primitive::Float => Ok(ArrowDataType::Float32),
-            datatypes::Primitive::Double => Ok(ArrowDataType::Float64),
-            datatypes::Primitive::Decimal { precision, scale } => {
+            in_memory::Primitive::Boolean => Ok(ArrowDataType::Boolean),
+            in_memory::Primitive::Int => Ok(ArrowDataType::Int32),
+            in_memory::Primitive::Long => Ok(ArrowDataType::Int64),
+            in_memory::Primitive::Float => Ok(ArrowDataType::Float32),
+            in_memory::Primitive::Double => Ok(ArrowDataType::Float64),
+            in_memory::Primitive::Decimal { precision, scale } => {
                 Ok(ArrowDataType::Decimal128(precision, scale as i8))
             }
-            datatypes::Primitive::Date => Ok(ArrowDataType::Date32),
-            datatypes::Primitive::Time => Ok(ArrowDataType::Time32(TimeUnit::Microsecond)),
-            datatypes::Primitive::Timestamp => {
+            in_memory::Primitive::Date => Ok(ArrowDataType::Date32),
+            in_memory::Primitive::Time => Ok(ArrowDataType::Time32(TimeUnit::Microsecond)),
+            in_memory::Primitive::Timestamp => {
                 Ok(ArrowDataType::Timestamp(TimeUnit::Microsecond, None))
             }
-            datatypes::Primitive::Timestampz => {
+            in_memory::Primitive::Timestampz => {
                 // Timestampz always stored as UTC
                 Ok(ArrowDataType::Timestamp(TimeUnit::Microsecond, None))
             }
-            datatypes::Primitive::String => Ok(ArrowDataType::Utf8),
-            datatypes::Primitive::Uuid => Ok(ArrowDataType::FixedSizeBinary(16)),
-            datatypes::Primitive::Fixed(i) => {
+            in_memory::Primitive::String => Ok(ArrowDataType::Utf8),
+            in_memory::Primitive::Uuid => Ok(ArrowDataType::FixedSizeBinary(16)),
+            in_memory::Primitive::Fixed(i) => {
                 if i <= i32::MAX as u64 {
                     // FixedSizeBinary only supports up to i32::MAX bytes
                     Ok(ArrowDataType::FixedSizeBinary(i as i32))
@@ -127,7 +127,7 @@ impl TryFrom<datatypes::Primitive> for ArrowDataType {
                     Ok(ArrowDataType::LargeBinary)
                 }
             }
-            datatypes::Primitive::Binary => Ok(ArrowDataType::LargeBinary),
+            in_memory::Primitive::Binary => Ok(ArrowDataType::LargeBinary),
         }
     }
 }
@@ -135,24 +135,24 @@ impl TryFrom<datatypes::Primitive> for ArrowDataType {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::datatypes;
+    use crate::types::in_memory;
 
     #[test]
     fn test_try_into_arrow_schema() {
         let schema = Schema {
             fields: vec![
-                datatypes::Field {
+                in_memory::Field {
                     name: "id".to_string(),
-                    field_type: datatypes::Any::Primitive(datatypes::Primitive::Long),
+                    field_type: in_memory::Any::Primitive(in_memory::Primitive::Long),
                     id: 0,
                     required: true,
                     comment: None,
                     initial_default: None,
                     write_default: None,
                 },
-                datatypes::Field {
+                in_memory::Field {
                     name: "data".to_string(),
-                    field_type: datatypes::Any::Primitive(datatypes::Primitive::String),
+                    field_type: in_memory::Any::Primitive(in_memory::Primitive::String),
                     id: 1,
                     required: false,
                     comment: None,

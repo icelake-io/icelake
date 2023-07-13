@@ -1,12 +1,12 @@
 use serde::Deserialize;
 
 use super::types::*;
-use crate::datatypes;
+use crate::types::in_memory;
 use crate::Error;
 use crate::Result;
 
 /// Parse schema from json bytes.
-pub fn parse_schema(schema: &[u8]) -> Result<datatypes::Schema> {
+pub fn parse_schema(schema: &[u8]) -> Result<in_memory::Schema> {
     let schema: Schema = serde_json::from_slice(schema)?;
     schema.try_into()
 }
@@ -19,7 +19,7 @@ pub struct Schema {
     fields: Vec<Field>,
 }
 
-impl TryFrom<Schema> for datatypes::Schema {
+impl TryFrom<Schema> for in_memory::Schema {
     type Error = Error;
 
     fn try_from(value: Schema) -> Result<Self> {
@@ -28,7 +28,7 @@ impl TryFrom<Schema> for datatypes::Schema {
             fields.push(field.try_into()?);
         }
 
-        Ok(datatypes::Schema {
+        Ok(in_memory::Schema {
             schema_id: value.schema_id,
             identifier_field_ids: value.identifier_field_ids,
             fields,
@@ -39,7 +39,7 @@ impl TryFrom<Schema> for datatypes::Schema {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::datatypes;
+    use crate::types::in_memory;
 
     #[test]
     fn test_parse_schema_struct() {
@@ -66,7 +66,7 @@ mod tests {
         assert!(!schema.fields[0].required);
         assert_eq!(
             schema.fields[0].field_type,
-            datatypes::Any::Primitive(datatypes::Primitive::Long)
+            in_memory::Any::Primitive(in_memory::Primitive::Long)
         );
     }
 
@@ -97,18 +97,18 @@ mod tests {
         assert!(!schema.fields[0].required);
         assert_eq!(
             schema.fields[0].field_type,
-            datatypes::Any::Primitive(datatypes::Primitive::Long)
+            in_memory::Any::Primitive(in_memory::Primitive::Long)
         );
         assert_eq!(
             schema.fields[0].initial_default,
-            Some(datatypes::AnyValue::Primitive(
-                datatypes::PrimitiveValue::Long(123)
+            Some(in_memory::AnyValue::Primitive(
+                in_memory::PrimitiveValue::Long(123)
             ))
         );
         assert_eq!(
             schema.fields[0].write_default,
-            Some(datatypes::AnyValue::Primitive(
-                datatypes::PrimitiveValue::Long(456)
+            Some(in_memory::AnyValue::Primitive(
+                in_memory::PrimitiveValue::Long(456)
             ))
         );
     }
@@ -145,10 +145,10 @@ mod tests {
         assert!(!schema.fields[0].required);
         assert_eq!(
             schema.fields[0].field_type,
-            datatypes::Any::List(datatypes::List {
+            in_memory::Any::List(in_memory::List {
                 element_id: 3,
                 element_required: true,
-                element_type: datatypes::Any::Primitive(datatypes::Primitive::String).into(),
+                element_type: in_memory::Any::Primitive(in_memory::Primitive::String).into(),
             })
         );
     }
@@ -187,12 +187,12 @@ mod tests {
         assert!(!schema.fields[0].required);
         assert_eq!(
             schema.fields[0].field_type,
-            datatypes::Any::Map(datatypes::Map {
+            in_memory::Any::Map(in_memory::Map {
                 key_id: 4,
-                key_type: datatypes::Any::Primitive(datatypes::Primitive::String).into(),
+                key_type: in_memory::Any::Primitive(in_memory::Primitive::String).into(),
                 value_id: 5,
                 value_required: false,
-                value_type: datatypes::Any::Primitive(datatypes::Primitive::Double).into(),
+                value_type: in_memory::Any::Primitive(in_memory::Primitive::Double).into(),
             })
         );
     }

@@ -1,7 +1,7 @@
 //! Avro data types related functions.
 
-use crate::datatypes::{Any, Field, Primitive, Schema};
 use crate::error::Result;
+use crate::types::in_memory::{Any, Field, Primitive, Schema};
 use crate::{Error, ErrorKind};
 use apache_avro::schema::{Name, RecordField as AvroRecordField, RecordFieldOrder, RecordSchema};
 use apache_avro::Schema as AvroSchema;
