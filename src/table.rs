@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::atomic::AtomicUsize;
 
 use crate::error::Result;
 use futures::StreamExt;
@@ -22,7 +23,7 @@ pub struct Table {
     current_version: i64,
     current_location: Option<String>,
 
-    task_id: usize,
+    task_id: AtomicUsize,
 }
 
 impl Table {
@@ -35,7 +36,7 @@ impl Table {
 
             current_version: 0,
             current_location: None,
-            task_id: 0,
+            task_id: AtomicUsize::new(0),
         }
     }
 
@@ -246,16 +247,18 @@ impl Table {
     }
 
     /// Return a task writer used to write data into table.
-    pub async fn task_writer(&mut self) -> Result<TaskWriter> {
+    pub async fn task_writer(&self) -> Result<TaskWriter> {
+        let task_id = self
+            .task_id
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let task_writer = TaskWriter::try_new(
             self.current_table_metadata().clone(),
             self.op.clone(),
             0,
-            self.task_id,
+            task_id,
             None,
         )
         .await?;
-        self.task_id += 1;
         Ok(task_writer)
     }
 }
