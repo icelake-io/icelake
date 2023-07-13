@@ -5,19 +5,17 @@ use std::convert::TryFrom;
 use std::sync::Arc;
 
 use crate::datatypes;
-use crate::datatypes::Any;
+use crate::datatypes::{Any, Schema};
 use arrow_schema::ArrowError;
 use arrow_schema::DataType as ArrowDataType;
 use arrow_schema::Field as ArrowField;
 use arrow_schema::Schema as ArrowSchema;
 use arrow_schema::TimeUnit;
 
-use super::in_memory as types;
-
-impl TryFrom<types::Schema> for ArrowSchema {
+impl TryFrom<Schema> for ArrowSchema {
     type Error = ArrowError;
 
-    fn try_from(value: types::Schema) -> Result<Self, Self::Error> {
+    fn try_from(value: Schema) -> Result<Self, Self::Error> {
         let fields = value
             .fields
             .into_iter()
@@ -141,7 +139,7 @@ mod tests {
 
     #[test]
     fn test_try_into_arrow_schema() {
-        let schema = types::Schema {
+        let schema = Schema {
             fields: vec![
                 datatypes::Field {
                     name: "id".to_string(),

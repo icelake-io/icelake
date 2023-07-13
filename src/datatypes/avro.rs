@@ -1,8 +1,11 @@
+//! Avro data types related functions.
+
 use crate::datatypes::{Any, Field, Primitive, Schema};
 use crate::error::Result;
 use crate::{Error, ErrorKind};
-use apache_avro::schema::{Name, RecordField as AvroRecordField};
+use apache_avro::schema::{Name, RecordField as AvroRecordField, RecordFieldOrder, RecordSchema};
 use apache_avro::Schema as AvroSchema;
+use std::collections::BTreeMap;
 
 impl<'a> TryFrom<&'a Schema> for AvroSchema {
     type Error = Error;
@@ -12,12 +15,15 @@ impl<'a> TryFrom<&'a Schema> for AvroSchema {
             .fields
             .iter()
             .map(AvroRecordField::try_from)
-            .collect()?;
-        Ok(AvroSchema::Record {
+            .collect::<Result<Vec<AvroRecordField>>>()?;
+        Ok(AvroSchema::Record(RecordSchema {
             name: Name::from(format!("r_{}", value.schema_id).as_str()),
+            aliases: None,
+            doc: None,
             fields: avro_fields,
-            ..Default::default()
-        })
+            lookup: BTreeMap::new(),
+            attributes: BTreeMap::new(),
+        }))
     }
 }
 
@@ -42,18 +48,27 @@ impl<'a> TryFrom<&'a Field> for AvroRecordField {
                 _ => {
                     return Err(Error::new(
                         ErrorKind::IcebergFeatureUnsupported,
-                        format!("Unable to convert iceberg data type {data_type} to avro type"),
+                        format!(
+                            "Unable to convert iceberg data type {:?} to avro type",
+                            data_type
+                        ),
                     ))
                 }
             },
             Any::Struct(s) => {
-                let avro_fields: Vec<AvroRecordField> =
-                    s.fields.iter().map(AvroRecordField::try_from).collect()?;
-                AvroSchema::Record {
+                let avro_fields: Vec<AvroRecordField> = s
+                    .fields
+                    .iter()
+                    .map(AvroRecordField::try_from)
+                    .collect::<Result<Vec<AvroRecordField>>>()?;
+                AvroSchema::Record(RecordSchema {
                     name: Name::from(format!("r_{}", value.id).as_str()),
                     fields: avro_fields,
-                    ..Default::default()
-                }
+                    aliases: None,
+                    doc: None,
+                    lookup: BTreeMap::new(),
+                    attributes: BTreeMap::new(),
+                })
             }
             r#type => {
                 return Err(Error::new(
@@ -69,9 +84,12 @@ impl<'a> TryFrom<&'a Field> for AvroRecordField {
         Ok(AvroRecordField {
             name: value.name.clone(),
             doc: value.comment.clone(),
+            aliases: None,
             default: None,
             schema: avro_schema,
-            ..Default::default()
+            order: RecordFieldOrder::Ignore,
+            position: 0,
+            custom_attributes: BTreeMap::default(),
         })
     }
 }

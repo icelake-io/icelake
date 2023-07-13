@@ -15,7 +15,7 @@ io_parquet = ["arrow_schema", "dep:parquet", "dep:arrow-array"]
 [dependencies]
 anyhow = "1"
 async-trait = "0.1"
-apache-avro = { version = "0.14", features = ["derive"] }
+apache-avro = { version = "0.15", features = ["derive"] }
 arrow-array = { version = ">=40, <43", optional = true }
 arrow-schema = { version = ">=40, <43", optional = true }
 bytes = "1"
