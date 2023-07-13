@@ -11,5 +11,6 @@ pub use error::Error;
 pub use error::ErrorKind;
 pub use error::Result;
 
+pub mod datatypes;
 pub mod io;
 pub mod types;

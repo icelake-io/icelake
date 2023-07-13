@@ -1,12 +1,12 @@
 use serde::Deserialize;
 
 use super::types::*;
-use crate::types;
+use crate::datatypes;
 use crate::Error;
 use crate::Result;
 
 /// Parse schema from json bytes.
-pub fn parse_schema(schema: &[u8]) -> Result<types::Schema> {
+pub fn parse_schema(schema: &[u8]) -> Result<datatypes::Schema> {
     let schema: Schema = serde_json::from_slice(schema)?;
     schema.try_into()
 }
@@ -19,7 +19,7 @@ pub struct Schema {
     fields: Vec<Field>,
 }
 
-impl TryFrom<Schema> for types::Schema {
+impl TryFrom<Schema> for datatypes::Schema {
     type Error = Error;
 
     fn try_from(value: Schema) -> Result<Self> {
@@ -28,7 +28,7 @@ impl TryFrom<Schema> for types::Schema {
             fields.push(field.try_into()?);
         }
 
-        Ok(types::Schema {
+        Ok(datatypes::Schema {
             schema_id: value.schema_id,
             identifier_field_ids: value.identifier_field_ids,
             fields,
@@ -39,6 +39,7 @@ impl TryFrom<Schema> for types::Schema {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::datatypes;
 
     #[test]
     fn test_parse_schema_struct() {
@@ -65,7 +66,7 @@ mod tests {
         assert!(!schema.fields[0].required);
         assert_eq!(
             schema.fields[0].field_type,
-            types::Any::Primitive(types::Primitive::Long)
+            datatypes::Any::Primitive(datatypes::Primitive::Long)
         );
     }
 
@@ -96,15 +97,19 @@ mod tests {
         assert!(!schema.fields[0].required);
         assert_eq!(
             schema.fields[0].field_type,
-            types::Any::Primitive(types::Primitive::Long)
+            datatypes::Any::Primitive(datatypes::Primitive::Long)
         );
         assert_eq!(
             schema.fields[0].initial_default,
-            Some(types::AnyValue::Primitive(types::PrimitiveValue::Long(123)))
+            Some(datatypes::AnyValue::Primitive(
+                datatypes::PrimitiveValue::Long(123)
+            ))
         );
         assert_eq!(
             schema.fields[0].write_default,
-            Some(types::AnyValue::Primitive(types::PrimitiveValue::Long(456)))
+            Some(datatypes::AnyValue::Primitive(
+                datatypes::PrimitiveValue::Long(456)
+            ))
         );
     }
 
@@ -140,10 +145,10 @@ mod tests {
         assert!(!schema.fields[0].required);
         assert_eq!(
             schema.fields[0].field_type,
-            types::Any::List(types::List {
+            datatypes::Any::List(datatypes::List {
                 element_id: 3,
                 element_required: true,
-                element_type: types::Any::Primitive(types::Primitive::String).into(),
+                element_type: datatypes::Any::Primitive(datatypes::Primitive::String).into(),
             })
         );
     }
@@ -182,12 +187,12 @@ mod tests {
         assert!(!schema.fields[0].required);
         assert_eq!(
             schema.fields[0].field_type,
-            types::Any::Map(types::Map {
+            datatypes::Any::Map(datatypes::Map {
                 key_id: 4,
-                key_type: types::Any::Primitive(types::Primitive::String).into(),
+                key_type: datatypes::Any::Primitive(datatypes::Primitive::String).into(),
                 value_id: 5,
                 value_required: false,
-                value_type: types::Any::Primitive(types::Primitive::Double).into(),
+                value_type: datatypes::Any::Primitive(datatypes::Primitive::Double).into(),
             })
         );
     }

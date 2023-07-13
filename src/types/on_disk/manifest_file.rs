@@ -250,6 +250,7 @@ mod tests {
     use std::env;
     use std::fs;
 
+    use crate::datatypes;
     use crate::types::ManifestFile;
     use anyhow::Result;
     use apache_avro::from_value;
@@ -307,24 +308,24 @@ mod tests {
         assert_eq!(
             metadata,
             types::ManifestMetadata {
-                schema: types::Schema {
+                schema: datatypes::Schema {
                     schema_id: 0,
                     identifier_field_ids: None,
                     fields: vec![
-                        types::Field {
+                        datatypes::Field {
                             id: 1,
                             name: "id".to_string(),
                             required: false,
-                            field_type: types::Any::Primitive(types::Primitive::Long),
+                            field_type: datatypes::Any::Primitive(datatypes::Primitive::Long),
                             comment: None,
                             initial_default: None,
                             write_default: None,
                         },
-                        types::Field {
+                        datatypes::Field {
                             id: 2,
                             name: "data".to_string(),
                             required: false,
-                            field_type: types::Any::Primitive(types::Primitive::String),
+                            field_type: datatypes::Any::Primitive(datatypes::Primitive::String),
                             comment: None,
                             initial_default: None,
                             write_default: None,
