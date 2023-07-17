@@ -1,9 +1,9 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::types::*;
-use crate::types;
 use crate::Error;
 use crate::Result;
+use crate::{types, ErrorKind};
 
 /// Parse schema from json bytes.
 pub fn parse_schema(schema: &[u8]) -> Result<types::Schema> {
@@ -11,7 +11,7 @@ pub fn parse_schema(schema: &[u8]) -> Result<types::Schema> {
     schema.try_into()
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct Schema {
     schema_id: i32,
@@ -33,6 +33,17 @@ impl TryFrom<Schema> for types::Schema {
             identifier_field_ids: value.identifier_field_ids,
             fields,
         })
+    }
+}
+
+impl<'a> TryFrom<&'a types::Schema> for Schema {
+    type Error = Error;
+
+    fn try_from(_value: &'a types::Schema) -> Result<Self> {
+        Err(Error::new(
+            ErrorKind::IcebergFeatureUnsupported,
+            "Serializing schema!",
+        ))
     }
 }
 
