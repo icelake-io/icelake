@@ -355,8 +355,8 @@ fn parse_json_value(expect_type: &types::Any, value: serde_json::Value) -> Resul
     }
 }
 
-fn serialize_value_to_json(_value: types::AnyValue) -> Result<serde_json::Value> {
-    todo!()
+fn serialize_value_to_json(value: types::AnyValue) -> Result<serde_json::Value> {
+    Ok(serde_json::to_value(value)?)
 }
 
 /// JSON single-value serialization requires boolean been stored
