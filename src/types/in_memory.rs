@@ -1145,7 +1145,7 @@ impl DataFile {
             .with_comment("Partition data tuple, schema based on the partition spec")
     }
 
-    pub fn new(
+    pub(crate) fn new(
         content: DataContentType,
         file_path: impl Into<String>,
         file_format: DataFileFormat,
@@ -1154,7 +1154,7 @@ impl DataFile {
     ) -> Self {
         Self {
             content,
-            file_path,
+            file_path: file_path.into(),
             file_format,
             partition: (),
             record_count,

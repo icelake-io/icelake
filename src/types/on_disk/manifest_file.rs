@@ -11,7 +11,7 @@ use serde_with::Bytes;
 
 use super::parse_schema;
 use crate::types;
-use crate::types::on_disk::partition_spec::PartitionSpec;
+use crate::types::on_disk::partition_spec::serialize_partition_spec_fields;
 use crate::types::on_disk::schema::serialize_schema;
 use crate::types::{DataContentType, ManifestFile, ManifestListEntry, UNASSIGNED_SEQ_NUM};
 use crate::types::{ManifestStatus, TableFormatVersion};
@@ -414,7 +414,7 @@ impl ManifestWriter {
         writer.add_user_metadata("schema".to_string(), serialize_schema(table_schema)?)?;
         writer.add_user_metadata(
             "partition-spec".to_string(),
-            serde_json::to_string(&PartitionSpec::try_from(&self.partition_spec)?)?,
+            serialize_partition_spec_fields(&self.partition_spec)?,
         )?;
         writer.add_user_metadata(
             "partition-spec-id".to_string(),
@@ -436,7 +436,7 @@ impl ManifestWriter {
         writer.add_user_metadata("schema".to_string(), serialize_schema(table_schema)?)?;
         writer.add_user_metadata(
             "partition-spec".to_string(),
-            serde_json::to_string(&PartitionSpec::try_from(&self.partition_spec)?)?,
+            serialize_partition_spec_fields(&self.partition_spec)?,
         )?;
         writer.add_user_metadata(
             "partition-spec-id".to_string(),
@@ -463,7 +463,6 @@ mod tests {
     use apache_avro::from_value;
     use apache_avro::Reader;
     use opendal::services::Fs;
-    use opendal::Builder;
     use tempfile::TempDir;
 
     use super::*;
@@ -629,7 +628,7 @@ mod tests {
 
         let operator = {
             let mut builder = Fs::default();
-            builder.root(tmp_dir.path());
+            builder.root(tmp_dir.path().to_str().unwrap());
             Operator::new(builder).unwrap().finish()
         };
 
@@ -638,11 +637,11 @@ mod tests {
             fields: vec![],
         };
 
-        let mut writer = ManifestWriter::new(partition_spec, operator, filename, 3);
+        let writer = ManifestWriter::new(partition_spec, operator, filename, 3);
         let manifest_list_entry = writer.write(manifest_file.clone()).await.unwrap();
 
         assert_eq!(
-            tmp_dir.path().join(filename),
+            tmp_dir.path().join(filename).as_path().to_str().unwrap(),
             manifest_list_entry.manifest_path
         );
         assert_eq!(manifest_file.metadata.content, manifest_list_entry.content);
