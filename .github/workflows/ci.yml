@@ -17,6 +17,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+
+      - name: Update Rust Stable
+        run: rustup update stable
+
       - name: Format
         run: cargo fmt --all -- --check
 
@@ -27,6 +31,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+      - name: Update Rust Stable
+        run: rustup update stable
       - name: Build
         run: cargo build --all-features
 
@@ -34,5 +40,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+      - name: Update Rust Stable
+        run: rustup update stable
       - name: Test
         run: cargo test --all-targets --all-features
