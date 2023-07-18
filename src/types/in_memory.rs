@@ -1144,6 +1144,34 @@ impl DataFile {
         Field::required(102, "partition", Any::Struct(partition_type))
             .with_comment("Partition data tuple, schema based on the partition spec")
     }
+
+    pub fn new(
+        content: DataContentType,
+        file_path: impl Into<String>,
+        file_format: DataFileFormat,
+        record_count: i64,
+        file_size_in_bytes: i64,
+    ) -> Self {
+        Self {
+            content,
+            file_path,
+            file_format,
+            partition: (),
+            record_count,
+            file_size_in_bytes,
+            column_sizes: None,
+            value_counts: None,
+            null_value_counts: None,
+            nan_value_counts: None,
+            distinct_counts: None,
+            lower_bounds: None,
+            upper_bounds: None,
+            key_metadata: None,
+            split_offsets: vec![],
+            equality_ids: None,
+            sort_order_id: None,
+        }
+    }
 }
 
 /// Type of content stored by the data file: data, equality deletes, or
