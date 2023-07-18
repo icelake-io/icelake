@@ -11,9 +11,10 @@ use chrono::Utc;
 use rust_decimal::Decimal;
 use serde::de::MapAccess;
 use serde::de::Visitor;
-use serde::Deserialize;
+use serde::ser::{Error as SerError, SerializeStruct};
 use serde::Deserializer;
 use serde::{de, Serialize};
+use serde::{Deserialize, Serializer};
 use uuid::Uuid;
 
 use crate::types;
@@ -22,7 +23,7 @@ use crate::Error;
 use crate::ErrorKind;
 use crate::Result;
 
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Deserialize, Default, Debug)]
 #[serde(rename_all = "kebab-case", default)]
 pub struct Types {
     #[serde(rename = "type")]
@@ -180,15 +181,93 @@ impl TryFrom<Types> for types::Any {
 impl TryFrom<Any> for Types {
     type Error = Error;
 
-    fn try_from(_value: Any) -> Result<Self> {
-        Err(Error::new(
-            ErrorKind::IcebergFeatureUnsupported,
-            "Serializing data types!",
-        ))
+    fn try_from(v: Any) -> Result<Self> {
+        match v {
+            types::Any::Primitive(prim) => {
+                let typ = match prim {
+                    types::Primitive::Boolean => "boolean".to_string(),
+                    types::Primitive::Int => "int".to_string(),
+                    types::Primitive::Long => "long".to_string(),
+                    types::Primitive::Float => "float".to_string(),
+                    types::Primitive::Double => "double".to_string(),
+                    types::Primitive::Date => "date".to_string(),
+                    types::Primitive::Time => "time".to_string(),
+                    types::Primitive::Timestamp => "timestamp".to_string(),
+                    types::Primitive::Timestampz => "timestamptz".to_string(),
+                    types::Primitive::String => "string".to_string(),
+                    types::Primitive::Uuid => "uuid".to_string(),
+                    types::Primitive::Binary => "binary".to_string(),
+                    types::Primitive::Fixed(length) => format!("fixed[{}]", length),
+                    types::Primitive::Decimal { precision, scale } => {
+                        format!("decimal({}, {})", precision, scale)
+                    }
+                };
+                Ok(Types {
+                    typ,
+                    ..Default::default()
+                })
+            }
+            types::Any::Struct(types::Struct { fields }) => {
+                let json_fields = fields
+                    .iter()
+                    .map(|f| -> Result<Field> {
+                        Ok(Field {
+                            id: f.id,
+                            name: f.name.clone(),
+                            required: f.required,
+                            typ: f.field_type.clone().try_into()?,
+                            doc: f.comment.clone(),
+                            initial_default: f
+                                .initial_default
+                                .clone()
+                                .map(serialize_value_to_json)
+                                .transpose()?,
+                            write_default: f
+                                .initial_default
+                                .clone()
+                                .map(serialize_value_to_json)
+                                .transpose()?,
+                        })
+                    })
+                    .collect::<Result<Vec<Field>>>()?;
+
+                Ok(Types {
+                    typ: "struct".to_string(),
+                    fields: json_fields,
+                    ..Default::default()
+                })
+            }
+            types::Any::List(types::List {
+                element_id,
+                element_required,
+                element_type,
+            }) => Ok(Types {
+                typ: "list".to_string(),
+                element_id,
+                element_required,
+                element: Some(Box::new((*element_type).clone().try_into()?)),
+                ..Default::default()
+            }),
+            types::Any::Map(types::Map {
+                key_id,
+                key_type,
+                value_id,
+                value_required,
+                value_type,
+            }) => Ok(Types {
+                typ: "map".to_string(),
+                key_id,
+                key: Some(Box::new((*key_type).try_into()?)),
+                value_id,
+                value_required,
+                value: Some(Box::new((*value_type).try_into()?)),
+                ..Default::default()
+            }),
+        }
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "kebab-case")]
 pub struct Field {
     id: i32,
@@ -196,8 +275,11 @@ pub struct Field {
     required: bool,
     #[serde(rename = "type", deserialize_with = "string_or_struct")]
     typ: Types,
+    #[serde(skip_serializing_if = "Option::is_none")]
     doc: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     initial_default: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     write_default: Option<serde_json::Value>,
 }
 
@@ -233,11 +315,16 @@ impl TryFrom<Field> for types::Field {
 
 impl TryFrom<types::Field> for Field {
     type Error = Error;
-    fn try_from(_value: types::Field) -> Result<Self> {
-        Err(Error::new(
-            ErrorKind::IcebergFeatureUnsupported,
-            "Serializing Field!",
-        ))
+    fn try_from(v: types::Field) -> Result<Self> {
+        Ok(Self {
+            id: v.id,
+            name: v.name,
+            required: v.required,
+            typ: v.field_type.try_into()?,
+            doc: v.comment,
+            initial_default: v.initial_default.map(serialize_value_to_json).transpose()?,
+            write_default: v.write_default.map(serialize_value_to_json).transpose()?,
+        })
     }
 }
 
@@ -266,6 +353,10 @@ fn parse_json_value(expect_type: &types::Any, value: serde_json::Value) -> Resul
         types::Any::List(v) => parse_json_value_to_list(v, value),
         types::Any::Map(v) => parse_json_value_to_map(v, value),
     }
+}
+
+fn serialize_value_to_json(_value: types::AnyValue) -> Result<serde_json::Value> {
+    todo!()
 }
 
 /// JSON single-value serialization requires boolean been stored
@@ -862,4 +953,50 @@ where
     }
 
     deserializer.deserialize_any(StringOrStruct(PhantomData))
+}
+
+impl Serialize for Types {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self.typ.as_str() {
+            "boolean" | "int" | "long" | "float" | "double" | "date" | "time" | "timestamp"
+            | "timestamptz" | "string" | "uuid" | "binary" => serializer.serialize_str(&self.typ),
+            v if v.starts_with("decimal") || v.starts_with("fixed") => {
+                serializer.serialize_str(&self.typ)
+            }
+            "struct" => {
+                let mut state = serializer.serialize_struct("Types", 2)?;
+                state.serialize_field("type", &self.typ)?;
+                state.serialize_field("fields", &self.fields)?;
+                state.end()
+            }
+            "list" => {
+                let mut state = serializer.serialize_struct("Types", 4)?;
+                state.serialize_field("type", &self.typ)?;
+                state.serialize_field("element-id", &self.element_id)?;
+                state.serialize_field("element-required", &self.element_required)?;
+                if let Some(t) = self.element.as_ref() {
+                    state.serialize_field("element", &t)?;
+                }
+                state.end()
+            }
+            "map" => {
+                let mut state = serializer.serialize_struct("Types", 5)?;
+                state.serialize_field("type", &self.typ)?;
+                state.serialize_field("key-id", &self.key_id)?;
+                if let Some(t) = self.key.as_ref() {
+                    state.serialize_field("key", &t)?;
+                }
+                state.serialize_field("value-id", &self.value_id)?;
+                state.serialize_field("value-required", &self.value_required)?;
+                if let Some(t) = self.value.as_ref() {
+                    state.serialize_field("value", &t)?;
+                }
+                state.end()
+            }
+            _ => Err(S::Error::custom(format!("Unknown type {}", &self.typ))),
+        }
+    }
 }
