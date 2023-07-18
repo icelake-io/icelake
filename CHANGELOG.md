@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [v0.0.8] - 2023-07-18
+
+* feat: Initial check in of mainfest writer. by @liurenjie1024 in https://github.com/icelake-io/icelake/pull/91
+* chore: allow depending on arrow version 43.0.0. by @youngsofun in https://github.com/icelake-io/icelake/pull/92
+
+## [v0.0.7] - 2023-07-17
+
+* feat: support data file location generator by @ZENOTME in https://github.com/icelake-io/icelake/pull/60
+* docs: Add docs for all public APIs by @Xuanwo in https://github.com/icelake-io/icelake/pull/64
+* deps: Allow deps within range by @Xuanwo in https://github.com/icelake-io/icelake/pull/65
+* feat: Add PrimitiveValue by @Xuanwo in https://github.com/icelake-io/icelake/pull/66
+* feat(in_memory): Add {Any,Struct,List,Map}Value by @Xuanwo in https://github.com/icelake-io/icelake/pull/67
+* feat: Add default to in-memory structs by @Xuanwo in https://github.com/icelake-io/icelake/pull/68
+* feat: Implement parser for initial-default and write-default by @Xuanwo in https://github.com/icelake-io/icelake/pull/69
+* chore: Enable all-features for docs.rs by @Xuanwo in https://github.com/icelake-io/icelake/pull/70
+* docs: Make rustdoc happy by @Xuanwo in https://github.com/icelake-io/icelake/pull/71
+* feat: implement data writer by @ZENOTME in https://github.com/icelake-io/icelake/pull/72
+* feat: support to track written size by @ZENOTME in https://github.com/icelake-io/icelake/pull/73
+* feat: support task writer by @ZENOTME in https://github.com/icelake-io/icelake/pull/75
+* feat: support open_with_operator by @ZENOTME in https://github.com/icelake-io/icelake/pull/76
+* fix: Rename some data structures. by @liurenjie1024 in https://github.com/icelake-io/icelake/pull/77
+* fix: uncorrect partition write predict by @ZENOTME in https://github.com/icelake-io/icelake/pull/78
+* fix: make sure the version is valid when the table open  by @ZENOTME in https://github.com/icelake-io/icelake/pull/81
+* fix: switch any::Result to crate::error::Result in table.rs by @ZENOTME in https://github.com/icelake-io/icelake/pull/82
+* ci: Add partition table testdata by @Xuanwo in https://github.com/icelake-io/icelake/pull/84
+* refactor: Use table format version in manifest by @liurenjie1024 in https://github.com/icelake-io/icelake/pull/85
+* feat: make task_writer to use imutable reference by @ZENOTME in https://github.com/icelake-io/icelake/pull/87
+* feat: Convert iceberg schema to avro schema by @liurenjie1024 in https://github.com/icelake-io/icelake/pull/88
+* Bump to version 0.0.7 by @Xuanwo in https://github.com/icelake-io/icelake/pull/89
+
 ## [v0.0.6] - 2023-07-01
 
 * feat: Add support for writing parquet by @ZENOTME in https://github.com/icelake-io/icelake/pull/50
@@ -58,6 +88,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 * feat: Load table metadata from storage by @Xuanwo in https://github.com/icelake-io/icelake/pull/21
 * ci: Add publish CI by @Xuanwo in https://github.com/icelake-io/icelake/pull/23
 
+[v0.0.8]: https://github.com/icelake-io/icelake/compare/v0.0.8...v0.0.7
+[v0.0.7]: https://github.com/icelake-io/icelake/compare/v0.0.7...v0.0.6
 [v0.0.6]: https://github.com/icelake-io/icelake/compare/v0.0.5...v0.0.6
 [v0.0.5]: https://github.com/icelake-io/icelake/compare/v0.0.4...v0.0.5
 [v0.0.4]: https://github.com/icelake-io/icelake/compare/v0.0.3...v0.0.4
