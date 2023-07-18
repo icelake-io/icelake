@@ -392,6 +392,21 @@ impl Transform {
     }
 }
 
+impl<'a> ToString for &'a Transform {
+    fn to_string(&self) -> String {
+        match self {
+            Transform::Identity => "identity".to_string(),
+            Transform::Year => "year".to_string(),
+            Transform::Month => "month".to_string(),
+            Transform::Day => "day".to_string(),
+            Transform::Hour => "hour".to_string(),
+            Transform::Void => "void".to_string(),
+            Transform::Bucket(length) => format!("bucket[{}]", length),
+            Transform::Truncate(width) => format!("truncate[{}]", width),
+        }
+    }
+}
+
 /// Data files are stored in manifests with a tuple of partition values
 /// that are used in scans to filter out files that cannot contain records
 ///  that match the scan’s filter predicate.
