@@ -62,7 +62,7 @@ impl<'a> TryFrom<&'a types::Schema> for Schema {
 mod tests {
     use super::*;
 
-    fn check_schema_serde(json_schema: &str, expected_schema: types::Schema) {
+    fn check_schema_serde_and_parse(json_schema: &str, expected_schema: types::Schema) {
         let schema = parse_schema(json_schema.as_bytes()).unwrap();
         assert_eq!(expected_schema, schema);
 
@@ -103,12 +103,12 @@ mod tests {
             }],
         };
 
-        check_schema_serde(json_schema, expected_schema);
+        check_schema_serde_and_parse(json_schema, expected_schema);
     }
 
     #[test]
-    fn test_parse_schema_struct_with_default() {
-        let schema = r#"
+    fn test_schema_struct_with_default() {
+        let json_schema = r#"
 {
 	"type" : "struct",
 	"schema-id" : 0,
@@ -137,13 +137,11 @@ mod tests {
             }],
         };
 
-        let schema = parse_schema(schema.as_bytes()).unwrap();
-
-        assert_eq!(expected_schema, schema);
+        check_schema_serde_and_parse(json_schema, expected_schema);
     }
 
     #[test]
-    fn test_parse_schema_list() {
+    fn test_schema_list() {
         let json_schema = r#"
 {
     "type" : "struct",
@@ -182,11 +180,11 @@ mod tests {
             }],
         };
 
-        check_schema_serde(json_schema, expected_schema);
+        check_schema_serde_and_parse(json_schema, expected_schema);
     }
 
     #[test]
-    fn test_parse_schema_map() {
+    fn test_schema_map() {
         let json_schema = r#"
 {
     "type" : "struct",
@@ -229,6 +227,6 @@ mod tests {
             }],
         };
 
-        check_schema_serde(json_schema, expected_schema);
+        check_schema_serde_and_parse(json_schema, expected_schema);
     }
 }

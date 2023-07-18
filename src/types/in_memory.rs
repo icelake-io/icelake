@@ -8,6 +8,8 @@ use chrono::NaiveDateTime;
 use chrono::NaiveTime;
 use chrono::Utc;
 use rust_decimal::Decimal;
+use serde::ser::SerializeMap;
+use serde::Serialize;
 use uuid::Uuid;
 
 use crate::Error;
@@ -53,6 +55,26 @@ pub enum AnyValue {
         /// All values in this map.
         values: Vec<AnyValue>,
     },
+}
+
+impl Serialize for AnyValue {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            AnyValue::Primitive(value) => value.serialize(serializer),
+            AnyValue::Struct(value) => value.serialize(serializer),
+            AnyValue::List(value) => value.serialize(serializer),
+            AnyValue::Map { keys, values } => {
+                let mut map = serializer.serialize_map(Some(keys.len()))?;
+                for (key, value) in keys.iter().zip(values.iter()) {
+                    map.serialize_entry(key, value)?;
+                }
+                map.end()
+            }
+        }
+    }
 }
 
 /// Primitive Types within a schema.
@@ -161,6 +183,30 @@ pub enum PrimitiveValue {
     Fixed(Vec<u8>),
     /// Arbitrary-length byte array.
     Binary(Vec<u8>),
+}
+
+impl Serialize for PrimitiveValue {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            PrimitiveValue::Boolean(value) => serializer.serialize_bool(*value),
+            PrimitiveValue::Int(value) => serializer.serialize_i32(*value),
+            PrimitiveValue::Long(value) => serializer.serialize_i64(*value),
+            PrimitiveValue::Float(value) => serializer.serialize_f32(*value),
+            PrimitiveValue::Double(value) => serializer.serialize_f64(*value),
+            PrimitiveValue::Decimal(value) => serializer.serialize_str(&value.to_string()),
+            PrimitiveValue::Date(value) => serializer.serialize_str(&value.to_string()),
+            PrimitiveValue::Time(value) => serializer.serialize_str(&value.to_string()),
+            PrimitiveValue::Timestamp(value) => serializer.serialize_str(&value.to_string()),
+            PrimitiveValue::Timestampz(value) => serializer.serialize_str(&value.to_string()),
+            PrimitiveValue::String(value) => serializer.serialize_str(value),
+            PrimitiveValue::Uuid(value) => serializer.serialize_str(&value.to_string()),
+            PrimitiveValue::Fixed(value) => serializer.serialize_bytes(value),
+            PrimitiveValue::Binary(value) => serializer.serialize_bytes(value),
+        }
+    }
 }
 
 /// A struct is a tuple of typed values.
