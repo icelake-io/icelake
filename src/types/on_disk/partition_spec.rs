@@ -1,14 +1,25 @@
 use serde::{Deserialize, Serialize};
 
 use super::transform::parse_transform;
+use crate::types;
 use crate::Error;
 use crate::Result;
-use crate::{types, ErrorKind};
 
 /// Parse schema from json bytes.
 pub fn parse_partition_spec(bs: &[u8]) -> Result<types::PartitionSpec> {
     let t: PartitionSpec = serde_json::from_slice(bs)?;
     t.try_into()
+}
+
+/// Serialize partition spec to json bytes.
+pub fn serialize_partition_spec(spec: &types::PartitionSpec) -> Result<String> {
+    let t = PartitionSpec::try_from(spec)?;
+    Ok(serde_json::to_string(&t)?)
+}
+
+pub fn serialize_partition_spec_fields(spec: &types::PartitionSpec) -> Result<String> {
+    let t = PartitionSpec::try_from(spec)?;
+    Ok(serde_json::to_string(&t.fields)?)
 }
 
 #[derive(Serialize, Deserialize)]
@@ -36,11 +47,15 @@ impl TryFrom<PartitionSpec> for types::PartitionSpec {
 
 impl<'a> TryFrom<&'a types::PartitionSpec> for PartitionSpec {
     type Error = Error;
-    fn try_from(_value: &'a types::PartitionSpec) -> Result<Self> {
-        Err(Error::new(
-            ErrorKind::IcebergFeatureUnsupported,
-            "Serializing partition spec!",
-        ))
+    fn try_from(v: &'a types::PartitionSpec) -> Result<Self> {
+        Ok(Self {
+            spec_id: v.spec_id,
+            fields: v
+                .fields
+                .iter()
+                .map(PartitionField::try_from)
+                .collect::<Result<Vec<PartitionField>>>()?,
+        })
     }
 }
 
@@ -71,17 +86,40 @@ impl TryFrom<PartitionField> for types::PartitionField {
 impl<'a> TryFrom<&'a types::PartitionField> for PartitionField {
     type Error = Error;
 
-    fn try_from(_v: &'a types::PartitionField) -> Result<Self> {
-        Err(Error::new(
-            ErrorKind::IcebergFeatureUnsupported,
-            "Serializing partition field!",
-        ))
+    fn try_from(v: &'a types::PartitionField) -> Result<Self> {
+        Ok(Self {
+            source_id: v.source_column_id,
+            field_id: v.partition_field_id,
+            name: v.name.clone(),
+            transform: (&v.transform).to_string(),
+        })
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn check_partition_spec_conversion(json: &str, expected_partition_spec: types::PartitionSpec) {
+        let parsed = parse_partition_spec(json.as_bytes()).unwrap();
+        assert_eq!(expected_partition_spec, parsed);
+
+        let serialized_json = serialize_partition_spec(&expected_partition_spec).unwrap();
+        let parsed = parse_partition_spec(serialized_json.as_bytes()).unwrap();
+        assert_eq!(expected_partition_spec, parsed);
+
+        let serialized_fields_json =
+            serialize_partition_spec_fields(&expected_partition_spec).unwrap();
+        let parse_fields: Vec<PartitionField> =
+            serde_json::from_slice(serialized_fields_json.as_bytes()).unwrap();
+        let parse_type_fields = parse_fields
+            .into_iter()
+            .map(types::PartitionField::try_from)
+            .collect::<Result<Vec<types::PartitionField>>>()
+            .unwrap();
+
+        assert_eq!(expected_partition_spec.fields, parse_type_fields);
+    }
 
     #[test]
     fn test_parse_partition_spec() {
@@ -102,27 +140,25 @@ mod tests {
 }
         "#;
 
-        let v = parse_partition_spec(content.as_bytes()).unwrap();
-
-        assert_eq!(v.spec_id, 1);
-        assert_eq!(v.fields.len(), 2);
-        assert_eq!(
-            v.fields[0],
-            types::PartitionField {
-                source_column_id: 4,
-                partition_field_id: 1000,
-                transform: types::Transform::Day,
-                name: "ts_day".to_string(),
-            }
+        check_partition_spec_conversion(
+            content,
+            types::PartitionSpec {
+                spec_id: 1,
+                fields: vec![
+                    types::PartitionField {
+                        source_column_id: 4,
+                        partition_field_id: 1000,
+                        transform: types::Transform::Day,
+                        name: "ts_day".to_string(),
+                    },
+                    types::PartitionField {
+                        source_column_id: 1,
+                        partition_field_id: 1001,
+                        transform: types::Transform::Bucket(16),
+                        name: "id_bucket".to_string(),
+                    },
+                ],
+            },
         );
-        assert_eq!(
-            v.fields[1],
-            types::PartitionField {
-                source_column_id: 1,
-                partition_field_id: 1001,
-                transform: types::Transform::Bucket(16),
-                name: "id_bucket".to_string(),
-            }
-        )
     }
 }
