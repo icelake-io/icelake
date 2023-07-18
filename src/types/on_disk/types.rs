@@ -19,9 +19,9 @@ use uuid::Uuid;
 
 use crate::types;
 use crate::types::Any;
+use crate::Error;
 use crate::ErrorKind;
 use crate::Result;
-use crate::Error;
 
 #[derive(Deserialize, Default, Debug)]
 #[serde(rename_all = "kebab-case", default)]

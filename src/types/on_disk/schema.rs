@@ -212,23 +212,21 @@ mod tests {
         let expected_schema = types::Schema {
             schema_id: 0,
             identifier_field_ids: None,
-            fields: vec![
-                types::Field {
-                    id: 1,
-                    name: "VendorID".to_string(),
-                    required: false,
-                    field_type: types::Any::Map(types::Map {
-                        key_id: 4,
-                        key_type: types::Any::Primitive(types::Primitive::String).into(),
-                        value_id: 5,
-                        value_required: false,
-                        value_type: types::Any::Primitive(types::Primitive::Double).into(),
-                    }),
-                    comment: None,
-                    initial_default: None,
-                    write_default: None,
-                }
-            ]
+            fields: vec![types::Field {
+                id: 1,
+                name: "VendorID".to_string(),
+                required: false,
+                field_type: types::Any::Map(types::Map {
+                    key_id: 4,
+                    key_type: types::Any::Primitive(types::Primitive::String).into(),
+                    value_id: 5,
+                    value_required: false,
+                    value_type: types::Any::Primitive(types::Primitive::Double).into(),
+                }),
+                comment: None,
+                initial_default: None,
+                write_default: None,
+            }],
         };
 
         check_schema_serde(json_schema, expected_schema);
