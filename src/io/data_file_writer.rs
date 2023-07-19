@@ -183,11 +183,13 @@ impl DataFileWriter {
             /// - `file_size_in_bytes` can't get from `FileMetaData` now.
             /// - `file_offset` in `FileMetaData` always be None now.
             /// - `nan_value_counts` can't get from `FileMetaData` now.
-            split_offsets: Some(meta_data
-                .row_groups
-                .iter()
-                .filter_map(|group| group.file_offset)
-                .collect()),
+            split_offsets: Some(
+                meta_data
+                    .row_groups
+                    .iter()
+                    .filter_map(|group| group.file_offset)
+                    .collect(),
+            ),
             nan_value_counts: None,
             lower_bounds: None,
             upper_bounds: None,

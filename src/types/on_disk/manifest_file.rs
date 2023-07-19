@@ -424,8 +424,8 @@ mod tests {
     use std::fs::{canonicalize, read};
 
     use anyhow::Result;
-    use apache_avro::Reader;
     use apache_avro::from_value;
+    use apache_avro::Reader;
     use opendal::services::Fs;
     use tempfile::TempDir;
 

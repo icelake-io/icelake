@@ -55,7 +55,6 @@ impl<'a> TryFrom<&'a Field> for AvroRecordField {
                 }
                 avro_schema
             }
-
         };
 
         Ok(AvroRecordField {
