@@ -11,11 +11,9 @@ use serde_with::Bytes;
 
 use super::parse_schema;
 use crate::types;
-use crate::types::on_disk::partition_spec::PartitionSpec;
-use crate::types::on_disk::schema::Schema;
-use crate::types::{
-    DataContentType, ManifestContentType, ManifestFile, ManifestListEntry, UNASSIGNED_SEQ_NUM,
-};
+use crate::types::on_disk::partition_spec::serialize_partition_spec_fields;
+use crate::types::on_disk::schema::serialize_schema;
+use crate::types::{DataContentType, ManifestContentType, ManifestListEntry, UNASSIGNED_SEQ_NUM};
 use crate::types::{ManifestStatus, TableFormatVersion};
 use crate::Error;
 use crate::ErrorKind;
@@ -82,29 +80,11 @@ pub fn parse_manifest_file(bs: &[u8]) -> Result<types::ManifestFile> {
                 .transpose()?
         },
         content: {
-            let c = match meta.get("partition-spec-id") {
-                None => 0,
-                Some(v) => {
-                    let v = String::from_utf8_lossy(v);
-                    v.parse().map_err(|err| {
-                        Error::new(
-                            ErrorKind::IcebergDataInvalid,
-                            format!("partition-spec-id {:?} is invalid", v),
-                        )
-                        .set_source(err)
-                    })?
-                }
-            };
-
-            match c {
-                0 => types::ManifestContentType::Data,
-                1 => types::ManifestContentType::Deletes,
-                _ => {
-                    return Err(Error::new(
-                        ErrorKind::IcebergDataInvalid,
-                        format!("content type {} is invalid", c),
-                    ));
-                }
+            if let Some(v) = meta.get("content") {
+                let v = String::from_utf8_lossy(v);
+                v.parse()?
+            } else {
+                ManifestContentType::Data
             }
         },
     };
@@ -117,14 +97,6 @@ pub fn parse_manifest_file(bs: &[u8]) -> Result<types::ManifestFile> {
     }
 
     Ok(types::ManifestFile { metadata, entries })
-}
-
-/// Save manifest file.
-pub fn write_manifest_file() -> Result<ManifestListEntry> {
-    Err(Error::new(
-        ErrorKind::IcebergFeatureUnsupported,
-        "Write manifest file!",
-    ))
 }
 
 #[derive(Serialize, Deserialize)]
@@ -179,12 +151,13 @@ struct DataFile {
     value_counts: Option<Vec<I64Entry>>,
     null_value_counts: Option<Vec<I64Entry>>,
     nan_value_counts: Option<Vec<I64Entry>>,
+    #[serde(skip_serializing)]
     distinct_counts: Option<Vec<I64Entry>>,
     lower_bounds: Option<Vec<BytesEntry>>,
     upper_bounds: Option<Vec<BytesEntry>>,
     #[serde_as(as = "Option<Bytes>")]
     key_metadata: Option<Vec<u8>>,
-    split_offsets: Vec<i64>,
+    split_offsets: Option<Vec<i64>>,
     equality_ids: Option<Vec<i32>>,
     sort_order_id: Option<i32>,
 }
@@ -295,11 +268,13 @@ fn parse_data_file_format(s: &str) -> Result<types::DataFileFormat> {
     types::DataFileFormat::from_str(s)
 }
 
-struct ManifestWriter {
-    content_type: ManifestContentType,
-    table_schema: types::Schema,
+/// Manifest writer to write manifest to file.
+pub(crate) struct ManifestWriter {
     partition_spec: types::PartitionSpec,
+    op: Operator,
+    // Output path relative to operator root.
     output_path: String,
+    snapshot_id: i64,
 
     added_files: i64,
     added_rows: i64,
@@ -308,12 +283,36 @@ struct ManifestWriter {
     deleted_files: i64,
     deleted_rows: i64,
     min_seq_num: Option<i64>,
-    snapshot_id: i64,
-    op: Operator,
 }
 
 impl ManifestWriter {
-    pub async fn write(mut self, manifest: ManifestFile) -> Result<ManifestListEntry> {
+    pub fn new(
+        partition_spec: types::PartitionSpec,
+        op: Operator,
+        output_path: impl Into<String>,
+        snapshot_id: i64,
+    ) -> Self {
+        Self {
+            partition_spec,
+            op,
+            output_path: output_path.into(),
+            snapshot_id,
+
+            added_files: 0,
+            added_rows: 0,
+            existing_files: 0,
+            existing_rows: 0,
+            deleted_files: 0,
+            deleted_rows: 0,
+            min_seq_num: None,
+        }
+    }
+
+    pub async fn write(mut self, manifest: types::ManifestFile) -> Result<ManifestListEntry> {
+        assert_eq!(
+            self.partition_spec.spec_id, manifest.metadata.partition_spec_id,
+            "Partition spec id not match!"
+        );
         // A place holder for avro schema since avro writer needs its reference.
         let avro_schema;
         let mut avro_writer = match manifest
@@ -322,14 +321,18 @@ impl ManifestWriter {
             .unwrap_or(TableFormatVersion::V1)
         {
             TableFormatVersion::V1 => {
-                let partition_type = self.partition_spec.partition_type(&self.table_schema)?;
-                avro_schema = AvroSchema::try_from(&ManifestFile::v1_schema(partition_type))?;
-                self.v1_writer(&avro_schema)?
+                return Err(Error::new(
+                    ErrorKind::IcebergFeatureUnsupported,
+                    "Currently only writing v2 format is supported!",
+                ));
             }
             TableFormatVersion::V2 => {
-                let partition_type = self.partition_spec.partition_type(&self.table_schema)?;
-                avro_schema = AvroSchema::try_from(&ManifestFile::v1_schema(partition_type))?;
-                self.v2_writer(&avro_schema)?
+                let partition_type = self
+                    .partition_spec
+                    .partition_type(&manifest.metadata.schema)?;
+                avro_schema =
+                    AvroSchema::try_from(&types::ManifestFile::v2_schema(partition_type))?;
+                self.v2_writer(&avro_schema, &manifest.metadata.schema)?
             }
         };
 
@@ -371,10 +374,10 @@ impl ManifestWriter {
         self.op.write(self.output_path.as_str(), connect).await?;
 
         Ok(ManifestListEntry {
-            manifest_path: "".to_string(),
+            manifest_path: format!("{}/{}", self.op.info().root(), &self.output_path),
             manifest_length: length as i64,
             partition_spec_id: manifest.metadata.partition_spec_id,
-            content: self.content_type,
+            content: manifest.metadata.content,
             sequence_number: UNASSIGNED_SEQ_NUM,
             min_sequence_number: self.min_seq_num.unwrap_or(UNASSIGNED_SEQ_NUM),
             added_snapshot_id: self.snapshot_id,
@@ -389,40 +392,20 @@ impl ManifestWriter {
         })
     }
 
-    fn v1_writer<'a>(&self, avro_schema: &'a AvroSchema) -> Result<AvroWriter<'a, Vec<u8>>> {
+    fn v2_writer<'a>(
+        &self,
+        avro_schema: &'a AvroSchema,
+        table_schema: &types::Schema,
+    ) -> Result<AvroWriter<'a, Vec<u8>>> {
         let mut writer = AvroWriter::new(avro_schema, Vec::new());
-        writer.add_user_metadata(
-            "schema".to_string(),
-            serde_json::to_string(&Schema::try_from(&self.table_schema)?)?,
-        )?;
+        writer.add_user_metadata("schema".to_string(), serialize_schema(table_schema)?)?;
         writer.add_user_metadata(
             "partition-spec".to_string(),
-            serde_json::to_string(&PartitionSpec::try_from(&self.partition_spec)?)?,
+            serialize_partition_spec_fields(&self.partition_spec)?,
         )?;
         writer.add_user_metadata(
             "partition-spec-id".to_string(),
-            format!("{}", self.partition_spec.spec_id),
-        )?;
-        writer.add_user_metadata(
-            "format-version".to_string(),
-            TableFormatVersion::V1.to_string(),
-        )?;
-        Ok(writer)
-    }
-
-    fn v2_writer<'a>(&self, avro_schema: &'a AvroSchema) -> Result<AvroWriter<'a, Vec<u8>>> {
-        let mut writer = AvroWriter::new(avro_schema, Vec::new());
-        writer.add_user_metadata(
-            "schema".to_string(),
-            serde_json::to_string(&Schema::try_from(&self.table_schema)?)?,
-        )?;
-        writer.add_user_metadata(
-            "partition-spec".to_string(),
-            serde_json::to_string(&PartitionSpec::try_from(&self.partition_spec)?)?,
-        )?;
-        writer.add_user_metadata(
-            "partition-spec-id".to_string(),
-            format!("{}", self.partition_spec.spec_id),
+            format!("{}", self.partition_spec.spec_id).as_str(),
         )?;
         writer.add_user_metadata(
             "format-version".to_string(),
@@ -438,11 +421,13 @@ impl ManifestWriter {
 mod tests {
     use std::env;
     use std::fs;
+    use std::fs::{canonicalize, read};
 
-    use crate::types::ManifestFile;
     use anyhow::Result;
     use apache_avro::from_value;
     use apache_avro::Reader;
+    use opendal::services::Fs;
+    use tempfile::TempDir;
 
     use super::*;
 
@@ -491,7 +476,7 @@ mod tests {
 
         let bs = fs::read(path).expect("read_file must succeed");
 
-        let ManifestFile { metadata, entries } = parse_manifest_file(&bs)?;
+        let types::ManifestFile { metadata, entries } = parse_manifest_file(&bs)?;
 
         assert_eq!(
             metadata,
@@ -533,5 +518,105 @@ mod tests {
         assert_eq!(entries[2].data_file.file_path, "/opt/bitnami/spark/warehouse/db/table/data/00002-2-b8982382-f016-467a-84e4-5e6bbe0ff19a-00001.parquet");
 
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_read_write_manifest_file_v2() {
+        let manifest_file = types::ManifestFile {
+            metadata: types::ManifestMetadata {
+                schema: types::Schema {
+                    schema_id: 0,
+                    identifier_field_ids: None,
+                    fields: vec![
+                        types::Field {
+                            id: 1,
+                            name: "id".to_string(),
+                            required: false,
+                            field_type: types::Any::Primitive(types::Primitive::Long),
+                            comment: None,
+                            initial_default: None,
+                            write_default: None,
+                        },
+                        types::Field {
+                            id: 2,
+                            name: "data".to_string(),
+                            required: false,
+                            field_type: types::Any::Primitive(types::Primitive::String),
+                            comment: None,
+                            initial_default: None,
+                            write_default: None,
+                        },
+                    ],
+                },
+                schema_id: 0,
+                partition_spec_id: 1,
+                format_version: Some(TableFormatVersion::V2),
+                content: types::ManifestContentType::Data,
+            },
+            entries: vec![
+                types::ManifestEntry {
+                    status: types::ManifestStatus::Added,
+                    snapshot_id: None,
+                    sequence_number: Some(2),
+                    file_sequence_number: Some(3),
+                    data_file: types::DataFile::new(
+                        types::DataContentType::Data,
+                        "/tmp/1.parquet",
+                        types::DataFileFormat::Parquet,
+                        100,
+                        200,
+                    ),
+                },
+                types::ManifestEntry {
+                    status: types::ManifestStatus::Existing,
+                    snapshot_id: Some(12),
+                    sequence_number: Some(12),
+                    file_sequence_number: None,
+                    data_file: types::DataFile::new(
+                        types::DataContentType::Data,
+                        "/tmp/2.parquet",
+                        types::DataFileFormat::Parquet,
+                        100,
+                        200,
+                    ),
+                },
+            ],
+        };
+
+        check_manifest_file_serde(manifest_file).await
+    }
+
+    async fn check_manifest_file_serde(manifest_file: types::ManifestFile) {
+        let tmp_dir = TempDir::new().unwrap();
+        let dir_path = tmp_dir.path().to_str().unwrap();
+        let filename = "test.avro";
+
+        let operator = {
+            let mut builder = Fs::default();
+            builder.root(dir_path);
+            Operator::new(builder).unwrap().finish()
+        };
+
+        let partition_spec = types::PartitionSpec {
+            spec_id: manifest_file.metadata.partition_spec_id,
+            fields: vec![],
+        };
+
+        let writer = ManifestWriter::new(partition_spec, operator, filename, 3);
+        let manifest_list_entry = writer.write(manifest_file.clone()).await.unwrap();
+
+        assert_eq!(
+            canonicalize(format!("{dir_path}/{filename}"))
+                .unwrap()
+                .to_str()
+                .unwrap(),
+            manifest_list_entry.manifest_path
+        );
+        assert_eq!(manifest_file.metadata.content, manifest_list_entry.content);
+
+        let restored_manifest_file =
+            { parse_manifest_file(&read(tmp_dir.path().join(filename)).unwrap()).unwrap() };
+
+        assert_eq!(manifest_file, restored_manifest_file);
     }
 }

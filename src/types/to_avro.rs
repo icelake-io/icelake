@@ -3,9 +3,14 @@
 use crate::error::Result;
 use crate::types::in_memory::{Any, Field, Primitive, Schema};
 use crate::{Error, ErrorKind};
-use apache_avro::schema::{Name, RecordField as AvroRecordField, RecordFieldOrder, RecordSchema};
+use apache_avro::schema::{
+    Name, RecordField as AvroRecordField, RecordFieldOrder, RecordSchema as AvroRecordSchema,
+    UnionSchema,
+};
 use apache_avro::Schema as AvroSchema;
+use serde_json::{Number, Value as JsonValue};
 use std::collections::BTreeMap;
+use std::iter::Iterator;
 
 impl<'a> TryFrom<&'a Schema> for AvroSchema {
     type Error = Error;
@@ -16,14 +21,10 @@ impl<'a> TryFrom<&'a Schema> for AvroSchema {
             .iter()
             .map(AvroRecordField::try_from)
             .collect::<Result<Vec<AvroRecordField>>>()?;
-        Ok(AvroSchema::Record(RecordSchema {
-            name: Name::from(format!("r_{}", value.schema_id).as_str()),
-            aliases: None,
-            doc: None,
-            fields: avro_fields,
-            lookup: BTreeMap::new(),
-            attributes: BTreeMap::new(),
-        }))
+        Ok(AvroSchema::Record(avro_record_schema(
+            format!("r_{}", value.schema_id).as_str(),
+            avro_fields,
+        )))
     }
 }
 
@@ -31,17 +32,30 @@ impl<'a> TryFrom<&'a Field> for AvroRecordField {
     type Error = Error;
 
     fn try_from(value: &'a Field) -> Result<AvroRecordField> {
-        let mut avro_schema = AvroSchema::try_from(&value.field_type)?;
-        // An ugly workaround, let's fix it later.
-        if let Any::Struct(_) = &value.field_type {
-            match &mut avro_schema {
-                AvroSchema::Record(r) => {
-                    r.name = Name::from(value.name.as_str());
-                    r.doc = value.comment.clone();
+        let avro_schema = match &value.field_type {
+            Any::Struct(_) => {
+                let mut avro_schema = AvroSchema::try_from(&value.field_type)?;
+                // An ugly workaround, let's fix it later.
+                if let Any::Struct(_) = &value.field_type {
+                    match &mut avro_schema {
+                        AvroSchema::Record(r) => {
+                            r.name = Name::from(value.name.as_str());
+                            r.doc = value.comment.clone();
+                        }
+                        _ => panic!("Struct record should be converted to avro struct schema."),
+                    }
                 }
-                _ => panic!("Struct record should be converted to avro struct schema."),
+                avro_schema
             }
-        }
+            _ => {
+                let mut avro_schema = AvroSchema::try_from(&value.field_type)?;
+                if !value.required {
+                    avro_schema =
+                        AvroSchema::Union(UnionSchema::new(vec![AvroSchema::Null, avro_schema])?);
+                }
+                avro_schema
+            }
+        };
 
         Ok(AvroRecordField {
             name: value.name.clone(),
@@ -84,20 +98,69 @@ impl<'a> TryFrom<&'a Any> for AvroSchema {
                     ))
                 }
             },
+
             Any::Map(map) => {
-                if *map.key_type != Any::Primitive(Primitive::String) {
-                    return Err(Error::new(
-                        ErrorKind::IcebergFeatureUnsupported,
-                        format!(
-                            "Unable to convert iceberg data type map with key type {:?} to avro type, since avro assumes keys are always strings",
-                            *map.key_type
-                        ),
-                    ));
+                if let Any::Primitive(Primitive::String) = *map.key_type {
+                    let mut value_avro_schema = AvroSchema::try_from(&*map.value_type)?;
+                    if !map.value_required {
+                        value_avro_schema = to_avro_option(value_avro_schema)?;
+                    }
+
+                    AvroSchema::Map(Box::new(value_avro_schema))
+                } else {
+                    let key_field = {
+                        let mut field = AvroRecordField {
+                            name: "key".to_string(),
+                            doc: None,
+                            aliases: None,
+                            default: None,
+                            schema: AvroSchema::try_from(&*map.key_type)?,
+                            order: RecordFieldOrder::Ignore,
+                            position: 0,
+                            custom_attributes: BTreeMap::default(),
+                        };
+                        field.custom_attributes.insert(
+                            "field-id".to_string(),
+                            JsonValue::Number(Number::from(map.key_id)),
+                        );
+                        field
+                    };
+
+                    let value_field = {
+                        let mut value_schema = AvroSchema::try_from(&*map.value_type)?;
+                        if !map.value_required {
+                            value_schema = to_avro_option(value_schema)?;
+                        }
+
+                        let mut field = AvroRecordField {
+                            name: "value".to_string(),
+                            doc: None,
+                            aliases: None,
+                            default: None,
+                            schema: value_schema,
+                            order: RecordFieldOrder::Ignore,
+                            position: 0,
+                            custom_attributes: BTreeMap::default(),
+                        };
+                        field.custom_attributes.insert(
+                            "field-id".to_string(),
+                            JsonValue::Number(Number::from(map.value_id)),
+                        );
+                        field
+                    };
+
+                    AvroSchema::Array(Box::new(AvroSchema::Record(avro_record_schema(
+                        format!("k{}_v{}", map.key_id, map.value_id).as_str(),
+                        vec![key_field, value_field],
+                    ))))
                 }
-                AvroSchema::Map(Box::new(AvroSchema::try_from(&*map.value_type)?))
             }
             Any::List(list) => {
-                AvroSchema::Array(Box::new(AvroSchema::try_from(&*list.element_type)?))
+                let mut avro_schema = AvroSchema::try_from(&*list.element_type)?;
+                if !list.element_required {
+                    avro_schema = to_avro_option(avro_schema)?;
+                }
+                AvroSchema::Array(Box::new(avro_schema))
             }
             Any::Struct(s) => {
                 let avro_fields: Vec<AvroRecordField> = s
@@ -105,18 +168,47 @@ impl<'a> TryFrom<&'a Any> for AvroSchema {
                     .iter()
                     .map(AvroRecordField::try_from)
                     .collect::<Result<Vec<AvroRecordField>>>()?;
-                AvroSchema::Record(RecordSchema {
-                    name: Name::from("invalid_name"),
-                    fields: avro_fields,
-                    aliases: None,
-                    doc: None,
-                    lookup: BTreeMap::new(),
-                    attributes: BTreeMap::new(),
-                })
+                AvroSchema::Record(avro_record_schema("invalid_name", avro_fields))
             }
         };
         Ok(avro_schema)
     }
+}
+
+fn avro_record_schema(
+    name: &str,
+    fields: impl IntoIterator<Item = AvroRecordField>,
+) -> AvroRecordSchema {
+    let avro_fields = fields.into_iter().collect::<Vec<AvroRecordField>>();
+    let lookup = avro_fields
+        .iter()
+        .enumerate()
+        .map(|f| (f.1.name.clone(), f.0))
+        .collect();
+
+    AvroRecordSchema {
+        name: Name::from(name),
+        fields: avro_fields,
+        aliases: None,
+        doc: None,
+        lookup,
+        attributes: BTreeMap::default(),
+    }
+}
+
+fn is_avro_option(avro_schema: &AvroSchema) -> bool {
+    match avro_schema {
+        AvroSchema::Union(u) => u.variants().len() == 2 && u.is_nullable(),
+        _ => false,
+    }
+}
+
+fn to_avro_option(avro_schema: AvroSchema) -> Result<AvroSchema> {
+    assert!(!is_avro_option(&avro_schema));
+    Ok(AvroSchema::Union(UnionSchema::new(vec![
+        AvroSchema::Null,
+        avro_schema,
+    ])?))
 }
 
 #[cfg(test)]
@@ -179,12 +271,12 @@ mod tests {
                             Field {
                                 id: 6,
                                 name: "f".to_string(),
-                                required: false,
+                                required: true,
                                 field_type: Any::Map(Map {
                                     key_id: 2,
                                     key_type: Box::new(Any::Primitive(Primitive::String)),
                                     value_id: 3,
-                                    value_required: false,
+                                    value_required: true,
                                     value_type: Box::new(Any::Primitive(Primitive::Binary)),
                                 }),
                                 comment: Some("comment_f".to_string()),
