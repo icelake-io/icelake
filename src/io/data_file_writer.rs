@@ -122,7 +122,7 @@ impl DataFileWriter {
     ///
     /// This function may be refactor when we support more file format.
     fn convert_meta_to_datafile(&self, meta_data: FileMetaData, written_size: u64) -> DataFile {
-        let (column_sizes, value_counts, null_value_counts, distinct_counts) = {
+        let (column_sizes, value_counts, null_value_counts, _distinct_counts) = {
             // how to decide column id
             let mut per_col_size: HashMap<i32, _> = HashMap::new();
             let mut per_col_val_num: HashMap<i32, _> = HashMap::new();
@@ -174,7 +174,6 @@ impl DataFileWriter {
             column_sizes: Some(column_sizes),
             value_counts: Some(value_counts),
             null_value_counts: Some(null_value_counts),
-            distinct_counts: Some(distinct_counts),
             key_metadata: meta_data.footer_signing_key_metadata,
             file_size_in_bytes: written_size as i64,
             /// # TODO
@@ -183,11 +182,11 @@ impl DataFileWriter {
             /// - `file_size_in_bytes` can't get from `FileMetaData` now.
             /// - `file_offset` in `FileMetaData` always be None now.
             /// - `nan_value_counts` can't get from `FileMetaData` now.
-            split_offsets: meta_data
+            split_offsets: Some(meta_data
                 .row_groups
                 .iter()
                 .filter_map(|group| group.file_offset)
-                .collect(),
+                .collect()),
             nan_value_counts: None,
             lower_bounds: None,
             upper_bounds: None,

@@ -781,41 +781,7 @@ pub struct ManifestFile {
 }
 
 impl ManifestFile {
-    pub(crate) fn v1_schema(partition_type: Struct) -> Schema {
-        Schema {
-            schema_id: 0,
-            identifier_field_ids: None,
-            fields: vec![
-                manifest_file::STATUS.clone(),
-                manifest_file::SNAPSHOT_ID.clone(),
-                Field::required(
-                    manifest_file::DATA_FILE_ID,
-                    manifest_file::DATA_FILE_NAME,
-                    Any::Struct(Struct {
-                        fields: vec![
-                            datafile::FILE_PATH.clone(),
-                            datafile::FILE_FORMAT.clone(),
-                            DataFile::partition_field(partition_type),
-                            datafile::RECORD_COUNT.clone(),
-                            datafile::FILE_SIZE.clone(),
-                            datafile::BLOCK_SIZE.clone(),
-                            datafile::COLUMN_SIZES.clone(),
-                            datafile::VALUE_COUNTS.clone(),
-                            datafile::NULL_VALUE_COUNTS.clone(),
-                            datafile::NAN_VALUE_COUNTS.clone(),
-                            datafile::LOWER_BOUNDS.clone(),
-                            datafile::UPPER_BOUNDS.clone(),
-                            datafile::KEY_METADATA.clone(),
-                            datafile::SPLIT_OFFSETS.clone(),
-                            datafile::SORT_ORDER_ID.clone(),
-                        ],
-                    }),
-                ),
-            ],
-        }
-    }
-
-    pub(crate) fn v2_schema(partition_type: Struct) -> Schema {
+    pub(crate) fn v2_schema(_partition_type: Struct) -> Schema {
         Schema {
             schema_id: 0,
             identifier_field_ids: None,
@@ -832,7 +798,7 @@ impl ManifestFile {
                             datafile::CONTENT.clone().with_required(),
                             datafile::FILE_PATH.clone(),
                             datafile::FILE_FORMAT.clone(),
-                            DataFile::partition_field(partition_type),
+                            // DataFile::partition_field(partition_type),
                             datafile::RECORD_COUNT.clone(),
                             datafile::FILE_SIZE.clone(),
                             datafile::COLUMN_SIZES.clone(),
@@ -860,6 +826,30 @@ pub enum ManifestContentType {
     Data,
     /// The manifest content is deletes.
     Deletes,
+}
+
+impl ToString for ManifestContentType {
+    fn to_string(&self) -> String {
+        match self {
+            ManifestContentType::Data => "data".to_string(),
+            ManifestContentType::Deletes => "deletes".to_string(),
+        }
+    }
+}
+
+impl FromStr for ManifestContentType {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        match s {
+            "data" => Ok(ManifestContentType::Data),
+            "deletes" => Ok(ManifestContentType::Deletes),
+            _ => Err(Error::new(
+                ErrorKind::IcebergDataInvalid,
+                format!("Invalid manifest content type: {s}"),
+            )),
+        }
+    }
 }
 
 /// Used to track additions and deletions in ManifestEntry.
@@ -949,15 +939,6 @@ pub struct DataFile {
     ///
     /// Map from column id to number of NaN values in the column
     pub nan_value_counts: Option<HashMap<i32, i64>>,
-    /// field id: 111
-    /// key field id: 123
-    /// value field id: 124
-    ///
-    /// Map from column id to number of distinct values in the column;
-    /// distinct counts must be derived using values in the file by counting
-    /// or using sketches, but not using methods like merging existing
-    /// distinct counts
-    pub distinct_counts: Option<HashMap<i32, i64>>,
     /// field id: 125
     /// key field id: 126
     /// value field id: 127
@@ -991,7 +972,7 @@ pub struct DataFile {
     ///
     /// Split offsets for the data file. For example, all row group offsets
     /// in a Parquet file. Must be sorted ascending
-    pub split_offsets: Vec<i64>,
+    pub split_offsets: Option<Vec<i64>>,
     /// field id: 135
     /// element field id: 136
     ///
@@ -1163,11 +1144,10 @@ impl DataFile {
             value_counts: None,
             null_value_counts: None,
             nan_value_counts: None,
-            distinct_counts: None,
             lower_bounds: None,
             upper_bounds: None,
             key_metadata: None,
-            split_offsets: vec![],
+            split_offsets: None,
             equality_ids: None,
             sort_order_id: None,
         }
