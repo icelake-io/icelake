@@ -13,7 +13,7 @@ use super::parse_schema;
 use crate::types;
 use crate::types::on_disk::partition_spec::serialize_partition_spec_fields;
 use crate::types::on_disk::schema::serialize_schema;
-use crate::types::{DataContentType, ManifestListEntry, UNASSIGNED_SEQ_NUM};
+use crate::types::{DataContentType, ManifestContentType, ManifestListEntry, UNASSIGNED_SEQ_NUM};
 use crate::types::{ManifestStatus, TableFormatVersion};
 use crate::Error;
 use crate::ErrorKind;
@@ -84,10 +84,7 @@ pub fn parse_manifest_file(bs: &[u8]) -> Result<types::ManifestFile> {
                 let v = String::from_utf8_lossy(v);
                 v.parse()?
             } else {
-                return Err(Error::new(
-                    ErrorKind::IcebergDataInvalid,
-                    "content is missing in manifest meta",
-                ));
+                ManifestContentType::Data
             }
         },
     };
@@ -148,14 +145,14 @@ struct DataFile {
     content: i32,
     file_path: String,
     file_format: String,
-    #[serde(skip_serializing)]
-    partition: (),
     record_count: i64,
     file_size_in_bytes: i64,
     column_sizes: Option<Vec<I64Entry>>,
     value_counts: Option<Vec<I64Entry>>,
     null_value_counts: Option<Vec<I64Entry>>,
     nan_value_counts: Option<Vec<I64Entry>>,
+    #[serde(skip_serializing)]
+    distinct_counts: Option<Vec<I64Entry>>,
     lower_bounds: Option<Vec<BytesEntry>>,
     upper_bounds: Option<Vec<BytesEntry>>,
     #[serde_as(as = "Option<Bytes>")]
@@ -180,6 +177,7 @@ impl TryFrom<DataFile> for types::DataFile {
             value_counts: v.value_counts.map(parse_i64_entry),
             null_value_counts: v.null_value_counts.map(parse_i64_entry),
             nan_value_counts: v.nan_value_counts.map(parse_i64_entry),
+            distinct_counts: v.distinct_counts.map(parse_i64_entry),
             lower_bounds: v.lower_bounds.map(parse_bytes_entry),
             upper_bounds: v.upper_bounds.map(parse_bytes_entry),
             key_metadata: v.key_metadata,
@@ -198,13 +196,13 @@ impl TryFrom<types::DataFile> for DataFile {
             content: v.content as i32,
             file_path: v.file_path,
             file_format: v.file_format.to_string(),
-            partition: (),
             record_count: v.record_count,
             file_size_in_bytes: v.file_size_in_bytes,
             column_sizes: v.column_sizes.map(to_i64_entry),
             value_counts: v.value_counts.map(to_i64_entry),
             null_value_counts: v.null_value_counts.map(to_i64_entry),
             nan_value_counts: v.nan_value_counts.map(to_i64_entry),
+            distinct_counts: v.distinct_counts.map(to_i64_entry),
             lower_bounds: v.lower_bounds.map(to_bytes_entry),
             upper_bounds: v.upper_bounds.map(to_bytes_entry),
             key_metadata: v.key_metadata,

@@ -939,6 +939,15 @@ pub struct DataFile {
     ///
     /// Map from column id to number of NaN values in the column
     pub nan_value_counts: Option<HashMap<i32, i64>>,
+    /// field id: 111
+    /// key field id: 123
+    /// value field id: 124
+    ///
+    /// Map from column id to number of distinct values in the column;
+    /// distinct counts must be derived using values in the file by counting
+    /// or using sketches, but not using methods like merging existing
+    /// distinct counts
+    pub distinct_counts: Option<HashMap<i32, i64>>,
     /// field id: 125
     /// key field id: 126
     /// value field id: 127
@@ -1144,6 +1153,7 @@ impl DataFile {
             value_counts: None,
             null_value_counts: None,
             nan_value_counts: None,
+            distinct_counts: None,
             lower_bounds: None,
             upper_bounds: None,
             key_metadata: None,
