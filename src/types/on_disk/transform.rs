@@ -1,64 +1,8 @@
 use crate::types;
-use crate::Error;
-use crate::ErrorKind;
-use crate::Result;
-
-/// Parse transform string represent into types::Transform enum.
-pub fn parse_transform(s: &str) -> Result<types::Transform> {
-    let t = match s {
-        "identity" => types::Transform::Identity,
-        "year" => types::Transform::Year,
-        "month" => types::Transform::Month,
-        "day" => types::Transform::Day,
-        "hour" => types::Transform::Hour,
-        "void" => types::Transform::Void,
-        v if v.starts_with("bucket") => {
-            let length = v
-                .strip_prefix("bucket")
-                .expect("transform must starts with `bucket`")
-                .trim_start_matches('[')
-                .trim_end_matches(']')
-                .parse()
-                .map_err(|err| {
-                    Error::new(
-                        ErrorKind::IcebergDataInvalid,
-                        format!("transform bucket type {v:?} is invalid"),
-                    )
-                    .set_source(err)
-                })?;
-
-            types::Transform::Bucket(length)
-        }
-        v if v.starts_with("truncate") => {
-            let width = v
-                .strip_prefix("truncate")
-                .expect("transform must starts with `truncate`")
-                .trim_start_matches('[')
-                .trim_end_matches(']')
-                .parse()
-                .map_err(|err| {
-                    Error::new(
-                        ErrorKind::IcebergDataInvalid,
-                        format!("transform truncate type {v:?} is invalid"),
-                    )
-                    .set_source(err)
-                })?;
-
-            types::Transform::Truncate(width)
-        }
-        v => {
-            return Err(Error::new(
-                ErrorKind::IcebergDataInvalid,
-                format!("transform {v:?} is invalid"),
-            ))
-        }
-    };
-
-    Ok(t)
-}
 
 #[cfg(test)]
 mod tests {
+    use crate::types::Transform;
     use super::*;
 
     #[test]
@@ -77,7 +21,7 @@ mod tests {
         ];
 
         for (input, expected) in cases {
-            let actual = parse_transform(input).unwrap();
+            let actual = input.parse::<Transform>().unwrap();
 
             assert_eq!(actual, expected, "transform is not match for {input}")
         }

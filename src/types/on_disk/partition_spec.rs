@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-use super::transform::parse_transform;
 use crate::types;
 use crate::Error;
 use crate::Result;
@@ -72,7 +71,7 @@ impl TryFrom<PartitionField> for types::PartitionField {
     type Error = Error;
 
     fn try_from(v: PartitionField) -> Result<Self> {
-        let transform = parse_transform(&v.transform)?;
+        let transform = v.transform.as_str().parse()?;
 
         Ok(types::PartitionField {
             source_column_id: v.source_id,
