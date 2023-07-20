@@ -16,8 +16,8 @@ io_parquet = ["arrow_schema", "dep:parquet", "dep:arrow-array"]
 anyhow = "1"
 async-trait = "0.1"
 apache-avro = { version = "0.15", features = ["derive"] }
-arrow-array = { version = ">=40, <44", optional = true }
-arrow-schema = { version = ">=40, <44", optional = true }
+arrow-array = { version = ">=40, <45", optional = true }
+arrow-schema = { version = ">=40, <45", optional = true }
 bytes = "1"
 futures = "0.3"
 opendal = ">=0.37, <0.39"
@@ -26,7 +26,7 @@ serde = "1"
 serde_json = "1"
 serde_with = "3"
 tokio = { version = "1.28", features = ["full"] }
-parquet = { version = ">=40, <44", features = ["async"], optional = true }
+parquet = { version = ">=40, <45", features = ["async"], optional = true }
 rust_decimal = "1.30"
 chrono = "0.4"
 faster-hex = "0.8.0"
