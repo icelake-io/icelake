@@ -596,6 +596,32 @@ pub struct ManifestList {
     pub entries: Vec<ManifestListEntry>,
 }
 
+impl ManifestList {
+    pub(crate) fn v2_schema() -> Schema {
+        Schema {
+            schema_id: 1,
+            identifier_field_ids: None,
+            fields: vec![
+                manifest_list::MANIFEST_PATH.clone(),
+                manifest_list::MANIFEST_LENGTH.clone(),
+                manifest_list::PARTITION_SPEC_ID.clone(),
+                manifest_list::CONTENT.clone(),
+                manifest_list::SEQUENCE_NUMBER.clone(),
+                manifest_list::MIN_SEQUENCE_NUMBER.clone(),
+                manifest_list::ADDED_SNAPSHOT_ID.clone(),
+                manifest_list::ADDED_FILES_COUNT.clone(),
+                manifest_list::EXISTING_FILES_COUNT.clone(),
+                manifest_list::DELETED_FILES_COUNT.clone(),
+                manifest_list::ADDED_ROWS_COUNT.clone(),
+                manifest_list::EXISTING_ROWS_COUNT.clone(),
+                manifest_list::DELETED_ROWS_COUNT.clone(),
+                manifest_list::PARTITIONS.clone(),
+                manifest_list::KEY_METADATA.clone(),
+            ],
+        }
+    }
+}
+
 /// Entry in a manifest list.
 #[derive(Debug, PartialEq, Clone)]
 pub struct ManifestListEntry {
@@ -672,6 +698,57 @@ pub struct ManifestListEntry {
     ///
     /// Implementation-specific key metadata for encryption
     pub key_metadata: Option<Vec<u8>>,
+}
+
+mod manifest_list {
+    use super::*;
+    use lazy_static::lazy_static;
+    lazy_static! {
+        pub static ref MANIFEST_PATH: Field =
+            Field::required(0, "manifest_path", Any::Primitive(Primitive::String));
+        pub static ref MANIFEST_LENGTH: Field =
+            Field::required(1, "manifest_length", Any::Primitive(Primitive::Long));
+        pub static ref PARTITION_SPEC_ID: Field =
+            Field::required(2, "partition_spec_id", Any::Primitive(Primitive::Int));
+        pub static ref CONTENT: Field =
+            Field::required(3, "content", Any::Primitive(Primitive::Int));
+        pub static ref SEQUENCE_NUMBER: Field =
+            Field::required(4, "sequence_number", Any::Primitive(Primitive::Long));
+        pub static ref MIN_SEQUENCE_NUMBER: Field =
+            Field::required(5, "min_sequence_number", Any::Primitive(Primitive::Long));
+        pub static ref ADDED_SNAPSHOT_ID: Field =
+            Field::required(6, "added_snapshot_id", Any::Primitive(Primitive::Long));
+        pub static ref ADDED_FILES_COUNT: Field =
+            Field::required(7, "added_files_count", Any::Primitive(Primitive::Int));
+        pub static ref EXISTING_FILES_COUNT: Field =
+            Field::required(8, "existing_files_count", Any::Primitive(Primitive::Int));
+        pub static ref DELETED_FILES_COUNT: Field =
+            Field::required(9, "deleted_files_count", Any::Primitive(Primitive::Int));
+        pub static ref ADDED_ROWS_COUNT: Field =
+            Field::required(10, "added_rows_count", Any::Primitive(Primitive::Long));
+        pub static ref EXISTING_ROWS_COUNT: Field =
+            Field::required(11, "existing_rows_count", Any::Primitive(Primitive::Long));
+        pub static ref DELETED_ROWS_COUNT: Field =
+            Field::required(12, "deleted_rows_count", Any::Primitive(Primitive::Long));
+        pub static ref PARTITIONS: Field = Field::optional(
+            13,
+            "partitions",
+            Any::List(List {
+                element_id: 13,
+                element_required: false,
+                element_type: Box::new(Any::Struct(Struct {
+                    fields: vec![
+                        Field::required(0, "contains_null", Any::Primitive(Primitive::Boolean)),
+                        Field::optional(1, "contains_nan", Any::Primitive(Primitive::Boolean)),
+                        Field::optional(2, "lower_bound", Any::Primitive(Primitive::Binary)),
+                        Field::optional(2, "upper_bound", Any::Primitive(Primitive::Binary)),
+                    ]
+                }))
+            })
+        );
+        pub static ref KEY_METADATA: Field =
+            Field::optional(14, "key_metadata", Any::Primitive(Primitive::Binary));
+    }
 }
 
 /// Field summary for partition field in the spec.
@@ -823,9 +900,9 @@ impl ManifestFile {
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum ManifestContentType {
     /// The manifest content is data.
-    Data,
+    Data = 0,
     /// The manifest content is deletes.
-    Deletes,
+    Deletes = 1,
 }
 
 impl ToString for ManifestContentType {
@@ -847,6 +924,21 @@ impl FromStr for ManifestContentType {
             _ => Err(Error::new(
                 ErrorKind::IcebergDataInvalid,
                 format!("Invalid manifest content type: {s}"),
+            )),
+        }
+    }
+}
+
+impl TryFrom<u8> for ManifestContentType {
+    type Error = Error;
+
+    fn try_from(v: u8) -> Result<ManifestContentType> {
+        match v {
+            0 => Ok(ManifestContentType::Data),
+            1 => Ok(ManifestContentType::Deletes),
+            _ => Err(Error::new(
+                ErrorKind::IcebergDataInvalid,
+                format!("manifest content type {} is invalid", v),
             )),
         }
     }

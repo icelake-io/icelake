@@ -1,6 +1,10 @@
 use apache_avro::from_value;
 use apache_avro::Reader;
+use apache_avro::Schema as AvroSchema;
+use apache_avro::Writer as AvroWriter;
+use opendal::Operator;
 use serde::Deserialize;
+use serde::Serialize;
 
 use crate::types;
 use crate::types::ManifestList;
@@ -30,7 +34,7 @@ pub fn parse_manifest_list(bs: &[u8]) -> Result<ManifestList> {
     Ok(ManifestList { entries })
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[cfg_attr(test, derive(Debug, PartialEq, Eq))]
 struct ManifestListEntry {
     manifest_path: String,
@@ -64,16 +68,7 @@ impl TryFrom<ManifestListEntry> for types::ManifestListEntry {
     type Error = Error;
 
     fn try_from(v: ManifestListEntry) -> Result<Self> {
-        let content = match v.content {
-            0 => types::ManifestContentType::Data,
-            1 => types::ManifestContentType::Deletes,
-            _ => {
-                return Err(Error::new(
-                    ErrorKind::IcebergDataInvalid,
-                    format!("content type {} is invalid", v.content),
-                ));
-            }
-        };
+        let content = (v.content as u8).try_into()?;
 
         let partitions = match v.partitions {
             Some(v) => {
@@ -106,7 +101,42 @@ impl TryFrom<ManifestListEntry> for types::ManifestListEntry {
     }
 }
 
-#[derive(Deserialize)]
+impl From<types::ManifestListEntry> for ManifestListEntry {
+    fn from(value: types::ManifestListEntry) -> Self {
+        let content: i32 = value.content as i32;
+
+        let partitions = match value.partitions {
+            Some(v) => {
+                let mut partitions = Vec::with_capacity(v.len());
+                for partition in v {
+                    partitions.push(partition.into());
+                }
+                Some(partitions)
+            }
+            None => None,
+        };
+
+        Self {
+            manifest_path: value.manifest_path,
+            manifest_length: value.manifest_length,
+            partition_spec_id: value.partition_spec_id,
+            content,
+            sequence_number: value.sequence_number,
+            min_sequence_number: value.min_sequence_number,
+            added_snapshot_id: value.added_snapshot_id,
+            added_files_count: value.added_files_count,
+            existing_files_count: value.existing_files_count,
+            deleted_files_count: value.deleted_files_count,
+            added_rows_count: value.added_rows_count,
+            existing_rows_count: value.existing_rows_count,
+            deleted_rows_count: value.deleted_rows_count,
+            partitions,
+            key_metadata: value.key_metadata,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
 #[cfg_attr(test, derive(Debug, PartialEq, Eq))]
 struct FieldSummary {
     /// field: 509
@@ -131,12 +161,57 @@ impl TryFrom<FieldSummary> for types::FieldSummary {
     }
 }
 
+impl From<types::FieldSummary> for FieldSummary {
+    fn from(v: types::FieldSummary) -> Self {
+        Self {
+            contains_null: v.contains_null,
+            contains_nan: v.contains_nan,
+        }
+    }
+}
+
+struct ManifestListWriter {
+    op: Operator,
+    // Output path relative to operator root.
+    output_path: String,
+}
+
+impl ManifestListWriter {
+    pub fn new(op: Operator, output_path: String) -> Self {
+        Self { op, output_path }
+    }
+
+    /// Write manifest list to file. Return the absolute path of the file.
+    pub async fn write(self, manifest_list: ManifestList) -> Result<String> {
+        let avro_schema = AvroSchema::try_from(&types::ManifestList::v2_schema())?;
+        let mut avro_writer = self.v2_writer(&avro_schema);
+
+        for entry in manifest_list.entries {
+            let entry = ManifestListEntry::from(entry);
+            avro_writer.append_ser(entry)?;
+        }
+
+        let connect = avro_writer.into_inner()?;
+        self.op.write(self.output_path.as_str(), connect).await?;
+
+        Ok(format!("{}/{}", self.op.info().root(), &self.output_path))
+    }
+
+    fn v2_writer<'a>(&self, avro_schema: &'a AvroSchema) -> AvroWriter<'a, Vec<u8>> {
+        AvroWriter::new(avro_schema, Vec::new())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::env;
     use std::fs;
+    use std::fs::canonicalize;
+    use std::fs::read;
 
     use anyhow::Result;
+    use opendal::services::Fs;
+    use tempfile::TempDir;
 
     use super::*;
 
@@ -221,5 +296,51 @@ mod tests {
         );
 
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_write_manifest_list_v2() -> Result<()> {
+        let path = format!(
+            "{}/testdata/simple_table/metadata/snap-1646658105718557341-1-10d28031-9739-484c-92db-cdf2975cead4.avro",
+            env::current_dir()
+                .expect("current_dir must exist")
+                .to_string_lossy()
+        );
+
+        let bs = fs::read(path).expect("read_file must succeed");
+
+        let manifest_list = parse_manifest_list(&bs)?;
+
+        check_manifest_list_serde(manifest_list).await;
+
+        Ok(())
+    }
+
+    async fn check_manifest_list_serde(manifest_file: types::ManifestList) {
+        let tmp_dir = TempDir::new().unwrap();
+        let dir_path = tmp_dir.path().to_str().unwrap();
+        let filename = "test.avro";
+
+        let operator = {
+            let mut builder = Fs::default();
+            builder.root(dir_path);
+            Operator::new(builder).unwrap().finish()
+        };
+
+        let writer = ManifestListWriter::new(operator, filename.to_string());
+        let manifest_list_path = writer.write(manifest_file.clone()).await.unwrap();
+
+        assert_eq!(
+            canonicalize(format!("{dir_path}/{filename}"))
+                .unwrap()
+                .to_str()
+                .unwrap(),
+            manifest_list_path
+        );
+
+        let restored_manifest_file =
+            { parse_manifest_list(&read(tmp_dir.path().join(filename)).unwrap()).unwrap() };
+
+        assert_eq!(manifest_file, restored_manifest_file);
     }
 }
