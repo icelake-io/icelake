@@ -453,6 +453,63 @@ impl<'a> ToString for &'a Transform {
     }
 }
 
+impl FromStr for Transform {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        let t = match s {
+            "identity" => Transform::Identity,
+            "year" => Transform::Year,
+            "month" => Transform::Month,
+            "day" => Transform::Day,
+            "hour" => Transform::Hour,
+            "void" => Transform::Void,
+            v if v.starts_with("bucket") => {
+                let length = v
+                    .strip_prefix("bucket")
+                    .expect("transform must starts with `bucket`")
+                    .trim_start_matches('[')
+                    .trim_end_matches(']')
+                    .parse()
+                    .map_err(|err| {
+                        Error::new(
+                            ErrorKind::IcebergDataInvalid,
+                            format!("transform bucket type {v:?} is invalid"),
+                        )
+                        .set_source(err)
+                    })?;
+
+                Transform::Bucket(length)
+            }
+            v if v.starts_with("truncate") => {
+                let width = v
+                    .strip_prefix("truncate")
+                    .expect("transform must starts with `truncate`")
+                    .trim_start_matches('[')
+                    .trim_end_matches(']')
+                    .parse()
+                    .map_err(|err| {
+                        Error::new(
+                            ErrorKind::IcebergDataInvalid,
+                            format!("transform truncate type {v:?} is invalid"),
+                        )
+                        .set_source(err)
+                    })?;
+
+                Transform::Truncate(width)
+            }
+            v => {
+                return Err(Error::new(
+                    ErrorKind::IcebergDataInvalid,
+                    format!("transform {v:?} is invalid"),
+                ))
+            }
+        };
+
+        Ok(t)
+    }
+}
+
 /// Data files are stored in manifests with a tuple of partition values
 /// that are used in scans to filter out files that cannot contain records
 ///  that match the scan’s filter predicate.
@@ -567,6 +624,30 @@ pub enum SortDirection {
     DESC,
 }
 
+impl ToString for SortDirection {
+    fn to_string(&self) -> String {
+        match self {
+            SortDirection::ASC => "asc".to_string(),
+            SortDirection::DESC => "desc".to_string(),
+        }
+    }
+}
+
+impl FromStr for SortDirection {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        match s {
+            "asc" => Ok(SortDirection::ASC),
+            "desc" => Ok(SortDirection::DESC),
+            v => Err(Error::new(
+                ErrorKind::IcebergDataInvalid,
+                format!("sort direction {:?} is invalid", v),
+            )),
+        }
+    }
+}
+
 /// A null order that describes the order of null values when sorted.
 /// Can only be either nulls-first or nulls-last
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -575,6 +656,30 @@ pub enum NullOrder {
     First,
     /// Nulls are sorted after non-null values
     Last,
+}
+
+impl ToString for NullOrder {
+    fn to_string(&self) -> String {
+        match self {
+            NullOrder::First => "nulls-first".to_string(),
+            NullOrder::Last => "nulls-last".to_string(),
+        }
+    }
+}
+
+impl FromStr for NullOrder {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        match s {
+            "nulls-first" => Ok(NullOrder::First),
+            "nulls-last" => Ok(NullOrder::Last),
+            v => Err(Error::new(
+                ErrorKind::IcebergDataInvalid,
+                format!("null order {:?} is invalid", v),
+            )),
+        }
+    }
 }
 
 /// Snapshots are embedded in table metadata, but the list of manifests for a
@@ -1431,6 +1536,30 @@ pub enum SnapshotReferenceType {
     Tag,
     /// Branch is used to reference to a specfic branch, like `master`.
     Branch,
+}
+
+impl ToString for SnapshotReferenceType {
+    fn to_string(&self) -> String {
+        match self {
+            SnapshotReferenceType::Tag => "tag".to_string(),
+            SnapshotReferenceType::Branch => "branch".to_string(),
+        }
+    }
+}
+
+impl FromStr for SnapshotReferenceType {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        match s {
+            "tag" => Ok(SnapshotReferenceType::Tag),
+            "branch" => Ok(SnapshotReferenceType::Branch),
+            _ => Err(Error::new(
+                ErrorKind::IcebergDataInvalid,
+                format!("Invalid snapshot reference type: {s}"),
+            )),
+        }
+    }
 }
 
 /// timestamp and metadata file location pairs that encodes changes to the

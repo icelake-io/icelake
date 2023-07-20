@@ -1,9 +1,7 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-use super::transform::parse_transform;
 use crate::types;
 use crate::Error;
-use crate::ErrorKind;
 use crate::Result;
 
 /// Parse schema from json bytes.
@@ -12,7 +10,7 @@ pub fn parse_sort_order(bs: &[u8]) -> Result<types::SortOrder> {
     t.try_into()
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct SortOrder {
     order_id: i32,
@@ -35,7 +33,22 @@ impl TryFrom<SortOrder> for types::SortOrder {
     }
 }
 
-#[derive(Deserialize)]
+impl TryFrom<types::SortOrder> for SortOrder {
+    type Error = Error;
+
+    fn try_from(value: types::SortOrder) -> Result<Self> {
+        Ok(Self {
+            order_id: value.order_id,
+            fields: value
+                .fields
+                .into_iter()
+                .map(SortField::try_from)
+                .collect::<Result<Vec<SortField>>>()?,
+        })
+    }
+}
+
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 struct SortField {
     transform: String,
@@ -50,43 +63,24 @@ impl TryFrom<SortField> for types::SortField {
     fn try_from(v: SortField) -> Result<Self> {
         Ok(types::SortField {
             source_column_id: v.source_id,
-            transform: parse_transform(&v.transform)?,
-            direction: parse_sort_direction(&v.direction)?,
-            null_order: parse_null_order(&v.null_order)?,
+            transform: v.transform.as_str().parse()?,
+            direction: v.direction.parse()?,
+            null_order: v.null_order.parse()?,
         })
     }
 }
 
-/// Parse transform string represent into types::Transform enum.
-fn parse_sort_direction(s: &str) -> Result<types::SortDirection> {
-    let t = match s {
-        "asc" => types::SortDirection::ASC,
-        "desc" => types::SortDirection::DESC,
-        v => {
-            return Err(Error::new(
-                ErrorKind::IcebergDataInvalid,
-                format!("sort direction {:?} is invalid", v),
-            ))
-        }
-    };
+impl TryFrom<types::SortField> for SortField {
+    type Error = Error;
 
-    Ok(t)
-}
-
-/// Parse transform string represent into types::Transform enum.
-fn parse_null_order(s: &str) -> Result<types::NullOrder> {
-    let t = match s {
-        "nulls-first" => types::NullOrder::First,
-        "nulls-last" => types::NullOrder::Last,
-        v => {
-            return Err(Error::new(
-                ErrorKind::IcebergDataInvalid,
-                format!("null order {:?} is invalid", v),
-            ))
-        }
-    };
-
-    Ok(t)
+    fn try_from(value: types::SortField) -> Result<Self> {
+        Ok(Self {
+            transform: (&value.transform).to_string(),
+            source_id: value.source_column_id,
+            direction: value.direction.to_string(),
+            null_order: value.null_order.to_string(),
+        })
+    }
 }
 
 #[cfg(test)]

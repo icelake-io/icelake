@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::types;
 use crate::Error;
@@ -12,7 +12,7 @@ pub fn parse_snapshot(bs: &[u8]) -> Result<types::Snapshot> {
     v.try_into()
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[cfg_attr(test, derive(Debug, PartialEq, Eq))]
 #[serde(rename_all = "kebab-case")]
 pub struct Snapshot {
@@ -38,6 +38,22 @@ impl TryFrom<Snapshot> for types::Snapshot {
             manifest_list: v.manifest_list,
             summary: v.summary,
             schema_id: v.schema_id,
+        })
+    }
+}
+
+impl TryFrom<types::Snapshot> for Snapshot {
+    type Error = Error;
+
+    fn try_from(value: types::Snapshot) -> Result<Self> {
+        Ok(Self {
+            snapshot_id: value.snapshot_id,
+            parent_snapshot_id: value.parent_snapshot_id,
+            sequence_number: value.sequence_number,
+            timestamp_ms: value.timestamp_ms,
+            manifest_list: value.manifest_list,
+            summary: value.summary,
+            schema_id: value.schema_id,
         })
     }
 }
