@@ -9,6 +9,7 @@ use chrono::NaiveTime;
 use chrono::Utc;
 use rust_decimal::Decimal;
 use serde::ser::SerializeMap;
+use serde::ser::SerializeStruct;
 use serde::Serialize;
 use uuid::Uuid;
 
@@ -42,7 +43,7 @@ pub enum AnyValue {
     /// default value.
     ///
     /// struct value stores as a map from field id to field value.
-    Struct(HashMap<i32, AnyValue>),
+    Struct(StructValue),
     /// A list type with a list of typed values.
     List(Vec<AnyValue>),
     /// A map is a collection of key-value pairs with a key type and a value type.
@@ -222,6 +223,17 @@ pub struct Struct {
     pub fields: Vec<Field>,
 }
 
+impl Struct {
+    /// Generate map from field id to field name map for this struct.
+    pub fn generate_field_name_map(&self) -> HashMap<i32, String> {
+        let mut map = HashMap::with_capacity(self.fields.len());
+        for field in &self.fields {
+            map.insert(field.id, field.name.clone());
+        }
+        map
+    }
+}
+
 /// A Field is the field of a struct.
 #[derive(Debug, PartialEq, Clone)]
 pub struct Field {
@@ -276,6 +288,30 @@ impl Field {
     fn with_required(mut self) -> Self {
         self.required = true;
         self
+    }
+}
+
+/// A Struct type is a tuple of typed values.
+#[derive(Debug, PartialEq, Clone)]
+pub struct StructValue {
+    /// fields is a map from field id to field value.
+    pub fields: HashMap<i32, AnyValue>,
+    /// field_names is a map from field id to field name.
+    pub field_names: HashMap<i32, String>,
+}
+
+impl Serialize for StructValue {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut record = serializer.serialize_struct("", self.fields.len())?;
+        for (id, value) in self.fields.iter() {
+            let key = self.field_names.get(id).unwrap();
+            // NOTE: Here we use `Box::leak` to convert `&str` to `&'static str`. The safe is guaranteed by serializer.
+            record.serialize_field(Box::leak(key.clone().into_boxed_str()), value)?;
+        }
+        record.end()
     }
 }
 
@@ -1696,5 +1732,71 @@ impl ToString for TableFormatVersion {
             TableFormatVersion::V1 => "1".to_string(),
             TableFormatVersion::V2 => "2".to_string(),
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::collections::HashMap;
+
+    use apache_avro::{schema, types::Value};
+
+    use super::{Any, AnyValue, Field, Primitive, Struct};
+
+    #[test]
+    fn test_struct_to_avro() {
+        let value = {
+            let struct_types = Struct {
+                fields: vec![
+                    Field::required(1, "a", Any::Primitive(Primitive::Int)),
+                    Field::required(2, "b", Any::Primitive(Primitive::String)),
+                ],
+            };
+
+            let struct_value = {
+                let mut fields = HashMap::new();
+                fields.insert(1, AnyValue::Primitive(super::PrimitiveValue::Int(1)));
+                fields.insert(
+                    2,
+                    AnyValue::Primitive(super::PrimitiveValue::String("hello".to_string())),
+                );
+                AnyValue::Struct(super::StructValue {
+                    fields,
+                    field_names: struct_types.generate_field_name_map(),
+                })
+            };
+
+            let mut res = apache_avro::to_value(struct_value).unwrap();
+
+            // Guarantee the order of fields order of field names for later compare.
+            if let Value::Record(ref mut record) = res {
+                record.sort_by(|a, b| a.0.cmp(&b.0));
+            }
+
+            res
+        };
+
+        let expect_value = {
+            let raw_schema = r#"
+                {
+                    "type": "record",
+                    "name": "test",
+                    "fields": [
+                        {"name": "a", "type": "int"},
+                        {"name": "b", "type": "string"}
+                    ]
+                }
+            "#;
+
+            let schema = schema::Schema::parse_str(raw_schema).unwrap();
+
+            let mut record = apache_avro::types::Record::new(&schema).unwrap();
+            record.put("a", 1);
+            record.put("b", "hello");
+
+            record.into()
+        };
+
+        assert_eq!(value, expect_value);
     }
 }
