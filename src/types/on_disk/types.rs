@@ -19,6 +19,8 @@ use uuid::Uuid;
 
 use crate::types;
 use crate::types::Any;
+use crate::types::AnyValue;
+use crate::types::StructValue;
 use crate::Error;
 use crate::ErrorKind;
 use crate::Result;
@@ -773,13 +775,15 @@ fn parse_json_value_to_struct(
     expect_struct: &types::Struct,
     value: serde_json::Value,
 ) -> Result<types::AnyValue> {
-    let fields = expect_struct
+    let field_types = expect_struct
         .fields
         .iter()
         .map(|v| (v.id, &v.field_type))
         .collect::<HashMap<_, _>>();
 
-    let mut values = HashMap::with_capacity(fields.len());
+    let field_names = expect_struct.generate_field_name_map();
+
+    let mut fields: HashMap<i32, AnyValue> = HashMap::with_capacity(field_types.len());
 
     match value {
         serde_json::Value::Object(o) => {
@@ -792,7 +796,7 @@ fn parse_json_value_to_struct(
                     .set_source(err)
                 })?;
 
-                let expect_type = fields.get(&key).ok_or_else(|| {
+                let expect_type = field_types.get(&key).ok_or_else(|| {
                     Error::new(
                         ErrorKind::IcebergDataInvalid,
                         format!("expect filed id {:?} but not exist", key),
@@ -801,7 +805,7 @@ fn parse_json_value_to_struct(
 
                 let value = parse_json_value(expect_type, value)?;
 
-                values.insert(key, value);
+                fields.insert(key, value);
             }
         }
         _ => {
@@ -812,7 +816,10 @@ fn parse_json_value_to_struct(
         }
     }
 
-    Ok(types::AnyValue::Struct(values))
+    Ok(types::AnyValue::Struct(StructValue {
+        fields,
+        field_names,
+    }))
 }
 
 /// JSON single-value serialization requires List been
