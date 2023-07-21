@@ -3,9 +3,11 @@
 
 mod manifest_file;
 pub use manifest_file::parse_manifest_file;
+pub(crate) use manifest_file::ManifestWriter;
 
 mod manifest_list;
 pub use manifest_list::parse_manifest_list;
+pub(crate) use manifest_list::ManifestListWriter;
 
 mod partition_spec;
 pub use partition_spec::parse_partition_spec;

@@ -286,7 +286,7 @@ pub(crate) struct ManifestWriter {
 }
 
 impl ManifestWriter {
-    pub fn new(
+    pub(crate) fn new(
         partition_spec: types::PartitionSpec,
         op: Operator,
         output_path: impl Into<String>,

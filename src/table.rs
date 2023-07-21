@@ -11,6 +11,8 @@ use crate::io::task_writer::TaskWriter;
 use crate::types::DataFile;
 use crate::{types, Error};
 
+const META_PATH: &str = "metadata";
+
 /// Table is the main entry point for the IceLake.
 pub struct Table {
     op: Operator,
@@ -260,6 +262,16 @@ impl Table {
         )
         .await?;
         Ok(task_writer)
+    }
+
+    /// Returns path of metadata file relative to the table root path.
+    #[inline]
+    pub fn metadata_file_path(filename: impl Into<String>) -> String {
+        format!("{}/{}", META_PATH, filename.into())
+    }
+
+    pub(crate) fn operator(&self) -> Operator {
+        self.op.clone()
     }
 }
 

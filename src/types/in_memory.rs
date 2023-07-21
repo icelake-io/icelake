@@ -2,11 +2,13 @@
 
 use std::{collections::HashMap, str::FromStr};
 
+use chrono::format::format;
 use chrono::DateTime;
 use chrono::NaiveDate;
 use chrono::NaiveDateTime;
 use chrono::NaiveTime;
 use chrono::Utc;
+use opendal::Operator;
 use rust_decimal::Decimal;
 use serde::ser::SerializeMap;
 use serde::ser::SerializeStruct;
@@ -16,6 +18,7 @@ use uuid::Uuid;
 use crate::Error;
 use crate::ErrorKind;
 use crate::Result;
+use crate::types::parse_manifest_list;
 
 pub(crate) const UNASSIGNED_SEQ_NUM: i64 = -1;
 
@@ -1535,6 +1538,12 @@ pub struct Snapshot {
     pub schema_id: Option<i64>,
 }
 
+impl Snapshot {
+    pub(crate) async fn load_manifest_list(&self, op: &Operator) -> Result<ManifestList> {
+        Ok(parse_manifest_list(op.read(self.manifest_list.as_str())?)?)
+    }
+}
+
 /// timestamp and snapshot ID pairs that encodes changes to the current
 /// snapshot for the table.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -1720,6 +1729,51 @@ pub struct TableMetadata {
     /// There is always a main branch reference pointing to the
     /// `current-snapshot-id` even if the refs map is null.
     pub refs: Option<HashMap<String, SnapshotReference>>,
+}
+
+impl TableMetadata {
+    pub fn current_partition_spec(&self) -> Result<&PartitionSpec> {
+        self.partition_specs
+            .iter()
+            .find(|p| p.spec_id == self.default_spec_id)
+            .ok_or_else(|| {
+                Error::new(
+                    ErrorKind::IcebergDataInvalid,
+                    format!("Partition spec id {} not found!", self.default_spec_id),
+                )
+            })
+    }
+
+    pub fn current_schema(&self) -> Result<&Schema> {
+        self.schemas
+            .iter()
+            .find(|s| s.schema_id == self.current_schema_id)
+            .ok_or_else(|| {
+                Error::new(
+                    ErrorKind::IcebergDataInvalid,
+                    format!("Schema id {} not found!", self.current_schema_id),
+                )
+            })
+    }
+
+    pub fn current_snapshot(&self) -> Result<&Snapshot> {
+        if let (Some(snapshots), Some(snapshot_id)) = (&self.snapshots, self.current_snapshot_id) {
+            snapshots
+                .iter()
+                .find(|s| s.snapshot_id == snapshot_id)
+                .ok_or_else(|| {
+                    Error::new(
+                        ErrorKind::IcebergDataInvalid,
+                        format!("Snapshot id {snapshot_id} not found!"),
+                    )
+                })
+        } else {
+            Err(Error::new(
+                ErrorKind::IcebergDataInvalid,
+                "Current snapshot missing!",
+            ))
+        }
+    }
 }
 
 /// Table format version number.
