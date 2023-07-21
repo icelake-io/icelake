@@ -174,17 +174,32 @@ struct ManifestListWriter {
     op: Operator,
     // Output path relative to operator root.
     output_path: String,
+    snapshot_id: i64,
+    parent_snapshot_id: i64,
+    sequence_number: i64,
 }
 
 impl ManifestListWriter {
-    pub fn new(op: Operator, output_path: String) -> Self {
-        Self { op, output_path }
+    pub fn new(
+        op: Operator,
+        output_path: String,
+        snapshot_id: i64,
+        parent_snapshot_id: i64,
+        sequence_number: i64,
+    ) -> Self {
+        Self {
+            op,
+            output_path,
+            snapshot_id,
+            parent_snapshot_id,
+            sequence_number,
+        }
     }
 
     /// Write manifest list to file. Return the absolute path of the file.
     pub async fn write(self, manifest_list: ManifestList) -> Result<String> {
         let avro_schema = AvroSchema::try_from(&types::ManifestList::v2_schema())?;
-        let mut avro_writer = self.v2_writer(&avro_schema);
+        let mut avro_writer = self.v2_writer(&avro_schema)?;
 
         for entry in manifest_list.entries {
             let entry = ManifestListEntry::from(entry);
@@ -197,8 +212,19 @@ impl ManifestListWriter {
         Ok(format!("{}/{}", self.op.info().root(), &self.output_path))
     }
 
-    fn v2_writer<'a>(&self, avro_schema: &'a AvroSchema) -> AvroWriter<'a, Vec<u8>> {
-        AvroWriter::new(avro_schema, Vec::new())
+    fn v2_writer<'a>(&self, avro_schema: &'a AvroSchema) -> Result<AvroWriter<'a, Vec<u8>>> {
+        let mut writer = AvroWriter::new(avro_schema, Vec::new());
+        writer.add_user_metadata("snapshot-id".to_string(), &self.snapshot_id.to_string())?;
+        writer.add_user_metadata(
+            "parent-snapshot-id".to_string(),
+            &self.parent_snapshot_id.to_string(),
+        )?;
+        writer.add_user_metadata(
+            "sequence-number".to_string(),
+            &self.sequence_number.to_string(),
+        )?;
+        writer.add_user_metadata("format-version".to_string(), "2")?;
+        Ok(writer)
     }
 }
 
@@ -327,7 +353,7 @@ mod tests {
             Operator::new(builder).unwrap().finish()
         };
 
-        let writer = ManifestListWriter::new(operator, filename.to_string());
+        let writer = ManifestListWriter::new(operator, filename.to_string(), 0, 0, 0);
         let manifest_list_path = writer.write(manifest_file.clone()).await.unwrap();
 
         assert_eq!(
