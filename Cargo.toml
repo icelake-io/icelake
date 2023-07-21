@@ -37,4 +37,5 @@ tempfile = "3"
 
 [[example]]
 name = "read_iceberg_table"
+required-features = ["io_parquet"]
 harness = false
