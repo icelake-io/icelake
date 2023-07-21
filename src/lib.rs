@@ -5,7 +5,9 @@
 #![deny(missing_docs)]
 #![allow(dead_code)]
 
+#[cfg(feature = "io_parquet")]
 mod table;
+#[cfg(feature = "io_parquet")]
 pub use table::Table;
 mod error;
 pub use error::Error;
