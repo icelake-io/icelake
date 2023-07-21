@@ -843,35 +843,35 @@ pub struct ManifestListEntry {
 
 mod manifest_list {
     use super::*;
-    use lazy_static::lazy_static;
-    lazy_static! {
-        pub static ref MANIFEST_PATH: Field =
-            Field::required(0, "manifest_path", Any::Primitive(Primitive::String));
-        pub static ref MANIFEST_LENGTH: Field =
-            Field::required(1, "manifest_length", Any::Primitive(Primitive::Long));
-        pub static ref PARTITION_SPEC_ID: Field =
-            Field::required(2, "partition_spec_id", Any::Primitive(Primitive::Int));
-        pub static ref CONTENT: Field =
-            Field::required(3, "content", Any::Primitive(Primitive::Int));
-        pub static ref SEQUENCE_NUMBER: Field =
-            Field::required(4, "sequence_number", Any::Primitive(Primitive::Long));
-        pub static ref MIN_SEQUENCE_NUMBER: Field =
-            Field::required(5, "min_sequence_number", Any::Primitive(Primitive::Long));
-        pub static ref ADDED_SNAPSHOT_ID: Field =
-            Field::required(6, "added_snapshot_id", Any::Primitive(Primitive::Long));
-        pub static ref ADDED_FILES_COUNT: Field =
-            Field::required(7, "added_files_count", Any::Primitive(Primitive::Int));
-        pub static ref EXISTING_FILES_COUNT: Field =
-            Field::required(8, "existing_files_count", Any::Primitive(Primitive::Int));
-        pub static ref DELETED_FILES_COUNT: Field =
-            Field::required(9, "deleted_files_count", Any::Primitive(Primitive::Int));
-        pub static ref ADDED_ROWS_COUNT: Field =
-            Field::required(10, "added_rows_count", Any::Primitive(Primitive::Long));
-        pub static ref EXISTING_ROWS_COUNT: Field =
-            Field::required(11, "existing_rows_count", Any::Primitive(Primitive::Long));
-        pub static ref DELETED_ROWS_COUNT: Field =
-            Field::required(12, "deleted_rows_count", Any::Primitive(Primitive::Long));
-        pub static ref PARTITIONS: Field = Field::optional(
+    use once_cell::sync::Lazy;
+    pub static MANIFEST_PATH: Lazy<Field> =
+        Lazy::new(|| Field::required(0, "manifest_path", Any::Primitive(Primitive::String)));
+    pub static MANIFEST_LENGTH: Lazy<Field> =
+        Lazy::new(|| Field::required(1, "manifest_length", Any::Primitive(Primitive::Long)));
+    pub static PARTITION_SPEC_ID: Lazy<Field> =
+        Lazy::new(|| Field::required(2, "partition_spec_id", Any::Primitive(Primitive::Int)));
+    pub static CONTENT: Lazy<Field> =
+        Lazy::new(|| Field::required(3, "content", Any::Primitive(Primitive::Int)));
+    pub static SEQUENCE_NUMBER: Lazy<Field> =
+        Lazy::new(|| Field::required(4, "sequence_number", Any::Primitive(Primitive::Long)));
+    pub static MIN_SEQUENCE_NUMBER: Lazy<Field> =
+        Lazy::new(|| Field::required(5, "min_sequence_number", Any::Primitive(Primitive::Long)));
+    pub static ADDED_SNAPSHOT_ID: Lazy<Field> =
+        Lazy::new(|| Field::required(6, "added_snapshot_id", Any::Primitive(Primitive::Long)));
+    pub static ADDED_FILES_COUNT: Lazy<Field> =
+        Lazy::new(|| Field::required(7, "added_files_count", Any::Primitive(Primitive::Int)));
+    pub static EXISTING_FILES_COUNT: Lazy<Field> =
+        Lazy::new(|| Field::required(8, "existing_files_count", Any::Primitive(Primitive::Int)));
+    pub static DELETED_FILES_COUNT: Lazy<Field> =
+        Lazy::new(|| Field::required(9, "deleted_files_count", Any::Primitive(Primitive::Int)));
+    pub static ADDED_ROWS_COUNT: Lazy<Field> =
+        Lazy::new(|| Field::required(10, "added_rows_count", Any::Primitive(Primitive::Long)));
+    pub static EXISTING_ROWS_COUNT: Lazy<Field> =
+        Lazy::new(|| Field::required(11, "existing_rows_count", Any::Primitive(Primitive::Long)));
+    pub static DELETED_ROWS_COUNT: Lazy<Field> =
+        Lazy::new(|| Field::required(12, "deleted_rows_count", Any::Primitive(Primitive::Long)));
+    pub static PARTITIONS: Lazy<Field> = Lazy::new(|| {
+        Field::optional(
             13,
             "partitions",
             Any::List(List {
@@ -883,13 +883,13 @@ mod manifest_list {
                         Field::optional(1, "contains_nan", Any::Primitive(Primitive::Boolean)),
                         Field::optional(2, "lower_bound", Any::Primitive(Primitive::Binary)),
                         Field::optional(2, "upper_bound", Any::Primitive(Primitive::Binary)),
-                    ]
-                }))
-            })
-        );
-        pub static ref KEY_METADATA: Field =
-            Field::optional(14, "key_metadata", Any::Primitive(Primitive::Binary));
-    }
+                    ],
+                })),
+            }),
+        )
+    });
+    pub static KEY_METADATA: Lazy<Field> =
+        Lazy::new(|| Field::optional(14, "key_metadata", Any::Primitive(Primitive::Binary)));
 }
 
 /// Field summary for partition field in the spec.
@@ -952,16 +952,15 @@ impl ManifestEntry {
 
 mod manifest_file {
     use super::*;
-    use lazy_static::lazy_static;
-    lazy_static! {
-        pub static ref STATUS: Field = Field::required(0, "status", Any::Primitive(Primitive::Int));
-        pub static ref SNAPSHOT_ID: Field =
-            Field::optional(1, "snapshot_id", Any::Primitive(Primitive::Long));
-        pub static ref SEQUENCE_NUMBER: Field =
-            Field::optional(3, "sequence_number", Any::Primitive(Primitive::Long));
-        pub static ref FILE_SEQUENCE_NUMBER: Field =
-            Field::optional(4, "file_sequence_number", Any::Primitive(Primitive::Long));
-    }
+    use once_cell::sync::Lazy;
+    pub static STATUS: Lazy<Field> =
+        Lazy::new(|| Field::required(0, "status", Any::Primitive(Primitive::Int)));
+    pub static SNAPSHOT_ID: Lazy<Field> =
+        Lazy::new(|| Field::optional(1, "snapshot_id", Any::Primitive(Primitive::Long)));
+    pub static SEQUENCE_NUMBER: Lazy<Field> =
+        Lazy::new(|| Field::optional(3, "sequence_number", Any::Primitive(Primitive::Long)));
+    pub static FILE_SEQUENCE_NUMBER: Lazy<Field> =
+        Lazy::new(|| Field::optional(4, "file_sequence_number", Any::Primitive(Primitive::Long)));
 
     pub const DATA_FILE_ID: i32 = 2;
     pub const DATA_FILE_NAME: &str = "data_file";
@@ -1238,27 +1237,31 @@ pub struct DataFile {
 
 mod datafile {
     use super::*;
-    use lazy_static::lazy_static;
-    lazy_static! {
-        pub static ref CONTENT: Field =
-            Field::optional(134, "content", Any::Primitive(Primitive::Int)).with_comment(
-                "Contents of the file: 0=data, 1=position deletes, 2=equality deletes"
-            );
-        pub static ref FILE_PATH: Field =
-            Field::required(100, "file_path", Any::Primitive(Primitive::String))
-                .with_comment("Location URI with FS scheme");
-        pub static ref FILE_FORMAT: Field =
-            Field::required(101, "file_format", Any::Primitive(Primitive::String))
-                .with_comment("File format name: avro, orc, or parquet");
-        pub static ref RECORD_COUNT: Field =
-            Field::required(103, "record_count", Any::Primitive(Primitive::Long))
-                .with_comment("Number of records in the file");
-        pub static ref FILE_SIZE: Field =
-            Field::required(104, "file_size_in_bytes", Any::Primitive(Primitive::Long))
-                .with_comment("Total file size in bytes");
-        pub static ref BLOCK_SIZE: Field =
-            Field::required(105, "block_size_in_bytes", Any::Primitive(Primitive::Long));
-        pub static ref COLUMN_SIZES: Field = Field::optional(
+    use once_cell::sync::Lazy;
+    pub static CONTENT: Lazy<Field> = Lazy::new(|| {
+        Field::optional(134, "content", Any::Primitive(Primitive::Int))
+            .with_comment("Contents of the file: 0=data, 1=position deletes, 2=equality deletes")
+    });
+    pub static FILE_PATH: Lazy<Field> = Lazy::new(|| {
+        Field::required(100, "file_path", Any::Primitive(Primitive::String))
+            .with_comment("Location URI with FS scheme")
+    });
+    pub static FILE_FORMAT: Lazy<Field> = Lazy::new(|| {
+        Field::required(101, "file_format", Any::Primitive(Primitive::String))
+            .with_comment("File format name: avro, orc, or parquet")
+    });
+    pub static RECORD_COUNT: Lazy<Field> = Lazy::new(|| {
+        Field::required(103, "record_count", Any::Primitive(Primitive::Long))
+            .with_comment("Number of records in the file")
+    });
+    pub static FILE_SIZE: Lazy<Field> = Lazy::new(|| {
+        Field::required(104, "file_size_in_bytes", Any::Primitive(Primitive::Long))
+            .with_comment("Total file size in bytes")
+    });
+    pub static BLOCK_SIZE: Lazy<Field> =
+        Lazy::new(|| Field::required(105, "block_size_in_bytes", Any::Primitive(Primitive::Long)));
+    pub static COLUMN_SIZES: Lazy<Field> = Lazy::new(|| {
+        Field::optional(
             108,
             "column_sizes",
             Any::Map(Map {
@@ -1269,8 +1272,10 @@ mod datafile {
                 value_required: true,
             }),
         )
-        .with_comment("Map of column id to total size on disk");
-        pub static ref VALUE_COUNTS: Field = Field::optional(
+        .with_comment("Map of column id to total size on disk")
+    });
+    pub static VALUE_COUNTS: Lazy<Field> = Lazy::new(|| {
+        Field::optional(
             109,
             "value_counts",
             Any::Map(Map {
@@ -1281,8 +1286,10 @@ mod datafile {
                 value_required: true,
             }),
         )
-        .with_comment("Map of column id to total count, including null and NaN");
-        pub static ref NULL_VALUE_COUNTS: Field = Field::optional(
+        .with_comment("Map of column id to total count, including null and NaN")
+    });
+    pub static NULL_VALUE_COUNTS: Lazy<Field> = Lazy::new(|| {
+        Field::optional(
             110,
             "null_value_counts",
             Any::Map(Map {
@@ -1293,8 +1300,10 @@ mod datafile {
                 value_required: true,
             }),
         )
-        .with_comment("Map of column id to null value count");
-        pub static ref NAN_VALUE_COUNTS: Field = Field::optional(
+        .with_comment("Map of column id to null value count")
+    });
+    pub static NAN_VALUE_COUNTS: Lazy<Field> = Lazy::new(|| {
+        Field::optional(
             137,
             "nan_value_counts",
             Any::Map(Map {
@@ -1305,8 +1314,10 @@ mod datafile {
                 value_required: true,
             }),
         )
-        .with_comment("Map of column id to number of NaN values in the column");
-        pub static ref LOWER_BOUNDS: Field = Field::optional(
+        .with_comment("Map of column id to number of NaN values in the column")
+    });
+    pub static LOWER_BOUNDS: Lazy<Field> = Lazy::new(|| {
+        Field::optional(
             125,
             "lower_bounds",
             Any::Map(Map {
@@ -1317,8 +1328,10 @@ mod datafile {
                 value_required: true,
             }),
         )
-        .with_comment("Map of column id to lower bound");
-        pub static ref UPPER_BOUNDS: Field = Field::optional(
+        .with_comment("Map of column id to lower bound")
+    });
+    pub static UPPER_BOUNDS: Lazy<Field> = Lazy::new(|| {
+        Field::optional(
             128,
             "upper_bounds",
             Any::Map(Map {
@@ -1329,11 +1342,14 @@ mod datafile {
                 value_required: true,
             }),
         )
-        .with_comment("Map of column id to upper bound");
-        pub static ref KEY_METADATA: Field =
-            Field::optional(131, "key_metadata", Any::Primitive(Primitive::Binary))
-                .with_comment("Encryption key metadata blob");
-        pub static ref SPLIT_OFFSETS: Field = Field::optional(
+        .with_comment("Map of column id to upper bound")
+    });
+    pub static KEY_METADATA: Lazy<Field> = Lazy::new(|| {
+        Field::optional(131, "key_metadata", Any::Primitive(Primitive::Binary))
+            .with_comment("Encryption key metadata blob")
+    });
+    pub static SPLIT_OFFSETS: Lazy<Field> = Lazy::new(|| {
+        Field::optional(
             132,
             "split_offsets",
             Any::List(List {
@@ -1342,8 +1358,10 @@ mod datafile {
                 element_type: Box::new(Any::Primitive(Primitive::Long)),
             }),
         )
-        .with_comment("Splittable offsets");
-        pub static ref EQUALITY_IDS: Field = Field::optional(
+        .with_comment("Splittable offsets")
+    });
+    pub static EQUALITY_IDS: Lazy<Field> = Lazy::new(|| {
+        Field::optional(
             135,
             "equality_ids",
             Any::List(List {
@@ -1352,14 +1370,16 @@ mod datafile {
                 element_type: Box::new(Any::Primitive(Primitive::Int)),
             }),
         )
-        .with_comment("Equality comparison field IDs");
-        pub static ref SORT_ORDER_ID: Field =
-            Field::optional(140, "sort_order_id", Any::Primitive(Primitive::Int))
-                .with_comment("Sort order ID");
-        pub static ref SPEC_ID: Field =
-            Field::optional(141, "spec_id", Any::Primitive(Primitive::Int))
-                .with_comment("Partition spec ID");
-    }
+        .with_comment("Equality comparison field IDs")
+    });
+    pub static SORT_ORDER_ID: Lazy<Field> = Lazy::new(|| {
+        Field::optional(140, "sort_order_id", Any::Primitive(Primitive::Int))
+            .with_comment("Sort order ID")
+    });
+    pub static SPEC_ID: Lazy<Field> = Lazy::new(|| {
+        Field::optional(141, "spec_id", Any::Primitive(Primitive::Int))
+            .with_comment("Partition spec ID")
+    });
 }
 
 impl DataFile {
