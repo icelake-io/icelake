@@ -2,7 +2,10 @@
 
 use std::collections::HashMap;
 
-use crate::{types::DataFile, Result};
+use crate::{
+    types::{DataFile, StructValue},
+    Result,
+};
 use arrow_array::RecordBatch;
 use arrow_schema::SchemaRef;
 use opendal::Operator;
@@ -169,7 +172,10 @@ impl DataFileWriter {
             content: crate::types::DataContentType::Data,
             file_path: format!("{}/{}", self.operator.info().root(), self.current_location),
             file_format: crate::types::DataFileFormat::Parquet,
-            partition: (),
+            /// # TODO
+            ///
+            /// Support write partition info to file.
+            partition: StructValue::default(),
             record_count: meta_data.num_rows,
             column_sizes: Some(column_sizes),
             value_counts: Some(value_counts),

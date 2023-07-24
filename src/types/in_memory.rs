@@ -292,7 +292,7 @@ impl Field {
 }
 
 /// A Struct type is a tuple of typed values.
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Default, Debug, PartialEq, Clone)]
 pub struct StructValue {
     /// fields is a map from field id to field value.
     pub fields: HashMap<i32, AnyValue>,
@@ -913,7 +913,7 @@ pub struct FieldSummary {
 /// A manifest is an immutable Avro file that lists data files or delete
 /// files, along with each file’s partition data tuple, metrics, and tracking
 /// information.
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct ManifestEntry {
     /// field: 0
     ///
@@ -998,7 +998,7 @@ pub struct ManifestFile {
 }
 
 impl ManifestFile {
-    pub(crate) fn v2_schema(_partition_type: Struct) -> Schema {
+    pub(crate) fn v2_schema(partition_type: Struct) -> Schema {
         Schema {
             schema_id: 0,
             identifier_field_ids: None,
@@ -1015,7 +1015,7 @@ impl ManifestFile {
                             datafile::CONTENT.clone().with_required(),
                             datafile::FILE_PATH.clone(),
                             datafile::FILE_FORMAT.clone(),
-                            // DataFile::partition_field(partition_type),
+                            DataFile::partition_field(partition_type),
                             datafile::RECORD_COUNT.clone(),
                             datafile::FILE_SIZE.clone(),
                             datafile::COLUMN_SIZES.clone(),
@@ -1114,7 +1114,7 @@ impl TryFrom<u8> for ManifestStatus {
 }
 
 /// Data file carries data file path, partition tuple, metrics, …
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct DataFile {
     /// field id: 134
     ///
@@ -1133,9 +1133,7 @@ pub struct DataFile {
     ///
     /// Partition data tuple, schema based on the partition spec output using
     /// partition field ids for the struct field ids
-    ///
-    /// TODO: we need to support partition in data file.
-    pub partition: (),
+    pub partition: StructValue,
     /// field id: 103
     ///
     /// Number of records in this file
@@ -1399,7 +1397,8 @@ impl DataFile {
             content,
             file_path: file_path.into(),
             file_format,
-            partition: (),
+            // TODO: Should not use default partition here. Replace it after introduce deserialize of `StructValue`.
+            partition: StructValue::default(),
             record_count,
             file_size_in_bytes,
             column_sizes: None,
