@@ -10,9 +10,9 @@ use serde_with::serde_as;
 use serde_with::Bytes;
 
 use super::parse_schema;
-use crate::types;
 use crate::types::on_disk::partition_spec::serialize_partition_spec_fields;
 use crate::types::on_disk::schema::serialize_schema;
+use crate::types::{self, StructValue};
 use crate::types::{DataContentType, ManifestContentType, ManifestListEntry, UNASSIGNED_SEQ_NUM};
 use crate::types::{ManifestStatus, TableFormatVersion};
 use crate::Error;
@@ -100,7 +100,7 @@ pub fn parse_manifest_file(bs: &[u8]) -> Result<types::ManifestFile> {
 }
 
 #[derive(Serialize, Deserialize)]
-#[cfg_attr(test, derive(Debug, PartialEq, Eq))]
+#[cfg_attr(test, derive(Debug, PartialEq))]
 struct ManifestEntry {
     status: i32,
     snapshot_id: Option<i64>,
@@ -139,12 +139,14 @@ impl TryFrom<types::ManifestEntry> for ManifestEntry {
 
 #[serde_as]
 #[derive(Serialize, Deserialize)]
-#[cfg_attr(test, derive(Debug, PartialEq, Eq))]
+#[cfg_attr(test, derive(Debug, PartialEq))]
 struct DataFile {
     #[serde(default)]
     content: i32,
     file_path: String,
     file_format: String,
+    #[serde(skip_deserializing)]
+    partition: StructValue,
     record_count: i64,
     file_size_in_bytes: i64,
     column_sizes: Option<Vec<I64Entry>>,
@@ -170,7 +172,7 @@ impl TryFrom<DataFile> for types::DataFile {
             content: DataContentType::try_from(v.content as u8)?,
             file_path: v.file_path,
             file_format: parse_data_file_format(&v.file_format)?,
-            partition: (),
+            partition: v.partition,
             record_count: v.record_count,
             file_size_in_bytes: v.file_size_in_bytes,
             column_sizes: v.column_sizes.map(parse_i64_entry),
@@ -209,6 +211,7 @@ impl TryFrom<types::DataFile> for DataFile {
             split_offsets: v.split_offsets,
             equality_ids: v.equality_ids,
             sort_order_id: v.sort_order_id,
+            partition: v.partition,
         })
     }
 }
