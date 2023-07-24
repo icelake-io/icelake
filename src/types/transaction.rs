@@ -1,8 +1,11 @@
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use crate::error::Result;
-use crate::types::{DataFile, DataFileFormat, ManifestContentType, ManifestEntry, ManifestFile, ManifestList, ManifestListWriter, ManifestMetadata, ManifestStatus, ManifestWriter, TableMetadata};
+use crate::types::{
+    DataFile, DataFileFormat, ManifestContentType, ManifestEntry, ManifestFile, ManifestList,
+    ManifestListWriter, ManifestMetadata, ManifestStatus, ManifestWriter, Snapshot, TableMetadata,
+};
 use crate::Table;
 use opendal::Operator;
+use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 
 /// Operation of a transaction.
@@ -18,7 +21,7 @@ pub struct Transaction<'a> {
     manifest_num: u32,
     // Attemp num
     attempt: u32,
-    table: &'a Table,
+    table: &'a mut Table,
     io: Operator,
     ops: Vec<Operation>,
 }
@@ -37,6 +40,35 @@ impl Transaction {
     pub async fn commit(mut self) -> Result<()> {
         let cur_metadata = self.table.current_table_metadata();
 
+        let new_snapshot = self.produce_new_snapshot(cur_metadata).await?;
+        let mut new_metadata = cur_metadata.clone();
+        new_metadata.append_snapshot(new_snapshot)?;
+
+        // Save new metadata
+        self.table.commit(cur_metadata).await?;
+
+        Ok(())
+    }
+
+    fn next_manifest_path(&mut self) -> String {
+        self.manifest_num += 1;
+        Table::metadata_path(format!(
+            "{}-m{}.{}",
+            self.uuid,
+            self.manifest_num,
+            DataFileFormat::Avro.to_string()
+        ))
+    }
+
+    fn manifest_list_path(&mut self, snapshot_id: i64) -> String {
+        self.attempt += 1;
+        Table::metadata_path(format!(
+            "snap-{}-{}-{}",
+            snapshot_id, self.attempt, self.uuid
+        ))
+    }
+
+    async fn produce_new_snapshot(&mut self, cur_metadata: &TableMetadata) -> Result<Snapshot> {
         let next_snapshot_id = cur_metadata.current_snapshot_id.unwrap_or(0) + 1;
         let next_seq_number = cur_metadata.last_sequence_number + 1;
 
@@ -59,57 +91,49 @@ impl Transaction {
 
         let manifest_list_path = {
             // Writing manifest file
-            let mut writer = ManifestWriter::new(cur_metadata.current_partition_spec()?.clone(),
-                                self.table.operator(),
-                                self.next_manifest_path(), next_snapshot_id);
+            let mut writer = ManifestWriter::new(
+                cur_metadata.current_partition_spec()?.clone(),
+                self.table.operator(),
+                self.next_manifest_path(),
+                next_snapshot_id,
+            );
             let manifest_file = ManifestFile {
                 metadata: ManifestMetadata {
                     schema: cur_metadata.current_schema()?.clone(),
                     schema_id: cur_metadata.current_schema_id,
                     partition_spec_id: cur_metadata.default_spec_id,
                     format_version: Some(cur_metadata.format_version),
-                    content: ManifestContentType::Data
+                    content: ManifestContentType::Data,
                 },
-                entries: manifest_entries
+                entries: manifest_entries,
             };
             let manifest_list_entry = writer.write(manifest_file).await?;
 
-
             // Load existing manifest list
-            let mut manifest_list = cur_metadata.current_snapshot()?.load_manifest_list(&self.table.operator())?;
+            let mut manifest_list = cur_metadata
+                .current_snapshot()?
+                .load_manifest_list(&self.table.operator())?;
             manifest_list.push(manifest_list_entry);
-
 
             let manifest_list_path = self.manifest_list_path(next_snapshot_id);
             // Writing manifest list
             ManifestListWriter::new(self.table.operator(), manifest_list_path.clone())
-                .write(manifest_list).await?;
+                .write(manifest_list)
+                .await?;
 
             manifest_list_path
         };
 
-        let new_snapshot = {
-            let cur_snapshot = cur_metadata.current_snapshot()?;
-            let mut new_snapshot = cur_snapshot.clone();
-            new_snapshot.snapshot_id = next_snapshot_id;
-            new_snapshot.parent_snapshot_id = Some(cur_snapshot.snapshot_id);
-            new_snapshot.sequence_number = next_seq_number;
-            new_snapshot.timestamp_ms = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as i64;
-            new_snapshot.manifest_list = manifest_list_path;
+        let cur_snapshot = cur_metadata.current_snapshot()?;
+        let mut new_snapshot = cur_snapshot.clone();
+        new_snapshot.snapshot_id = next_snapshot_id;
+        new_snapshot.parent_snapshot_id = Some(cur_snapshot.snapshot_id);
+        new_snapshot.sequence_number = next_seq_number;
+        new_snapshot.timestamp_ms =
+            SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as i64;
+        new_snapshot.manifest_list = manifest_list_path;
 
-            // TODO: Add operations
-            new_snapshot
-        };
-
-    }
-
-    fn next_manifest_path(&mut self) -> String {
-        self.manifest_num += 1;
-        Table::metadata_file_path(format!("{}-m{}.{}", self.uuid, self.manifest_num, DataFileFormat::Avro.to_string()))
-    }
-
-    fn manifest_list_path(&mut self, snapshot_id: i64) -> String {
-        self.attempt += 1;
-        Table::metadata_file_path(format!("snap-{}-{}-{}", snapshot_id, self.attempt, self.uuid))
+        // TODO: Add operations
+        Ok(new_snapshot)
     }
 }

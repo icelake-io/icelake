@@ -15,10 +15,10 @@ use serde::ser::SerializeStruct;
 use serde::Serialize;
 use uuid::Uuid;
 
+use crate::types::parse_manifest_list;
 use crate::Error;
 use crate::ErrorKind;
 use crate::Result;
-use crate::types::parse_manifest_list;
 
 pub(crate) const UNASSIGNED_SEQ_NUM: i64 = -1;
 
@@ -1542,6 +1542,13 @@ impl Snapshot {
     pub(crate) async fn load_manifest_list(&self, op: &Operator) -> Result<ManifestList> {
         Ok(parse_manifest_list(op.read(self.manifest_list.as_str())?)?)
     }
+
+    pub(crate) fn log(&self) -> SnapshotLog {
+        SnapshotLog {
+            timestamp_ms: self.timestamp_ms,
+            snapshot_id: self.snapshot_id,
+        }
+    }
 }
 
 /// timestamp and snapshot ID pairs that encodes changes to the current
@@ -1772,6 +1779,32 @@ impl TableMetadata {
                 ErrorKind::IcebergDataInvalid,
                 "Current snapshot missing!",
             ))
+        }
+    }
+
+    pub fn append_snapshot(&mut self, snapshot: Snapshot) -> Result<()> {
+        if let Some(snapshots) = &mut self.snapshots {
+            self.snapshot_log
+                .ok_or_else(|| {
+                    Error::new(
+                        ErrorKind::IcebergDataInvalid,
+                        "Snapshot logs is empty while snapshots is not!",
+                    )
+                })?
+                .push(snapshot.log());
+            snapshots.push(snapshot);
+            Ok(())
+        } else {
+            if self.snapshot_log.is_some() {
+                return Err(Error::new(
+                    ErrorKind::IcebergDataInvalid,
+                    "Snapshot logs is empty while snapshots is not!",
+                ));
+            }
+
+            self.snapshot_log = Some(vec![snapshot.log()]);
+            self.snapshots = Some(vec![snapshot]);
+            Ok(())
         }
     }
 }

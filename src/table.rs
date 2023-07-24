@@ -6,12 +6,16 @@ use futures::StreamExt;
 use opendal::layers::LoggingLayer;
 use opendal::services::Fs;
 use opendal::Operator;
+use parquet::format::LogicalType::UUID;
+use uuid::Uuid;
 
 use crate::io::task_writer::TaskWriter;
-use crate::types::DataFile;
+use crate::types::{DataFile, TableMetadata};
 use crate::{types, Error};
 
-const META_PATH: &str = "metadata";
+const META_ROOT_PATH: &str = "metadata";
+const METADATA_FILE_EXTENSION: &str = ".metadata.json";
+const VERSION_HINT_FILENAME: &str = "version-hint.text";
 
 /// Table is the main entry point for the IceLake.
 pub struct Table {
@@ -266,12 +270,49 @@ impl Table {
 
     /// Returns path of metadata file relative to the table root path.
     #[inline]
-    pub fn metadata_file_path(filename: impl Into<String>) -> String {
-        format!("{}/{}", META_PATH, filename.into())
+    pub fn metadata_path(filename: impl Into<String>) -> String {
+        format!("{}/{}", META_ROOT_PATH, filename.into())
+    }
+
+    pub fn metadata_file_path(metadata_version: i64) -> String {
+        Table::metadata_path(format!("v{metadata_version}{METADATA_FILE_EXTENSION}"))
     }
 
     pub(crate) fn operator(&self) -> Operator {
         self.op.clone()
+    }
+
+    pub(crate) async fn commit(&mut self, next_metadata: &TableMetadata) -> Result<()> {
+        let next_version = self.current_version + 1;
+        let tmp_metadata_file_path =
+            Table::metadata_path(format!("{}{METADATA_FILE_EXTENSION}", Uuid::new_v4()));
+        let final_metadata_file_path = Table::metadata_file_path(next_version);
+
+        self.op
+            .write(
+                &tmp_metadata_file_path,
+                serde_json::to_string(next_metadata),
+            )
+            .await?;
+
+        self.op
+            .rename(&tmp_metadata_file_path, &final_metadata_file_path)
+            .await?;
+        self.write_metadata_version_hint(next_version).await?;
+
+        // Reload table
+        self.load()?;
+        Ok(())
+    }
+
+    async fn write_metadata_version_hint(&self, version: i64) -> Result<()> {
+        let path = Table::metadata_path(format!("{}-version-hint.temp", Uuid::new_v4()));
+        self.op.write(&path, format!("{version}")).await?;
+
+        self.op.delete(VERSION_HINT_FILENAME).await?;
+        self.op.rename(&path, VERSION_HINT_FILENAME).await?;
+
+        Ok(())
     }
 }
 
