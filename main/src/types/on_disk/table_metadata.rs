@@ -322,10 +322,8 @@ mod tests {
     #[test]
     fn test_parse_table_metadata_v1() {
         let path = format!(
-            "{}/testdata/simple_table/metadata/v1.metadata.json",
-            env::current_dir()
-                .expect("current_dir must exist")
-                .to_string_lossy()
+            "{}/../testdata/simple_table/metadata/v1.metadata.json",
+            env!("CARGO_MANIFEST_DIR")
         );
 
         let bs = fs::read(path).expect("read_file must succeed");
@@ -342,10 +340,8 @@ mod tests {
     #[test]
     fn test_parse_table_metadata_v2() {
         let path = format!(
-            "{}/testdata/simple_table/metadata/v2.metadata.json",
-            env::current_dir()
-                .expect("current_dir must exist")
-                .to_string_lossy()
+            "{}/../testdata/simple_table/metadata/v2.metadata.json",
+            env!("CARGO_MANIFEST_DIR")
         );
 
         let bs = fs::read(path).expect("read_file must succeed");

@@ -230,10 +230,8 @@ mod test {
         let location_generator = {
             let mut metadata = {
                 let path = format!(
-                    "{}/testdata/simple_table/metadata/v1.metadata.json",
-                    env::current_dir()
-                        .expect("current_dir must exist")
-                        .to_string_lossy()
+                    "{}/../testdata/simple_table/metadata/v1.metadata.json",
+                    env!("CARGO_MANIFEST_DIR")
                 );
 
                 let bs = fs::read(path).expect("read_file must succeed");

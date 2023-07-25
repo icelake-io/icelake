@@ -327,12 +327,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_table_version_hint() -> Result<()> {
-        let path = format!(
-            "{}/testdata/simple_table",
-            env::current_dir()
-                .expect("current_dir must exist")
-                .to_string_lossy()
-        );
+        let path = format!("{}/../testdata/simple_table", env!("CARGO_MANIFEST_DIR"));
 
         let mut builder = Fs::default();
         builder.root(&path);
@@ -352,12 +347,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_table_read_table_metadata() -> Result<()> {
-        let path = format!(
-            "{}/testdata/simple_table",
-            env::current_dir()
-                .expect("current_dir must exist")
-                .to_string_lossy()
-        );
+        let path = format!("{}/../testdata/simple_table", env!("CARGO_MANIFEST_DIR"));
 
         let mut builder = Fs::default();
         builder.root(&path);
@@ -386,12 +376,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_table_load() -> Result<()> {
-        let path = format!(
-            "{}/testdata/simple_table",
-            env::current_dir()
-                .expect("current_dir must exist")
-                .to_string_lossy()
-        );
+        let path = format!("{}/../testdata/simple_table", env!("CARGO_MANIFEST_DIR"));
 
         let mut builder = Fs::default();
         builder.root(&path);
@@ -412,12 +397,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_table_load_without_version_hint() -> Result<()> {
-        let path = format!(
-            "{}/testdata/no_hint_table",
-            env::current_dir()
-                .expect("current_dir must exist")
-                .to_string_lossy()
-        );
+        let path = format!("{}/../testdata/no_hint_table", env!("CARGO_MANIFEST_DIR"));
 
         let mut builder = Fs::default();
         builder.root(&path);
@@ -442,12 +422,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_table_current_data_files() -> Result<()> {
-        let path = format!(
-            "{}/testdata/simple_table",
-            env::current_dir()
-                .expect("current_dir must exist")
-                .to_string_lossy()
-        );
+        let path = format!("{}/../testdata/simple_table", env!("CARGO_MANIFEST_DIR"));
 
         let mut builder = Fs::default();
         builder.root(&path);
