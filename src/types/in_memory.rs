@@ -2,7 +2,6 @@
 
 use std::{collections::HashMap, str::FromStr};
 
-use chrono::format::format;
 use chrono::DateTime;
 use chrono::NaiveDate;
 use chrono::NaiveDateTime;
@@ -1540,7 +1539,7 @@ pub struct Snapshot {
 
 impl Snapshot {
     pub(crate) async fn load_manifest_list(&self, op: &Operator) -> Result<ManifestList> {
-        Ok(parse_manifest_list(op.read(self.manifest_list.as_str())?)?)
+        parse_manifest_list(&op.read(self.manifest_list.as_str()).await?)
     }
 
     pub(crate) fn log(&self) -> SnapshotLog {
@@ -1739,6 +1738,7 @@ pub struct TableMetadata {
 }
 
 impl TableMetadata {
+    /// Current partition spec.
     pub fn current_partition_spec(&self) -> Result<&PartitionSpec> {
         self.partition_specs
             .iter()
@@ -1751,6 +1751,7 @@ impl TableMetadata {
             })
     }
 
+    /// Current schema.
     pub fn current_schema(&self) -> Result<&Schema> {
         self.schemas
             .iter()
@@ -1763,6 +1764,7 @@ impl TableMetadata {
             })
     }
 
+    /// Current schema.
     pub fn current_snapshot(&self) -> Result<&Snapshot> {
         if let (Some(snapshots), Some(snapshot_id)) = (&self.snapshots, self.current_snapshot_id) {
             snapshots
@@ -1782,9 +1784,9 @@ impl TableMetadata {
         }
     }
 
-    pub fn append_snapshot(&mut self, snapshot: Snapshot) -> Result<()> {
+    pub(crate) fn append_snapshot(&mut self, snapshot: Snapshot) -> Result<()> {
         if let Some(snapshots) = &mut self.snapshots {
-            self.snapshot_log
+            self.snapshot_log.as_mut()
                 .ok_or_else(|| {
                     Error::new(
                         ErrorKind::IcebergDataInvalid,

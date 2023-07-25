@@ -1,7 +1,9 @@
+//! Transaction for manipulating table.
+
 use crate::error::Result;
 use crate::types::{
-    DataFile, DataFileFormat, ManifestContentType, ManifestEntry, ManifestFile, ManifestList,
-    ManifestListWriter, ManifestMetadata, ManifestStatus, ManifestWriter, Snapshot, TableMetadata,
+    DataFile, DataFileFormat, ManifestContentType, ManifestEntry, ManifestFile,
+    ManifestListWriter, ManifestMetadata, ManifestStatus, ManifestWriter, Snapshot,
 };
 use crate::Table;
 use opendal::Operator;
@@ -14,19 +16,32 @@ enum Operation {
     AppendDataFile(DataFile),
 }
 
-pub struct Transaction<'a> {
+struct CommitContext {
     // Uuid of this transaction
     uuid: Uuid,
     // Number of manifest files
     manifest_num: u32,
     // Attemp num
     attempt: u32,
-    table: &'a mut Table,
+
+    // Table io
     io: Operator,
+}
+
+/// A transaction manipulate iceberg table.
+pub struct Transaction<'a> {
+    table: &'a mut Table,
+
+    // Transaction operations
     ops: Vec<Operation>,
 }
 
-impl Transaction {
+impl<'a> Transaction<'a> {
+    /// Create a new transaction.
+    pub fn new(table: &'a mut Table) -> Self {
+        Self { table, ops: vec![] }
+    }
+
     /// Append a new data file.
     pub fn append_file(mut self, data_file: DataFile) -> Self {
         self.ops.push(Operation::AppendDataFile(data_file));
@@ -37,44 +52,56 @@ impl Transaction {
     ///
     /// Currently implementation only supports add data file. We should refactor it to be more
     /// general.
-    pub async fn commit(mut self) -> Result<()> {
-        let cur_metadata = self.table.current_table_metadata();
+    pub async fn commit(self) -> Result<()> {
+        let table = self.table;
+        let commit_ctx = CommitContext {
+            uuid: Uuid::new_v4(),
+            manifest_num: 0,
+            attempt: 0,
+            io: table.operator(),
+        };
 
-        let new_snapshot = self.produce_new_snapshot(cur_metadata).await?;
-        let mut new_metadata = cur_metadata.clone();
+        let new_snapshot = Transaction::produce_new_snapshot(commit_ctx, self.ops, table).await?;
+        let mut new_metadata = table.current_table_metadata().clone();
         new_metadata.append_snapshot(new_snapshot)?;
 
         // Save new metadata
-        self.table.commit(cur_metadata).await?;
+        table.commit(new_metadata).await?;
 
         Ok(())
     }
 
-    fn next_manifest_path(&mut self) -> String {
-        self.manifest_num += 1;
+    fn next_manifest_path(ctx: &mut CommitContext) -> String {
+        ctx.manifest_num += 1;
         Table::metadata_path(format!(
             "{}-m{}.{}",
-            self.uuid,
-            self.manifest_num,
+            &ctx.uuid,
+            ctx.manifest_num,
             DataFileFormat::Avro.to_string()
         ))
     }
 
-    fn manifest_list_path(&mut self, snapshot_id: i64) -> String {
-        self.attempt += 1;
+    fn manifest_list_path(ctx: &mut CommitContext, snapshot_id: i64) -> String {
+        ctx.attempt += 1;
         Table::metadata_path(format!(
             "snap-{}-{}-{}",
-            snapshot_id, self.attempt, self.uuid
+            snapshot_id, ctx.attempt, &ctx.uuid
         ))
     }
 
-    async fn produce_new_snapshot(&mut self, cur_metadata: &TableMetadata) -> Result<Snapshot> {
-        let next_snapshot_id = cur_metadata.current_snapshot_id.unwrap_or(0) + 1;
+    async fn produce_new_snapshot(
+        mut ctx: CommitContext,
+        ops: Vec<Operation>,
+        table: &Table,
+    ) -> Result<Snapshot> {
+        let cur_metadata = table.current_table_metadata();
+        let cur_snapshot_id = cur_metadata.current_snapshot_id.unwrap_or(0);
+        let next_snapshot_id = cur_snapshot_id + 1;
         let next_seq_number = cur_metadata.last_sequence_number + 1;
 
-        let mut manifest_entries: Vec<ManifestEntry> = Vec::with_capacity(self.ops.len());
+        let mut manifest_entries: Vec<ManifestEntry> = Vec::with_capacity(ops.len());
 
-        for op in self.ops {
+        for op in ops {
             match op {
                 Operation::AppendDataFile(data_file) => {
                     let manifest_entry = ManifestEntry {
@@ -91,10 +118,10 @@ impl Transaction {
 
         let manifest_list_path = {
             // Writing manifest file
-            let mut writer = ManifestWriter::new(
+            let writer = ManifestWriter::new(
                 cur_metadata.current_partition_spec()?.clone(),
-                self.table.operator(),
-                self.next_manifest_path(),
+                table.operator(),
+                Transaction::next_manifest_path(&mut ctx),
                 next_snapshot_id,
             );
             let manifest_file = ManifestFile {
@@ -112,14 +139,21 @@ impl Transaction {
             // Load existing manifest list
             let mut manifest_list = cur_metadata
                 .current_snapshot()?
-                .load_manifest_list(&self.table.operator())?;
-            manifest_list.push(manifest_list_entry);
-
-            let manifest_list_path = self.manifest_list_path(next_snapshot_id);
-            // Writing manifest list
-            ManifestListWriter::new(self.table.operator(), manifest_list_path.clone())
-                .write(manifest_list)
+                .load_manifest_list(&ctx.io)
                 .await?;
+            manifest_list.entries.push(manifest_list_entry);
+
+            let manifest_list_path = Transaction::manifest_list_path(&mut ctx, next_snapshot_id);
+            // Writing manifest list
+            ManifestListWriter::new(
+                ctx.io.clone(),
+                manifest_list_path.clone(),
+                next_snapshot_id,
+                cur_snapshot_id,
+                next_snapshot_id,
+            )
+            .write(manifest_list)
+            .await?;
 
             manifest_list_path
         };

@@ -6,11 +6,10 @@ use futures::StreamExt;
 use opendal::layers::LoggingLayer;
 use opendal::services::Fs;
 use opendal::Operator;
-use parquet::format::LogicalType::UUID;
 use uuid::Uuid;
 
 use crate::io::task_writer::TaskWriter;
-use crate::types::{DataFile, TableMetadata};
+use crate::types::{DataFile, serialize_table_meta, TableMetadata};
 use crate::{types, Error};
 
 const META_ROOT_PATH: &str = "metadata";
@@ -274,6 +273,7 @@ impl Table {
         format!("{}/{}", META_ROOT_PATH, filename.into())
     }
 
+    /// Returns the metadata file path.
     pub fn metadata_file_path(metadata_version: i64) -> String {
         Table::metadata_path(format!("v{metadata_version}{METADATA_FILE_EXTENSION}"))
     }
@@ -282,7 +282,7 @@ impl Table {
         self.op.clone()
     }
 
-    pub(crate) async fn commit(&mut self, next_metadata: &TableMetadata) -> Result<()> {
+    pub(crate) async fn commit(&mut self, next_metadata: TableMetadata) -> Result<()> {
         let next_version = self.current_version + 1;
         let tmp_metadata_file_path =
             Table::metadata_path(format!("{}{METADATA_FILE_EXTENSION}", Uuid::new_v4()));
@@ -291,7 +291,7 @@ impl Table {
         self.op
             .write(
                 &tmp_metadata_file_path,
-                serde_json::to_string(next_metadata),
+                serialize_table_meta(next_metadata)?,
             )
             .await?;
 
@@ -301,7 +301,7 @@ impl Table {
         self.write_metadata_version_hint(next_version).await?;
 
         // Reload table
-        self.load()?;
+        self.load().await?;
         Ok(())
     }
 
