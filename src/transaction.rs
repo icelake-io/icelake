@@ -2,8 +2,8 @@
 
 use crate::error::Result;
 use crate::types::{
-    DataFile, DataFileFormat, ManifestContentType, ManifestEntry, ManifestFile,
-    ManifestListWriter, ManifestMetadata, ManifestStatus, ManifestWriter, Snapshot,
+    DataFile, DataFileFormat, ManifestContentType, ManifestEntry, ManifestFile, ManifestListWriter,
+    ManifestMetadata, ManifestStatus, ManifestWriter, Snapshot,
 };
 use crate::Table;
 use opendal::Operator;

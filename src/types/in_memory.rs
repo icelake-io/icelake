@@ -1786,7 +1786,8 @@ impl TableMetadata {
 
     pub(crate) fn append_snapshot(&mut self, snapshot: Snapshot) -> Result<()> {
         if let Some(snapshots) = &mut self.snapshots {
-            self.snapshot_log.as_mut()
+            self.snapshot_log
+                .as_mut()
                 .ok_or_else(|| {
                     Error::new(
                         ErrorKind::IcebergDataInvalid,

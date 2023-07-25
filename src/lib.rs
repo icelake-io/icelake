@@ -13,5 +13,5 @@ pub use error::ErrorKind;
 pub use error::Result;
 
 pub mod io;
-pub mod types;
 pub mod transaction;
+pub mod types;

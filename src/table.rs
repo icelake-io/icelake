@@ -9,7 +9,7 @@ use opendal::Operator;
 use uuid::Uuid;
 
 use crate::io::task_writer::TaskWriter;
-use crate::types::{DataFile, serialize_table_meta, TableMetadata};
+use crate::types::{serialize_table_meta, DataFile, TableMetadata};
 use crate::{types, Error};
 
 const META_ROOT_PATH: &str = "metadata";
