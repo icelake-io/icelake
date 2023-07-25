@@ -1,3 +1,4 @@
+use std::backtrace::{Backtrace, BacktraceStatus};
 use std::fmt;
 use std::fmt::Debug;
 use std::fmt::Display;
@@ -55,6 +56,7 @@ impl From<ErrorKind> for &'static str {
 pub struct Error {
     kind: ErrorKind,
     message: String,
+    backtrace: Backtrace,
 
     context: Vec<(&'static str, String)>,
     source: Option<anyhow::Error>,
@@ -120,6 +122,10 @@ impl Debug for Error {
             writeln!(f, "Source: {source:?}")?;
         }
 
+        if matches!(self.backtrace.status(), BacktraceStatus::Captured) {
+            writeln!(f, "Backtrace: {}", self.backtrace)?;
+        }
+
         Ok(())
     }
 }
@@ -136,6 +142,7 @@ impl Error {
         Self {
             kind,
             message: message.into(),
+            backtrace: Backtrace::capture(),
 
             context: Vec::default(),
             source: None,
@@ -184,10 +191,15 @@ impl From<opendal::Error> for Error {
     }
 }
 
-#[cfg(feature = "io_parquet")]
 impl From<parquet::errors::ParquetError> for Error {
     fn from(v: parquet::errors::ParquetError) -> Self {
         Self::new(ErrorKind::Unexpected, "handling parquet data failed").set_source(v)
+    }
+}
+
+impl From<std::time::SystemTimeError> for Error {
+    fn from(v: std::time::SystemTimeError) -> Self {
+        Self::new(ErrorKind::Unexpected, "handling system time errror").set_source(v)
     }
 }
 
@@ -198,14 +210,14 @@ mod tests {
 
     use super::*;
 
-    static TEST_ERROR: Lazy<Error> = Lazy::new(|| Error {
-        kind: ErrorKind::Unexpected,
-        message: "something wrong happened".to_string(),
-        context: vec![
-            ("path", "/path/to/file".to_string()),
-            ("called", "send_async".to_string()),
-        ],
-        source: Some(anyhow!("networking error")),
+    static TEST_ERROR: Lazy<Error> = Lazy::new(|| {
+        Error::new(
+            ErrorKind::Unexpected,
+            "something wrong happened".to_string(),
+        )
+        .with_context("path", "/path/to/file".to_string())
+        .with_context("called", "send_async".to_string())
+        .set_source(anyhow!("networking error"))
     });
 
     #[test]

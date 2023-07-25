@@ -7,12 +7,14 @@ use chrono::NaiveDate;
 use chrono::NaiveDateTime;
 use chrono::NaiveTime;
 use chrono::Utc;
+use opendal::Operator;
 use rust_decimal::Decimal;
 use serde::ser::SerializeMap;
 use serde::ser::SerializeStruct;
 use serde::Serialize;
 use uuid::Uuid;
 
+use crate::types::parse_manifest_list;
 use crate::Error;
 use crate::ErrorKind;
 use crate::Result;
@@ -1534,6 +1536,19 @@ pub struct Snapshot {
     pub schema_id: Option<i64>,
 }
 
+impl Snapshot {
+    pub(crate) async fn load_manifest_list(&self, op: &Operator) -> Result<ManifestList> {
+        parse_manifest_list(&op.read(self.manifest_list.as_str()).await?)
+    }
+
+    pub(crate) fn log(&self) -> SnapshotLog {
+        SnapshotLog {
+            timestamp_ms: self.timestamp_ms,
+            snapshot_id: self.snapshot_id,
+        }
+    }
+}
+
 /// timestamp and snapshot ID pairs that encodes changes to the current
 /// snapshot for the table.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -1719,6 +1734,81 @@ pub struct TableMetadata {
     /// There is always a main branch reference pointing to the
     /// `current-snapshot-id` even if the refs map is null.
     pub refs: Option<HashMap<String, SnapshotReference>>,
+}
+
+impl TableMetadata {
+    /// Current partition spec.
+    pub fn current_partition_spec(&self) -> Result<&PartitionSpec> {
+        self.partition_specs
+            .iter()
+            .find(|p| p.spec_id == self.default_spec_id)
+            .ok_or_else(|| {
+                Error::new(
+                    ErrorKind::IcebergDataInvalid,
+                    format!("Partition spec id {} not found!", self.default_spec_id),
+                )
+            })
+    }
+
+    /// Current schema.
+    pub fn current_schema(&self) -> Result<&Schema> {
+        self.schemas
+            .iter()
+            .find(|s| s.schema_id == self.current_schema_id)
+            .ok_or_else(|| {
+                Error::new(
+                    ErrorKind::IcebergDataInvalid,
+                    format!("Schema id {} not found!", self.current_schema_id),
+                )
+            })
+    }
+
+    /// Current schema.
+    pub fn current_snapshot(&self) -> Result<&Snapshot> {
+        if let (Some(snapshots), Some(snapshot_id)) = (&self.snapshots, self.current_snapshot_id) {
+            snapshots
+                .iter()
+                .find(|s| s.snapshot_id == snapshot_id)
+                .ok_or_else(|| {
+                    Error::new(
+                        ErrorKind::IcebergDataInvalid,
+                        format!("Snapshot id {snapshot_id} not found!"),
+                    )
+                })
+        } else {
+            Err(Error::new(
+                ErrorKind::IcebergDataInvalid,
+                "Current snapshot missing!",
+            ))
+        }
+    }
+
+    pub(crate) fn append_snapshot(&mut self, snapshot: Snapshot) -> Result<()> {
+        if let Some(snapshots) = &mut self.snapshots {
+            self.snapshot_log
+                .as_mut()
+                .ok_or_else(|| {
+                    Error::new(
+                        ErrorKind::IcebergDataInvalid,
+                        "Snapshot logs is empty while snapshots is not!",
+                    )
+                })?
+                .push(snapshot.log());
+            snapshots.push(snapshot);
+            Ok(())
+        } else {
+            if self.snapshot_log.is_some() {
+                return Err(Error::new(
+                    ErrorKind::IcebergDataInvalid,
+                    "Snapshot logs is empty while snapshots is not!",
+                ));
+            }
+
+            self.snapshot_log = Some(vec![snapshot.log()]);
+            self.snapshots = Some(vec![snapshot]);
+            Ok(())
+        }
+    }
 }
 
 /// Table format version number.

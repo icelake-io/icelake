@@ -17,6 +17,7 @@ pub fn parse_table_metadata(bs: &[u8]) -> Result<types::TableMetadata> {
     v.try_into()
 }
 
+/// Serialize table meta to json format.
 pub fn serialize_table_meta(table_meta: types::TableMetadata) -> Result<String> {
     let v = TableMetadata::try_from(table_meta)?;
     Ok(serde_json::to_string(&v)?)
