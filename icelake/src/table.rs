@@ -6,15 +6,18 @@ use futures::StreamExt;
 use opendal::layers::LoggingLayer;
 use opendal::services::Fs;
 use opendal::Operator;
+use regex::Regex;
+use url::Url;
 use uuid::Uuid;
 
 use crate::io::task_writer::TaskWriter;
 use crate::types::{serialize_table_meta, DataFile, TableMetadata};
-use crate::{types, Error};
+use crate::{types, Error, ErrorKind};
 
 const META_ROOT_PATH: &str = "metadata";
 const METADATA_FILE_EXTENSION: &str = ".metadata.json";
 const VERSION_HINT_FILENAME: &str = "version-hint.text";
+const VERSIONED_TABLE_METADATA_FILE_PATTERN: &str = r"v([0-9]+).metadata.json";
 
 /// Table is the main entry point for the IceLake.
 pub struct Table {
@@ -27,6 +30,8 @@ pub struct Table {
     /// We use table's `last-updated-ms` to represent the version.
     current_version: i64,
     current_location: Option<String>,
+    /// It's different from `current_version` in that it's the `v[version number]` in metadata file.
+    current_table_version: i64,
 
     task_id: AtomicUsize,
 }
@@ -42,21 +47,42 @@ impl Table {
             current_version: 0,
             current_location: None,
             task_id: AtomicUsize::new(0),
+            current_table_version: 0,
         }
     }
 
     /// Load metadata and manifest from storage.
     async fn load(&mut self) -> Result<()> {
-        let path = if self.is_version_hint_exist().await? {
+        let (cur_table_version, path) = if self.is_version_hint_exist().await? {
             let version_hint = self.read_version_hint().await?;
-            format!("metadata/v{}.metadata.json", version_hint)
+            (
+                version_hint,
+                format!("metadata/v{}.metadata.json", version_hint),
+            )
         } else {
             let files = self.list_table_metadata_paths().await?;
 
-            files.into_iter().last().ok_or(Error::new(
+            let path = files.into_iter().last().ok_or(Error::new(
                 crate::ErrorKind::IcebergDataInvalid,
                 "no table metadata found",
-            ))?
+            ))?;
+
+            let version_hint = {
+                let re = Regex::new(VERSIONED_TABLE_METADATA_FILE_PATTERN)?;
+                let (_, [version]) = re
+                    .captures_iter(path.as_str())
+                    .map(|c| c.extract())
+                    .next()
+                    .ok_or_else(|| {
+                        Error::new(
+                            crate::ErrorKind::IcebergDataInvalid,
+                            format!("Invalid metadata file name {path}"),
+                        )
+                    })?;
+                version.parse()?
+            };
+
+            (version_hint, path)
         };
 
         let metadata = self.read_table_metadata(&path).await?;
@@ -71,6 +97,7 @@ impl Table {
         self.current_location = Some(metadata.location.clone());
         self.table_metadata
             .insert(metadata.last_updated_ms, metadata);
+        self.current_table_version = cur_table_version as i64;
 
         Ok(())
     }
@@ -278,16 +305,73 @@ impl Table {
         Table::metadata_path(format!("v{metadata_version}{METADATA_FILE_EXTENSION}"))
     }
 
+    /// Returns absolute path in operator.
+    pub fn absolution_path(op: &Operator, relation_location: &str) -> String {
+        let op_info = op.info();
+        format!(
+            "{}://{}/{}/{}",
+            op_info.scheme().into_static(),
+            op_info.name(),
+            op_info.root(),
+            relation_location
+        )
+    }
+
+    async fn rename(op: &Operator, src_path: &str, dest_path: &str) -> Result<()> {
+        let info = op.info();
+        if info.can_rename() {
+            Ok(op.rename(src_path, dest_path).await?)
+        } else {
+            op.copy(src_path, dest_path).await?;
+            op.delete(src_path).await?;
+            Ok(())
+        }
+    }
+
+    /// Returns the relative path to operator.
+    pub fn relative_path(op: &Operator, absolute_path: &str) -> Result<String> {
+        let url = Url::parse(absolute_path)?;
+        let op_info = op.info();
+
+        // TODO: We should check schema here, but how to guarantee schema compatible such as s3, s3a
+
+        if url.host_str() != Some(op_info.name()) {
+            return Err(Error::new(
+                ErrorKind::Unexpected,
+                format!(
+                    "Host in {:?} not match with operator info {}",
+                    url.host_str(),
+                    op_info.name()
+                ),
+            ));
+        }
+
+        url.path()
+            .strip_prefix(op_info.root())
+            .ok_or_else(|| {
+                Error::new(
+                    crate::ErrorKind::IcebergDataInvalid,
+                    format!(
+                        "path {} is not starts with operator root {}",
+                        absolute_path,
+                        op_info.root()
+                    ),
+                )
+            })
+            .map(|s| s.to_string())
+    }
+
     pub(crate) fn operator(&self) -> Operator {
         self.op.clone()
     }
 
     pub(crate) async fn commit(&mut self, next_metadata: TableMetadata) -> Result<()> {
-        let next_version = self.current_version + 1;
+        let next_version = self.current_table_version + 1;
         let tmp_metadata_file_path =
             Table::metadata_path(format!("{}{METADATA_FILE_EXTENSION}", Uuid::new_v4()));
         let final_metadata_file_path = Table::metadata_file_path(next_version);
 
+        log::debug!("Writing to temporary metadata file path: {tmp_metadata_file_path}");
         self.op
             .write(
                 &tmp_metadata_file_path,
@@ -295,9 +379,8 @@ impl Table {
             )
             .await?;
 
-        self.op
-            .rename(&tmp_metadata_file_path, &final_metadata_file_path)
-            .await?;
+        log::debug!("Renaming temporary metadata file path [{tmp_metadata_file_path}] to final metadata file path [{final_metadata_file_path}]");
+        Table::rename(&self.op, &tmp_metadata_file_path, &final_metadata_file_path).await?;
         self.write_metadata_version_hint(next_version).await?;
 
         // Reload table
@@ -306,11 +389,17 @@ impl Table {
     }
 
     async fn write_metadata_version_hint(&self, version: i64) -> Result<()> {
-        let path = Table::metadata_path(format!("{}-version-hint.temp", Uuid::new_v4()));
-        self.op.write(&path, format!("{version}")).await?;
+        let tmp_version_hint_path =
+            Table::metadata_path(format!("{}-version-hint.temp", Uuid::new_v4()));
+        self.op
+            .write(&tmp_version_hint_path, format!("{version}"))
+            .await?;
 
-        self.op.delete(VERSION_HINT_FILENAME).await?;
-        self.op.rename(&path, VERSION_HINT_FILENAME).await?;
+        let final_version_hint_path = Table::metadata_path(VERSION_HINT_FILENAME);
+
+        self.op.delete(final_version_hint_path.as_str()).await?;
+        log::debug!("Renaming temporary version hint file path [{tmp_version_hint_path}] to final metadata file path [{final_version_hint_path}]");
+        Table::rename(&self.op, &tmp_version_hint_path, &final_version_hint_path).await?;
 
         Ok(())
     }

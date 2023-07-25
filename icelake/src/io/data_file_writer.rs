@@ -9,6 +9,7 @@ use crate::{
 use arrow::datatypes::SchemaRef;
 use arrow::record_batch::RecordBatch;
 use opendal::Operator;
+use parquet::file::properties::{WriterProperties, WriterVersion};
 use parquet::format::FileMetaData;
 
 use super::{
@@ -20,6 +21,7 @@ use super::{
 /// When complete, it will return a list of `DataFile`.
 pub struct DataFileWriter {
     operator: Operator,
+    table_location: String,
     location_generator: DataFileLocationGenerator,
     arrow_schema: SchemaRef,
 
@@ -41,6 +43,7 @@ impl DataFileWriter {
     /// Create a new `DataFileWriter`.
     pub async fn try_new(
         operator: Operator,
+        table_location: String,
         location_generator: DataFileLocationGenerator,
         arrow_schema: SchemaRef,
         rows_divisor: usize,
@@ -48,6 +51,7 @@ impl DataFileWriter {
     ) -> Result<Self> {
         let mut writer = Self {
             operator,
+            table_location,
             location_generator,
             arrow_schema,
             rows_divisor,
@@ -113,8 +117,14 @@ impl DataFileWriter {
 
         let location = self.location_generator.generate_name();
         let file_writer = self.operator.writer(&location).await?;
-        let current_writer =
-            ParquetWriterBuilder::new(file_writer, self.arrow_schema.clone()).build()?;
+        let current_writer = {
+            let props = WriterProperties::builder()
+                .set_writer_version(WriterVersion::PARQUET_2_0)
+                .build();
+            ParquetWriterBuilder::new(file_writer, self.arrow_schema.clone())
+                .with_properties(props)
+                .build()?
+        };
         self.current_writer = Some(current_writer);
         self.current_row_num = 0;
         self.current_location = location;
@@ -125,6 +135,7 @@ impl DataFileWriter {
     ///
     /// This function may be refactor when we support more file format.
     fn convert_meta_to_datafile(&self, meta_data: FileMetaData, written_size: u64) -> DataFile {
+        log::info!("{meta_data:?}");
         let (column_sizes, value_counts, null_value_counts, distinct_counts) = {
             // how to decide column id
             let mut per_col_size: HashMap<i32, _> = HashMap::new();
@@ -170,11 +181,11 @@ impl DataFileWriter {
         };
         DataFile {
             content: crate::types::DataContentType::Data,
-            file_path: format!("{}/{}", self.operator.info().root(), self.current_location),
+            file_path: format!("{}/{}", &self.table_location, &self.current_location),
             file_format: crate::types::DataFileFormat::Parquet,
-            /// # NOTE
-            ///
-            /// DataFileWriter only response to write data. Partition should place by more high level writer.
+            // /// # NOTE
+            // ///
+            // /// DataFileWriter only response to write data. Partition should place by more high level writer.
             partition: StructValue::default(),
             record_count: meta_data.num_rows,
             column_sizes: Some(column_sizes),
@@ -189,17 +200,16 @@ impl DataFileWriter {
             /// - `file_size_in_bytes` can't get from `FileMetaData` now.
             /// - `file_offset` in `FileMetaData` always be None now.
             /// - `nan_value_counts` can't get from `FileMetaData` now.
-            split_offsets: Some(
-                meta_data
-                    .row_groups
-                    .iter()
-                    .filter_map(|group| group.file_offset)
-                    .collect(),
-            ),
+            // Currently arrow parquet writer doesn't fill row group offsets, we can use first column chunk offset for it.
+            split_offsets: meta_data
+                .row_groups
+                .iter()
+                .filter_map(|group| group.columns.get(0).map(|c| c.file_offset))
+                .collect(),
             nan_value_counts: None,
             lower_bounds: None,
             upper_bounds: None,
-            equality_ids: None,
+            equality_ids: vec![],
             sort_order_id: None,
         }
     }
@@ -250,6 +260,7 @@ mod test {
 
         let mut writer = data_file_writer::DataFileWriter::try_new(
             op.clone(),
+            "file:///tmp".to_string(),
             location_generator,
             to_write.schema(),
             1024,

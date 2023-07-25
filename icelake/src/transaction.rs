@@ -43,9 +43,9 @@ impl<'a> Transaction<'a> {
     }
 
     /// Append a new data file.
-    pub fn append_file(mut self, data_file: DataFile) -> Self {
-        self.ops.push(Operation::AppendDataFile(data_file));
-        self
+    pub fn append_file(&mut self, data_file: impl IntoIterator<Item = DataFile>) {
+        self.ops
+            .extend(data_file.into_iter().map(Operation::AppendDataFile));
     }
 
     /// Commit this transaction.
@@ -84,8 +84,11 @@ impl<'a> Transaction<'a> {
     fn manifest_list_path(ctx: &mut CommitContext, snapshot_id: i64) -> String {
         ctx.attempt += 1;
         Table::metadata_path(format!(
-            "snap-{}-{}-{}",
-            snapshot_id, ctx.attempt, &ctx.uuid
+            "snap-{}-{}-{}.{}",
+            snapshot_id,
+            ctx.attempt,
+            &ctx.uuid,
+            DataFileFormat::Avro.to_string()
         ))
     }
 
@@ -121,8 +124,10 @@ impl<'a> Transaction<'a> {
             let writer = ManifestWriter::new(
                 cur_metadata.current_partition_spec()?.clone(),
                 table.operator(),
+                cur_metadata.location.as_str(),
                 Transaction::next_manifest_path(&mut ctx),
                 next_snapshot_id,
+                next_seq_number,
             );
             let manifest_file = ManifestFile {
                 metadata: ManifestMetadata {
@@ -155,7 +160,8 @@ impl<'a> Transaction<'a> {
             .write(manifest_list)
             .await?;
 
-            manifest_list_path
+            // Absolute path stored in snapshot file
+            format!("{}/{manifest_list_path}", cur_metadata.location)
         };
 
         let cur_snapshot = cur_metadata.current_snapshot()?;

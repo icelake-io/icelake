@@ -1,7 +1,12 @@
+[workspace.package]
+version = "0.0.9"
+edition = "2021"
+license = "Apache-2.0"
 
 [workspace]
 members = [
     "icelake",
+    "tests/integration/rust",
     "rest_api"
 ]
 
@@ -25,5 +30,9 @@ chrono = "0.4"
 faster-hex = "0.8.0"
 once_cell = "1"
 tempfile = "3"
-
-
+log = "0.4.0"
+env_logger = "0.10.0"
+csv = "1"
+url = "2"
+regex = "1"
+clap = { version = "4", features = ["derive"]}

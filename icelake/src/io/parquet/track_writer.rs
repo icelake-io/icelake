@@ -35,7 +35,7 @@ impl AsyncWrite for TrackWriter {
         match Pin::new(&mut self.writer).poll_write(cx, buf) {
             std::task::Poll::Ready(Ok(n)) => {
                 self.written_size
-                    .fetch_add(n as u64, std::sync::atomic::Ordering::Relaxed);
+                    .fetch_add(buf.len() as u64, std::sync::atomic::Ordering::SeqCst);
                 std::task::Poll::Ready(Ok(n))
             }
             std::task::Poll::Ready(Err(e)) => std::task::Poll::Ready(Err(e)),

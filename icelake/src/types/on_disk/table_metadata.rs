@@ -45,7 +45,7 @@ struct TableMetadata {
     metadata_log: Option<Vec<MetadataLog>>,
     sort_orders: Vec<SortOrder>,
     default_sort_order_id: i32,
-    refs: Option<HashMap<String, SnapshotReference>>,
+    refs: HashMap<String, SnapshotReference>,
 }
 
 impl TryFrom<TableMetadata> for types::TableMetadata {
@@ -111,15 +111,12 @@ impl TryFrom<TableMetadata> for types::TableMetadata {
             sort_orders.push(sort_order.try_into()?);
         }
 
-        let refs = match v.refs {
-            Some(v) => {
-                let mut refs = HashMap::with_capacity(v.len());
-                for (k, v) in v {
-                    refs.insert(k, v.try_into()?);
-                }
-                Some(refs)
+        let refs = {
+            let mut refs = HashMap::with_capacity(v.refs.len());
+            for (k, v) in v.refs {
+                refs.insert(k, v.try_into()?);
             }
-            None => None,
+            refs
         };
 
         Ok(types::TableMetadata {
@@ -204,12 +201,9 @@ impl TryFrom<types::TableMetadata> for TableMetadata {
             default_sort_order_id: value.default_sort_order_id,
             refs: value
                 .refs
-                .map(|r| {
-                    r.into_iter()
-                        .map(|e| SnapshotReference::try_from(e.1).map(|s| (e.0, s)))
-                        .collect::<Result<HashMap<String, SnapshotReference>>>()
-                })
-                .transpose()?,
+                .into_iter()
+                .map(|e| SnapshotReference::try_from(e.1).map(|s| (e.0, s)))
+                .collect::<Result<HashMap<String, SnapshotReference>>>()?,
         })
     }
 }
@@ -411,7 +405,7 @@ mod tests {
             }]),
             sort_orders: vec![],
             default_sort_order_id: 1,
-            refs: None,
+            refs: HashMap::default(),
         };
 
         let json = serialize_table_meta(metadata.clone()).unwrap();

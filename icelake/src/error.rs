@@ -203,6 +203,24 @@ impl From<std::time::SystemTimeError> for Error {
     }
 }
 
+impl From<url::ParseError> for Error {
+    fn from(v: url::ParseError) -> Self {
+        Self::new(ErrorKind::IcebergDataInvalid, "Can't parse url.").set_source(v)
+    }
+}
+
+impl From<regex::Error> for Error {
+    fn from(v: regex::Error) -> Self {
+        Self::new(ErrorKind::Unexpected, "Failed to parse regex").set_source(v)
+    }
+}
+
+impl From<std::num::ParseIntError> for Error {
+    fn from(v: std::num::ParseIntError) -> Self {
+        Self::new(ErrorKind::IcebergDataInvalid, "Failed to parse int").set_source(v)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use anyhow::anyhow;

@@ -18,11 +18,12 @@ use std::hash::Hash;
 use uuid::Uuid;
 
 use crate::types::parse_manifest_list;
-use crate::Error;
 use crate::ErrorKind;
 use crate::Result;
+use crate::{Error, Table};
 
 pub(crate) const UNASSIGNED_SEQ_NUM: i64 = -1;
+const MAIN_BRANCH: &'static str = "main";
 
 /// All data types are either primitives or nested types, which are maps, lists, or structs.
 #[derive(Debug, PartialEq, Clone)]
@@ -821,17 +822,17 @@ pub struct ManifestListEntry {
     ///
     /// Number of entries in the manifest that have status ADDED, when null
     /// this is assumed to be non-zero
-    pub added_files_count: i32,
+    pub added_data_files_count: i32,
     /// field: 505
     ///
     /// Number of entries in the manifest that have status EXISTING (0),
     /// when null this is assumed to be non-zero
-    pub existing_files_count: i32,
+    pub existing_data_files_count: i32,
     /// field: 506
     ///
     /// Number of entries in the manifest that have status DELETED (2),
     /// when null this is assumed to be non-zero
-    pub deleted_files_count: i32,
+    pub deleted_data_files_count: i32,
     /// field: 512
     ///
     /// Number of rows in all of files in the manifest that have status
@@ -853,7 +854,7 @@ pub struct ManifestListEntry {
     /// A list of field summaries for each partition field in the spec. Each
     /// field in the list corresponds to a field in the manifest file’s
     /// partition spec.
-    pub partitions: Option<Vec<FieldSummary>>,
+    pub partitions: Vec<FieldSummary>,
     /// field: 519
     ///
     /// Implementation-specific key metadata for encryption
@@ -864,31 +865,46 @@ mod manifest_list {
     use super::*;
     use once_cell::sync::Lazy;
     pub static MANIFEST_PATH: Lazy<Field> =
-        Lazy::new(|| Field::required(0, "manifest_path", Any::Primitive(Primitive::String)));
+        Lazy::new(|| Field::required(500, "manifest_path", Any::Primitive(Primitive::String)));
     pub static MANIFEST_LENGTH: Lazy<Field> =
-        Lazy::new(|| Field::required(1, "manifest_length", Any::Primitive(Primitive::Long)));
+        Lazy::new(|| Field::required(501, "manifest_length", Any::Primitive(Primitive::Long)));
     pub static PARTITION_SPEC_ID: Lazy<Field> =
-        Lazy::new(|| Field::required(2, "partition_spec_id", Any::Primitive(Primitive::Int)));
+        Lazy::new(|| Field::required(502, "partition_spec_id", Any::Primitive(Primitive::Int)));
     pub static CONTENT: Lazy<Field> =
-        Lazy::new(|| Field::required(3, "content", Any::Primitive(Primitive::Int)));
+        Lazy::new(|| Field::required(517, "content", Any::Primitive(Primitive::Int)));
     pub static SEQUENCE_NUMBER: Lazy<Field> =
-        Lazy::new(|| Field::required(4, "sequence_number", Any::Primitive(Primitive::Long)));
+        Lazy::new(|| Field::required(515, "sequence_number", Any::Primitive(Primitive::Long)));
     pub static MIN_SEQUENCE_NUMBER: Lazy<Field> =
-        Lazy::new(|| Field::required(5, "min_sequence_number", Any::Primitive(Primitive::Long)));
+        Lazy::new(|| Field::required(516, "min_sequence_number", Any::Primitive(Primitive::Long)));
     pub static ADDED_SNAPSHOT_ID: Lazy<Field> =
-        Lazy::new(|| Field::required(6, "added_snapshot_id", Any::Primitive(Primitive::Long)));
-    pub static ADDED_FILES_COUNT: Lazy<Field> =
-        Lazy::new(|| Field::required(7, "added_files_count", Any::Primitive(Primitive::Int)));
-    pub static EXISTING_FILES_COUNT: Lazy<Field> =
-        Lazy::new(|| Field::required(8, "existing_files_count", Any::Primitive(Primitive::Int)));
-    pub static DELETED_FILES_COUNT: Lazy<Field> =
-        Lazy::new(|| Field::required(9, "deleted_files_count", Any::Primitive(Primitive::Int)));
+        Lazy::new(|| Field::required(503, "added_snapshot_id", Any::Primitive(Primitive::Long)));
+    pub static ADDED_FILES_COUNT: Lazy<Field> = Lazy::new(|| {
+        Field::required(
+            504,
+            "added_data_files_count",
+            Any::Primitive(Primitive::Int),
+        )
+    });
+    pub static EXISTING_FILES_COUNT: Lazy<Field> = Lazy::new(|| {
+        Field::required(
+            505,
+            "existing_data_files_count",
+            Any::Primitive(Primitive::Int),
+        )
+    });
+    pub static DELETED_FILES_COUNT: Lazy<Field> = Lazy::new(|| {
+        Field::required(
+            506,
+            "deleted_data_files_count",
+            Any::Primitive(Primitive::Int),
+        )
+    });
     pub static ADDED_ROWS_COUNT: Lazy<Field> =
-        Lazy::new(|| Field::required(10, "added_rows_count", Any::Primitive(Primitive::Long)));
+        Lazy::new(|| Field::required(512, "added_rows_count", Any::Primitive(Primitive::Long)));
     pub static EXISTING_ROWS_COUNT: Lazy<Field> =
-        Lazy::new(|| Field::required(11, "existing_rows_count", Any::Primitive(Primitive::Long)));
+        Lazy::new(|| Field::required(513, "existing_rows_count", Any::Primitive(Primitive::Long)));
     pub static DELETED_ROWS_COUNT: Lazy<Field> =
-        Lazy::new(|| Field::required(12, "deleted_rows_count", Any::Primitive(Primitive::Long)));
+        Lazy::new(|| Field::required(514, "deleted_rows_count", Any::Primitive(Primitive::Long)));
     pub static PARTITIONS: Lazy<Field> = Lazy::new(|| {
         Field::optional(
             13,
@@ -908,7 +924,7 @@ mod manifest_list {
         )
     });
     pub static KEY_METADATA: Lazy<Field> =
-        Lazy::new(|| Field::optional(14, "key_metadata", Any::Primitive(Primitive::Binary)));
+        Lazy::new(|| Field::optional(519, "key_metadata", Any::Primitive(Primitive::Binary)));
 }
 
 /// Field summary for partition field in the spec.
@@ -1230,7 +1246,7 @@ pub struct DataFile {
     ///
     /// Split offsets for the data file. For example, all row group offsets
     /// in a Parquet file. Must be sorted ascending
-    pub split_offsets: Option<Vec<i64>>,
+    pub split_offsets: Vec<i64>,
     /// field id: 135
     /// element field id: 136
     ///
@@ -1238,7 +1254,7 @@ pub struct DataFile {
     /// Required when content is EqualityDeletes and should be null
     /// otherwise. Fields with ids listed in this column must be present
     /// in the delete file
-    pub equality_ids: Option<Vec<i32>>,
+    pub equality_ids: Vec<i32>,
     /// field id: 140
     ///
     /// ID representing sort order for this file.
@@ -1252,12 +1268,12 @@ pub struct DataFile {
     pub sort_order_id: Option<i32>,
 }
 
-impl DataFile {
-    /// Set the partition for this data file.
-    pub fn set_partition(&mut self, partition: StructValue) {
-        self.partition = partition;
-    }
-}
+// impl DataFile {
+//     /// Set the partition for this data file.
+//     pub fn set_partition(&mut self, partition: StructValue) {
+//         self.partition = partition;
+//     }
+// }
 
 mod datafile {
     use super::*;
@@ -1423,7 +1439,7 @@ impl DataFile {
             content,
             file_path: file_path.into(),
             file_format,
-            // TODO: Should not use default partition here. Replace it after introduce deserialize of `StructValue`.
+            // // TODO: Should not use default partition here. Replace it after introduce deserialize of `StructValue`.
             partition: StructValue::default(),
             record_count,
             file_size_in_bytes,
@@ -1435,8 +1451,8 @@ impl DataFile {
             lower_bounds: None,
             upper_bounds: None,
             key_metadata: None,
-            split_offsets: None,
-            equality_ids: None,
+            split_offsets: vec![],
+            equality_ids: vec![],
             sort_order_id: None,
         }
     }
@@ -1562,7 +1578,10 @@ pub struct Snapshot {
 
 impl Snapshot {
     pub(crate) async fn load_manifest_list(&self, op: &Operator) -> Result<ManifestList> {
-        parse_manifest_list(&op.read(self.manifest_list.as_str()).await?)
+        parse_manifest_list(
+            &op.read(Table::relative_path(op, self.manifest_list.as_str())?.as_str())
+                .await?,
+        )
     }
 
     pub(crate) fn log(&self) -> SnapshotLog {
@@ -1621,6 +1640,18 @@ pub struct SnapshotReference {
     ///
     /// The main branch never expires.
     pub max_ref_age_ms: Option<i64>,
+}
+
+impl SnapshotReference {
+    pub(crate) fn new(snapshot_id: i64, typ: SnapshotReferenceType) -> Self {
+        Self {
+            snapshot_id,
+            typ,
+            min_snapshots_to_keep: None,
+            max_snapshot_age_ms: None,
+            max_ref_age_ms: None,
+        }
+    }
 }
 
 /// Type of the reference
@@ -1757,7 +1788,7 @@ pub struct TableMetadata {
     ///
     /// There is always a main branch reference pointing to the
     /// `current-snapshot-id` even if the refs map is null.
-    pub refs: Option<HashMap<String, SnapshotReference>>,
+    pub refs: HashMap<String, SnapshotReference>,
 }
 
 impl TableMetadata {
@@ -1808,6 +1839,20 @@ impl TableMetadata {
     }
 
     pub(crate) fn append_snapshot(&mut self, snapshot: Snapshot) -> Result<()> {
+        self.last_updated_ms = snapshot.timestamp_ms;
+        self.last_sequence_number = snapshot.sequence_number;
+        self.current_snapshot_id = Some(snapshot.snapshot_id);
+
+        self.refs
+            .entry(MAIN_BRANCH.to_string())
+            .and_modify(|s| {
+                s.snapshot_id = snapshot.snapshot_id;
+                s.typ = SnapshotReferenceType::Branch;
+            })
+            .or_insert_with(|| {
+                SnapshotReference::new(snapshot.snapshot_id, SnapshotReferenceType::Branch)
+            });
+
         if let Some(snapshots) = &mut self.snapshots {
             self.snapshot_log
                 .as_mut()
@@ -1819,7 +1864,6 @@ impl TableMetadata {
                 })?
                 .push(snapshot.log());
             snapshots.push(snapshot);
-            Ok(())
         } else {
             if self.snapshot_log.is_some() {
                 return Err(Error::new(
@@ -1830,8 +1874,9 @@ impl TableMetadata {
 
             self.snapshot_log = Some(vec![snapshot.log()]);
             self.snapshots = Some(vec![snapshot]);
-            Ok(())
         }
+
+        Ok(())
     }
 }
 

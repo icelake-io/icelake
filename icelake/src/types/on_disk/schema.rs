@@ -23,6 +23,7 @@ pub struct Schema {
     #[serde(skip_serializing_if = "Option::is_none")]
     identifier_field_ids: Option<Vec<i32>>,
     fields: Vec<Field>,
+    r#type: String,
 }
 
 impl TryFrom<Schema> for types::Schema {
@@ -54,6 +55,7 @@ impl<'a> TryFrom<&'a types::Schema> for Schema {
                 .iter()
                 .map(|v| Field::try_from(v.clone()))
                 .collect::<Result<Vec<Field>>>()?,
+            r#type: "struct".to_string(),
         })
     }
 }
@@ -67,6 +69,7 @@ mod tests {
         assert_eq!(expected_schema, schema);
 
         let serialized_json_schema = serialize_schema(&expected_schema).unwrap();
+        println!("{serialized_json_schema}");
 
         assert_eq!(
             expected_schema,

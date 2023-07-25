@@ -66,6 +66,7 @@ impl TaskWriter {
             Ok(Self::Unpartitioned(
                 UnpartitionedWriter::try_new(
                     schema,
+                    table_metadata.location.clone(),
                     location_generator::DataFileLocationGenerator::try_new(
                         &table_metadata,
                         partition_id,
@@ -108,12 +109,14 @@ impl UnpartitionedWriter {
     /// Create a new `TaskWriter`.
     pub async fn try_new(
         schema: ArrowSchema,
+        table_location: String,
         location_generator: DataFileLocationGenerator,
         operator: Operator,
     ) -> Result<Self> {
         Ok(Self {
             data_file_writer: DataFileWriter::try_new(
                 operator,
+                table_location,
                 location_generator,
                 schema.into(),
                 1024,
