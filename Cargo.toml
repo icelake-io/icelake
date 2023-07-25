@@ -1,14 +1,11 @@
-[package]
-name = "icelake"
-version = "0.0.8"
-edition = "2021"
-license = "Apache-2.0"
-description = "Pure Rust Iceberg Implementation"
 
-[package.metadata.docs.rs]
-all-features = true
+[workspace]
+members = [
+    "icelake"
+]
 
-[dependencies]
+
+[workspace.dependencies]
 anyhow = "1"
 async-trait = "0.1"
 apache-avro = { version = "0.15", features = ["derive"] }
@@ -27,11 +24,6 @@ rust_decimal = "1.30"
 chrono = "0.4"
 faster-hex = "0.8.0"
 once_cell = "1"
-
-[dev-dependencies]
 tempfile = "3"
 
-[[example]]
-name = "read_iceberg_table"
-required-features = ["io_parquet"]
-harness = false
+

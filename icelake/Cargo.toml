@@ -1,0 +1,36 @@
+[package]
+name = "icelake"
+version = "0.0.8"
+edition = "2021"
+license = "Apache-2.0"
+description = "Pure Rust Iceberg Implementation"
+
+[package.metadata.docs.rs]
+all-features = true
+
+[dependencies]
+anyhow = {workspace = true}
+async-trait = {workspace = true}
+apache-avro = {workspace = true}
+arrow-array = {workspace = true}
+arrow-schema = {workspace = true}
+bytes = {workspace = true}
+futures = {workspace = true}
+opendal = {workspace = true}
+uuid = {workspace = true}
+serde = {workspace = true}
+serde_json = {workspace = true}
+serde_with = {workspace = true}
+tokio ={workspace = true}
+parquet ={workspace = true}
+rust_decimal ={workspace = true}
+chrono ={workspace = true}
+faster-hex ={workspace = true}
+once_cell = {workspace = true}
+
+[dev-dependencies]
+tempfile = {workspace = true}
+
+[[example]]
+name = "read_iceberg_table"
+harness = false

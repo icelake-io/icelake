@@ -131,10 +131,8 @@ mod test {
     async fn test_location_generator_default() -> Result<()> {
         let metadata = {
             let path = format!(
-                "{}/testdata/simple_table/metadata/v1.metadata.json",
-                env::current_dir()
-                    .expect("current_dir must exist")
-                    .to_string_lossy()
+                "{}/../testdata/simple_table/metadata/v1.metadata.json",
+                env!("CARGO_MANIFEST_DIR")
             );
 
             let bs = fs::read(path).expect("read_file must succeed");
@@ -153,10 +151,8 @@ mod test {
     async fn test_location_generator_with_write_data_location() -> Result<()> {
         let mut metadata = {
             let path = format!(
-                "{}/testdata/simple_table/metadata/v1.metadata.json",
-                env::current_dir()
-                    .expect("current_dir must exist")
-                    .to_string_lossy()
+                "{}/../testdata/simple_table/metadata/v1.metadata.json",
+                env!("CARGO_MANIFEST_DIR")
             );
 
             let bs = fs::read(path).expect("read_file must succeed");
@@ -190,10 +186,8 @@ mod test {
     async fn test_location_generator_with_write_folder_storage_location() -> Result<()> {
         let mut metadata = {
             let path = format!(
-                "{}/testdata/simple_table/metadata/v1.metadata.json",
-                env::current_dir()
-                    .expect("current_dir must exist")
-                    .to_string_lossy()
+                "{}/../testdata/simple_table/metadata/v1.metadata.json",
+                env!("CARGO_MANIFEST_DIR")
             );
 
             let bs = fs::read(path).expect("read_file must succeed");

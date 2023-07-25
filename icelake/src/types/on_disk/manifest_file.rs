@@ -437,10 +437,8 @@ mod tests {
     #[test]
     fn test_load_manifest_entry() -> Result<()> {
         let path = format!(
-            "{}/testdata/simple_table/metadata/10d28031-9739-484c-92db-cdf2975cead4-m0.avro",
-            env::current_dir()
-                .expect("current_dir must exist")
-                .to_string_lossy()
+            "{}/../testdata/simple_table/metadata/10d28031-9739-484c-92db-cdf2975cead4-m0.avro",
+            env!("CARGO_MANIFEST_DIR")
         );
 
         let bs = fs::read(path).expect("read_file must succeed");
@@ -471,10 +469,8 @@ mod tests {
     #[test]
     fn test_parse_manifest() -> Result<()> {
         let path = format!(
-            "{}/testdata/simple_table/metadata/10d28031-9739-484c-92db-cdf2975cead4-m0.avro",
-            env::current_dir()
-                .expect("current_dir must exist")
-                .to_string_lossy()
+            "{}/../testdata/simple_table/metadata/10d28031-9739-484c-92db-cdf2975cead4-m0.avro",
+            env!("CARGO_MANIFEST_DIR")
         );
 
         let bs = fs::read(path).expect("read_file must succeed");

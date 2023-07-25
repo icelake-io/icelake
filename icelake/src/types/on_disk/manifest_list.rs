@@ -244,10 +244,8 @@ mod tests {
     #[test]
     fn test_load_manifest_file() -> Result<()> {
         let path = format!(
-            "{}/testdata/simple_table/metadata/snap-1646658105718557341-1-10d28031-9739-484c-92db-cdf2975cead4.avro",
-            env::current_dir()
-                .expect("current_dir must exist")
-                .to_string_lossy()
+            "{}/../testdata/simple_table/metadata/snap-1646658105718557341-1-10d28031-9739-484c-92db-cdf2975cead4.avro",
+            env!("CARGO_MANIFEST_DIR")
         );
 
         let bs = fs::read(path).expect("read_file must succeed");
@@ -288,10 +286,8 @@ mod tests {
     #[test]
     fn test_parse_manifest_list() -> Result<()> {
         let path = format!(
-            "{}/testdata/simple_table/metadata/snap-1646658105718557341-1-10d28031-9739-484c-92db-cdf2975cead4.avro",
-            env::current_dir()
-                .expect("current_dir must exist")
-                .to_string_lossy()
+            "{}/../testdata/simple_table/metadata/snap-1646658105718557341-1-10d28031-9739-484c-92db-cdf2975cead4.avro",
+            env!("CARGO_MANIFEST_DIR")
         );
 
         let bs = fs::read(path).expect("read_file must succeed");
@@ -327,10 +323,8 @@ mod tests {
     #[tokio::test]
     async fn test_write_manifest_list_v2() -> Result<()> {
         let path = format!(
-            "{}/testdata/simple_table/metadata/snap-1646658105718557341-1-10d28031-9739-484c-92db-cdf2975cead4.avro",
-            env::current_dir()
-                .expect("current_dir must exist")
-                .to_string_lossy()
+            "{}/../testdata/simple_table/metadata/snap-1646658105718557341-1-10d28031-9739-484c-92db-cdf2975cead4.avro",
+            env!("CARGO_MANIFEST_DIR")
         );
 
         let bs = fs::read(path).expect("read_file must succeed");

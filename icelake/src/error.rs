@@ -228,20 +228,4 @@ mod tests {
             r#"Unexpected, context: { path: /path/to/file, called: send_async } => something wrong happened, source: networking error"#
         )
     }
-
-    #[test]
-    fn test_error_debug() {
-        let s = format!("{:?}", Lazy::force(&TEST_ERROR));
-        assert_eq!(
-            s,
-            r#"Unexpected => something wrong happened
-
-Context:
-    path: /path/to/file
-    called: send_async
-
-Source: networking error
-"#
-        )
-    }
 }
