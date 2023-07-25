@@ -1,7 +1,7 @@
 
 [workspace]
 members = [
-    "main"
+    "icelake"
 ]
 
 
