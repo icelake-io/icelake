@@ -139,4 +139,8 @@ cargo doc --open
 It's synced
 with [Apache Iceberg 1.3.1](https://github.com/apache/iceberg/blob/apache-iceberg-1.3.1/open-api/rest-catalog-open-api.yaml)
 
+## How to generate it
+
+1. Install openapi-generator: `brew install openapi-generator`
+2. Generate code: `openapi-generator generate -i iceberg.yaml -g rust -o rest_api`
 
