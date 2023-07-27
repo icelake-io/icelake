@@ -8,6 +8,7 @@ use chrono::NaiveDateTime;
 use chrono::NaiveTime;
 use chrono::Utc;
 use opendal::Operator;
+use ordered_float::OrderedFloat;
 use rust_decimal::Decimal;
 use serde::ser::SerializeMap;
 use serde::ser::SerializeStruct;
@@ -149,9 +150,9 @@ pub enum PrimitiveValue {
     /// 64-bit signed integer
     Long(i64),
     /// 32-bit IEEE 753 floating bit, Can promote to double
-    Float(f32),
+    Float(OrderedFloat<f32>),
     /// 64-bit IEEE 753 floating bit.
-    Double(f64),
+    Double(OrderedFloat<f64>),
     /// Fixed point decimal
     Decimal(Decimal),
     /// Calendar date without timezone or time
@@ -197,8 +198,8 @@ impl Serialize for PrimitiveValue {
             PrimitiveValue::Boolean(value) => serializer.serialize_bool(*value),
             PrimitiveValue::Int(value) => serializer.serialize_i32(*value),
             PrimitiveValue::Long(value) => serializer.serialize_i64(*value),
-            PrimitiveValue::Float(value) => serializer.serialize_f32(*value),
-            PrimitiveValue::Double(value) => serializer.serialize_f64(*value),
+            PrimitiveValue::Float(value) => serializer.serialize_f32(value.0),
+            PrimitiveValue::Double(value) => serializer.serialize_f64(value.0),
             PrimitiveValue::Decimal(value) => serializer.serialize_str(&value.to_string()),
             PrimitiveValue::Date(value) => serializer.serialize_str(&value.to_string()),
             PrimitiveValue::Time(value) => serializer.serialize_str(&value.to_string()),

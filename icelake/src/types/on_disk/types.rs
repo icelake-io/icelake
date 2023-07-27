@@ -476,7 +476,7 @@ fn parse_json_value_to_float(value: serde_json::Value) -> Result<types::AnyValue
                 }
 
                 Ok(types::AnyValue::Primitive(types::PrimitiveValue::Float(
-                    v as f32,
+                    (v as f32).into(),
                 )))
             } else {
                 Err(Error::new(
@@ -501,7 +501,9 @@ fn parse_json_value_to_double(value: serde_json::Value) -> Result<types::AnyValu
     match value {
         serde_json::Value::Number(v) => {
             if let Some(v) = v.as_f64() {
-                Ok(types::AnyValue::Primitive(types::PrimitiveValue::Double(v)))
+                Ok(types::AnyValue::Primitive(types::PrimitiveValue::Double(
+                    v.into(),
+                )))
             } else {
                 Err(Error::new(
                     ErrorKind::IcebergDataInvalid,

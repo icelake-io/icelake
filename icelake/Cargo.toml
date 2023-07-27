@@ -27,6 +27,7 @@ rust_decimal ={workspace = true}
 chrono ={workspace = true}
 faster-hex ={workspace = true}
 once_cell = {workspace = true}
+ordered-float = "3.7.0"
 
 [dev-dependencies]
 tempfile = {workspace = true}
