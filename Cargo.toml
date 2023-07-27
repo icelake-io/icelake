@@ -1,7 +1,8 @@
 
 [workspace]
 members = [
-    "icelake"
+    "icelake",
+    "rest_api"
 ]
 
 
