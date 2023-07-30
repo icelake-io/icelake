@@ -4,7 +4,7 @@
 use std::convert::TryFrom;
 use std::sync::Arc;
 
-use arrow_schema::ArrowError;
+use crate::error::Error;
 use arrow_schema::DataType as ArrowDataType;
 use arrow_schema::Field as ArrowField;
 use arrow_schema::Schema as ArrowSchema;
@@ -13,21 +13,21 @@ use arrow_schema::TimeUnit;
 use super::in_memory as types;
 
 impl TryFrom<types::Schema> for ArrowSchema {
-    type Error = ArrowError;
+    type Error = Error;
 
     fn try_from(value: types::Schema) -> Result<Self, Self::Error> {
         let fields = value
             .fields
             .into_iter()
             .map(ArrowField::try_from)
-            .collect::<Result<Vec<ArrowField>, ArrowError>>()?;
+            .collect::<Result<Vec<ArrowField>, Error>>()?;
 
         Ok(ArrowSchema::new(fields))
     }
 }
 
 impl TryFrom<types::Field> for ArrowField {
-    type Error = ArrowError;
+    type Error = Error;
 
     fn try_from(value: types::Field) -> Result<Self, Self::Error> {
         Ok(ArrowField::new_dict(
@@ -41,7 +41,7 @@ impl TryFrom<types::Field> for ArrowField {
 }
 
 impl TryFrom<types::Any> for ArrowDataType {
-    type Error = ArrowError;
+    type Error = Error;
 
     fn try_from(value: types::Any) -> Result<Self, Self::Error> {
         match value {
@@ -96,7 +96,7 @@ impl TryFrom<types::Any> for ArrowDataType {
 }
 
 impl TryFrom<types::Primitive> for ArrowDataType {
-    type Error = ArrowError;
+    type Error = Error;
 
     fn try_from(value: types::Primitive) -> Result<Self, Self::Error> {
         match value {
