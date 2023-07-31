@@ -172,9 +172,9 @@ impl DataFileWriter {
             content: crate::types::DataContentType::Data,
             file_path: format!("{}/{}", self.operator.info().root(), self.current_location),
             file_format: crate::types::DataFileFormat::Parquet,
-            /// # TODO
+            /// # NOTE
             ///
-            /// Support write partition info to file.
+            /// DataFileWriter only response to write data. Partition should place by more high level writer.
             partition: StructValue::default(),
             record_count: meta_data.num_rows,
             column_sizes: Some(column_sizes),
@@ -240,7 +240,7 @@ mod test {
             };
             metadata.location = "/tmp/table".to_string();
 
-            DataFileLocationGenerator::try_new(metadata, 0, 0, None)?
+            DataFileLocationGenerator::try_new(&metadata, 0, 0, None)?
         };
 
         let data = (0..1024 * 1024).collect::<Vec<_>>();

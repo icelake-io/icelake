@@ -8,22 +8,24 @@ use arrow_schema::Schema as ArrowSchema;
 use opendal::Operator;
 
 use super::data_file_writer::DataFileWriter;
+use super::location_generator;
 use crate::error::Result;
 use crate::io::location_generator::DataFileLocationGenerator;
-use crate::types::{DataFile, TableMetadata};
+use crate::types::{DataFile, StructValue, TableMetadata};
 
-/// `TaskWriter` used to write data for a table. It will
-/// split the data of different partition key into different
-/// data file writer if find that the table metadata has partition spec.
+/// `TaskWriter` used to write data for a table.
 ///
-/// # TODO
+/// If it find that the table metadata has partition spec, it will create a
+/// partitioned task writer. The partition task writer will split the data according
+/// the partition key and write them using different data file writer.
 ///
-/// The `TaskWriter` only support unpartitioned write now.
-pub struct TaskWriter {
-    /// # TODO
-    ///
-    /// Support to config the data file writer.
-    data_file_writer: DataFileWriter,
+/// If the table metadata has no partition spec, it will create a unpartitioned
+/// task writer. The unpartitioned task writer will write all data using a single
+/// data file writer.
+pub enum TaskWriter {
+    /// Unpartitioned task writer
+    Unpartitioned(UnpartitionedWriter),
+    // Partitioned(PartitionedTaskWriter),
 }
 
 impl TaskWriter {
@@ -35,20 +37,6 @@ impl TaskWriter {
         task_id: usize,
         suffix: Option<String>,
     ) -> Result<Self> {
-        // # TODO
-        // Support partitioned write.
-        if let Some(partition_spec) = table_metadata
-            .partition_specs
-            .get(table_metadata.default_spec_id as usize)
-        {
-            if !partition_spec.fields.is_empty() {
-                return Err(crate::error::Error::new(
-                    crate::ErrorKind::IcebergFeatureUnsupported,
-                    "Partitioned write is not supported yet",
-                ));
-            }
-        }
-
         let schema: ArrowSchema = table_metadata
             .schemas
             .clone()
@@ -68,20 +56,72 @@ impl TaskWriter {
                 )
             })?;
 
-        let location_generator =
-            DataFileLocationGenerator::try_new(table_metadata, partition_id, task_id, suffix)?;
+        let partition_spec = table_metadata
+            .partition_specs
+            .get(table_metadata.default_spec_id as usize)
+            .ok_or(crate::error::Error::new(
+                crate::ErrorKind::IcebergDataInvalid,
+                "Can't find default partition spec",
+            ))?;
 
-        let data_writer = DataFileWriter::try_new(
-            operator,
-            location_generator,
-            schema.into(),
-            1024,
-            1024 * 1024,
-        )
-        .await?;
+        if partition_spec.is_unpartitioned() {
+            Ok(Self::Unpartitioned(
+                UnpartitionedWriter::try_new(
+                    schema,
+                    location_generator::DataFileLocationGenerator::try_new(
+                        &table_metadata,
+                        partition_id,
+                        task_id,
+                        suffix,
+                    )?,
+                    operator,
+                )
+                .await?,
+            ))
+        } else {
+            todo!()
+        }
+    }
 
+    /// Write a record batch.
+    pub async fn write(&mut self, batch: &RecordBatch) -> Result<()> {
+        match self {
+            Self::Unpartitioned(writer) => writer.write(batch).await,
+        }
+    }
+
+    /// Close the writer and return the data files.
+    pub async fn close(self) -> Result<HashMap<StructValue, Vec<DataFile>>> {
+        match self {
+            Self::Unpartitioned(writer) => writer.close().await,
+        }
+    }
+}
+
+/// Unpartitioned task writer
+pub struct UnpartitionedWriter {
+    /// # TODO
+    ///
+    /// Support to config the data file writer.
+    data_file_writer: DataFileWriter,
+}
+
+impl UnpartitionedWriter {
+    /// Create a new `TaskWriter`.
+    pub async fn try_new(
+        schema: ArrowSchema,
+        location_generator: DataFileLocationGenerator,
+        operator: Operator,
+    ) -> Result<Self> {
         Ok(Self {
-            data_file_writer: data_writer,
+            data_file_writer: DataFileWriter::try_new(
+                operator,
+                location_generator,
+                schema.into(),
+                1024,
+                1024 * 1024,
+            )
+            .await?,
         })
     }
 
@@ -94,13 +134,13 @@ impl TaskWriter {
     /// It didn't mean the write take effect in table.
     /// To make the write take effect, you should commit the data file using transaction api.
     ///
-    /// # TODO
-    /// The data file should split by partition key.
-    /// We don't support partitioned write now so use `()` as placeholder.
-    pub async fn close(self) -> Result<HashMap<(), Vec<DataFile>>> {
+    /// # Note
+    ///
+    /// For unpartitioned table, the key of the result map is default partition key.
+    pub async fn close(self) -> Result<HashMap<StructValue, Vec<DataFile>>> {
         let datafiles = self.data_file_writer.close().await?;
         let mut result = HashMap::new();
-        result.insert((), datafiles);
+        result.insert(StructValue::default(), datafiles);
         Ok(result)
     }
 }
