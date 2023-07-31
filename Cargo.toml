@@ -14,7 +14,7 @@ arrow-array = { version = ">=40, <45" }
 arrow-schema = { version = ">=40, <45" }
 bytes = "1"
 futures = "0.3"
-opendal = ">=0.37, <0.39"
+opendal = ">=0.37, <0.40"
 uuid = { version = "1", features = ["v4"] }
 serde = "1"
 serde_json = "1"
