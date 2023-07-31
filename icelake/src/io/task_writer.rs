@@ -1,8 +1,6 @@
 //! task_writer module provide a task writer for writing data in a table.
 //! table writer used directly by the compute engine.
 
-use std::collections::HashMap;
-
 use arrow_array::RecordBatch;
 use arrow_schema::Schema as ArrowSchema;
 use opendal::Operator;
@@ -11,7 +9,7 @@ use super::data_file_writer::DataFileWriter;
 use super::location_generator;
 use crate::error::Result;
 use crate::io::location_generator::DataFileLocationGenerator;
-use crate::types::{DataFile, StructValue, TableMetadata};
+use crate::types::{DataFile, TableMetadata};
 
 /// `TaskWriter` used to write data for a table.
 ///
@@ -91,7 +89,7 @@ impl TaskWriter {
     }
 
     /// Close the writer and return the data files.
-    pub async fn close(self) -> Result<HashMap<StructValue, Vec<DataFile>>> {
+    pub async fn close(self) -> Result<Vec<DataFile>> {
         match self {
             Self::Unpartitioned(writer) => writer.close().await,
         }
@@ -137,10 +135,7 @@ impl UnpartitionedWriter {
     /// # Note
     ///
     /// For unpartitioned table, the key of the result map is default partition key.
-    pub async fn close(self) -> Result<HashMap<StructValue, Vec<DataFile>>> {
-        let datafiles = self.data_file_writer.close().await?;
-        let mut result = HashMap::new();
-        result.insert(StructValue::default(), datafiles);
-        Ok(result)
+    pub async fn close(self) -> Result<Vec<DataFile>> {
+        self.data_file_writer.close().await
     }
 }
