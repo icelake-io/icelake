@@ -1,5 +1,6 @@
 //! in_memory module provides the definition of iceberg in-memory data types.
 
+use std::hash::Hasher;
 use std::{collections::HashMap, str::FromStr};
 
 use chrono::DateTime;
@@ -13,6 +14,7 @@ use rust_decimal::Decimal;
 use serde::ser::SerializeMap;
 use serde::ser::SerializeStruct;
 use serde::Serialize;
+use std::hash::Hash;
 use uuid::Uuid;
 
 use crate::types::parse_manifest_list;
@@ -36,7 +38,7 @@ pub enum Any {
 }
 
 /// All data values are either primitives or nested values, which are maps, lists, or structs.
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
 pub enum AnyValue {
     /// A Primitive type
     Primitive(PrimitiveValue),
@@ -141,7 +143,7 @@ pub enum Primitive {
 /// Primitive Values within a schema.
 ///
 /// Used to represent the value of a primitive type, like as default value.
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
 pub enum PrimitiveValue {
     /// True or False
     Boolean(bool),
@@ -295,7 +297,7 @@ impl Field {
 }
 
 /// A Struct type is a tuple of typed values.
-#[derive(Default, Debug, PartialEq, Clone)]
+#[derive(Default, Debug, PartialEq, Clone, Eq)]
 pub struct StructValue {
     /// fields is a map from field id to field value.
     pub fields: HashMap<i32, AnyValue>,
@@ -315,6 +317,15 @@ impl Serialize for StructValue {
             record.serialize_field(Box::leak(key.clone().into_boxed_str()), value)?;
         }
         record.end()
+    }
+}
+
+impl Hash for StructValue {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        for (id, value) in self.fields.iter() {
+            id.hash(state);
+            value.hash(state);
+        }
     }
 }
 
@@ -594,6 +605,11 @@ impl PartitionSpec {
         }
 
         Ok(Struct { fields })
+    }
+
+    /// Check if this partition spec is unpartitioned.
+    pub fn is_unpartitioned(&self) -> bool {
+        self.fields.is_empty()
     }
 }
 
@@ -1234,6 +1250,13 @@ pub struct DataFile {
     /// order id to null. Readers must ignore sort order id for position
     /// delete files.
     pub sort_order_id: Option<i32>,
+}
+
+impl DataFile {
+    /// Set the partition for this data file.
+    pub fn set_partition(&mut self, partition: StructValue) {
+        self.partition = partition;
+    }
 }
 
 mod datafile {

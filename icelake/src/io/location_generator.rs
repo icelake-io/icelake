@@ -29,7 +29,7 @@ pub struct DataFileLocationGenerator {
 impl DataFileLocationGenerator {
     /// Try to create a new file location generator.
     pub fn try_new(
-        table_metatdata: TableMetadata,
+        table_metatdata: &TableMetadata,
         partition_id: usize,
         task_id: usize,
         suffix: Option<String>,
@@ -48,7 +48,7 @@ impl DataFileLocationGenerator {
 
         let data_rel_location = {
             let base_location = &table_metatdata.location;
-            let data_location = &table_metatdata.properties.and_then(|prop| {
+            let data_location = table_metatdata.properties.as_ref().and_then(|prop| {
                 prop.get(WRITE_DATA_LOCATION)
                     .or(prop.get(WRITE_FOLDER_STORAGE_LOCATION))
                     .cloned()
@@ -140,7 +140,7 @@ mod test {
             parse_table_metadata(&bs).expect("parse_table_metadata v1 must succeed")
         };
 
-        let generator = DataFileLocationGenerator::try_new(metadata, 0, 0, None)?;
+        let generator = DataFileLocationGenerator::try_new(&metadata, 0, 0, None)?;
         let name = generator.generate_name();
         assert!(name.starts_with("data/"));
 
@@ -176,7 +176,7 @@ mod test {
         };
         metadata.properties = Some(mock_properties);
 
-        let generator = DataFileLocationGenerator::try_new(metadata, 0, 0, None)?;
+        let generator = DataFileLocationGenerator::try_new(&metadata, 0, 0, None)?;
         let name = generator.generate_name();
         assert!(name.starts_with("/mock"));
         Ok(())
@@ -207,7 +207,7 @@ mod test {
         };
         metadata.properties = Some(mock_properties);
 
-        let generator = DataFileLocationGenerator::try_new(metadata, 0, 0, None)?;
+        let generator = DataFileLocationGenerator::try_new(&metadata, 0, 0, None)?;
         let name = generator.generate_name();
         assert!(name.starts_with("/mock_storage"));
         Ok(())
