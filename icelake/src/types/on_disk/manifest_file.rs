@@ -12,6 +12,7 @@ use serde_with::Bytes;
 use super::parse_schema;
 use crate::types::on_disk::partition_spec::serialize_partition_spec_fields;
 use crate::types::on_disk::schema::serialize_schema;
+use crate::types::to_avro::to_avro_schema;
 use crate::types::{self, StructValue};
 use crate::types::{DataContentType, ManifestContentType, ManifestListEntry, UNASSIGNED_SEQ_NUM};
 use crate::types::{ManifestStatus, TableFormatVersion};
@@ -159,8 +160,9 @@ struct DataFile {
     upper_bounds: Option<Vec<BytesEntry>>,
     #[serde_as(as = "Option<Bytes>")]
     key_metadata: Option<Vec<u8>>,
-    split_offsets: Option<Vec<i64>>,
-    equality_ids: Option<Vec<i32>>,
+    split_offsets: Vec<i64>,
+    #[serde(default)]
+    equality_ids: Vec<i32>,
     sort_order_id: Option<i32>,
 }
 
@@ -275,6 +277,7 @@ fn parse_data_file_format(s: &str) -> Result<types::DataFileFormat> {
 pub(crate) struct ManifestWriter {
     partition_spec: types::PartitionSpec,
     op: Operator,
+    table_location: String,
     // Output path relative to operator root.
     output_path: String,
     snapshot_id: i64,
@@ -285,6 +288,7 @@ pub(crate) struct ManifestWriter {
     existing_rows: i64,
     deleted_files: i64,
     deleted_rows: i64,
+    seq_num: i64,
     min_seq_num: Option<i64>,
 }
 
@@ -292,12 +296,15 @@ impl ManifestWriter {
     pub(crate) fn new(
         partition_spec: types::PartitionSpec,
         op: Operator,
+        table_location: impl Into<String>,
         output_path: impl Into<String>,
         snapshot_id: i64,
+        seq_num: i64,
     ) -> Self {
         Self {
             partition_spec,
             op,
+            table_location: table_location.into(),
             output_path: output_path.into(),
             snapshot_id,
 
@@ -307,6 +314,7 @@ impl ManifestWriter {
             existing_rows: 0,
             deleted_files: 0,
             deleted_rows: 0,
+            seq_num,
             min_seq_num: None,
         }
     }
@@ -333,8 +341,10 @@ impl ManifestWriter {
                 let partition_type = self
                     .partition_spec
                     .partition_type(&manifest.metadata.schema)?;
-                avro_schema =
-                    AvroSchema::try_from(&types::ManifestFile::v2_schema(partition_type))?;
+                avro_schema = to_avro_schema(
+                    &types::ManifestFile::v2_schema(partition_type),
+                    Some("manifest_entry"),
+                )?;
                 self.v2_writer(&avro_schema, &manifest.metadata.schema)?
             }
         };
@@ -377,20 +387,20 @@ impl ManifestWriter {
         self.op.write(self.output_path.as_str(), connect).await?;
 
         Ok(ManifestListEntry {
-            manifest_path: format!("{}/{}", self.op.info().root(), &self.output_path),
+            manifest_path: format!("{}/{}", self.table_location, &self.output_path),
             manifest_length: length as i64,
             partition_spec_id: manifest.metadata.partition_spec_id,
             content: manifest.metadata.content,
-            sequence_number: UNASSIGNED_SEQ_NUM,
+            sequence_number: self.seq_num,
             min_sequence_number: self.min_seq_num.unwrap_or(UNASSIGNED_SEQ_NUM),
             added_snapshot_id: self.snapshot_id,
-            added_files_count: self.added_files as i32,
-            existing_files_count: self.existing_files as i32,
-            deleted_files_count: self.deleted_files as i32,
+            added_data_files_count: self.added_files as i32,
+            existing_data_files_count: self.existing_files as i32,
+            deleted_data_files_count: self.deleted_files as i32,
             added_rows_count: self.added_rows,
             existing_rows_count: self.existing_rows,
             deleted_rows_count: self.deleted_rows,
-            partitions: None,
+            partitions: Vec::default(),
             key_metadata: None,
         })
     }
@@ -587,12 +597,15 @@ mod tests {
 
     async fn check_manifest_file_serde(manifest_file: types::ManifestFile) {
         let tmp_dir = TempDir::new().unwrap();
-        let dir_path = tmp_dir.path().to_str().unwrap();
+        let dir_path = {
+            let canonicalize = canonicalize(tmp_dir.path().to_str().unwrap()).unwrap();
+            canonicalize.to_str().unwrap().to_string()
+        };
         let filename = "test.avro";
 
         let operator = {
             let mut builder = Fs::default();
-            builder.root(dir_path);
+            builder.root(dir_path.as_str());
             Operator::new(builder).unwrap().finish()
         };
 
@@ -601,14 +614,12 @@ mod tests {
             fields: vec![],
         };
 
-        let writer = ManifestWriter::new(partition_spec, operator, filename, 3);
+        let writer =
+            ManifestWriter::new(partition_spec, operator, dir_path.as_str(), filename, 3, 1);
         let manifest_list_entry = writer.write(manifest_file.clone()).await.unwrap();
 
         assert_eq!(
-            canonicalize(format!("{dir_path}/{filename}"))
-                .unwrap()
-                .to_str()
-                .unwrap(),
+            format!("{dir_path}/{filename}"),
             manifest_list_entry.manifest_path
         );
         assert_eq!(manifest_file.metadata.content, manifest_list_entry.content);

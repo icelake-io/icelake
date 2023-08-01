@@ -22,7 +22,7 @@ jobs:
         run: rustup update stable
 
       - name: Format
-        run: cargo fmt -p icelake  -- --check
+        run: cargo fmt -p icelake -p icelake-integration-tests  -- --check
 
       - name: Clippy
         run: cargo clippy --all-targets --workspace --all-features -- -D warnings
@@ -44,3 +44,24 @@ jobs:
         run: rustup update stable
       - name: Test
         run: cargo test --all-targets --all-features
+
+  integration-tests:
+    runs-on: ubuntu-latest
+    needs: unit
+    steps:
+      - uses: actions/checkout@v3
+      - name: Update Rust Stable
+        run: rustup update stable
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+      - name: Setup poetry
+        uses: abatilo/actions-poetry@v2
+        with:
+          poetry-version: "1.5.1"
+      - name: Build rust
+        run: cargo build --all-features
+      - name: Run tests
+        run: |
+          cd tests/integration
+          bash run.sh

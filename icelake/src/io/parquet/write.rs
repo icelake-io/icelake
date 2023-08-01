@@ -93,8 +93,10 @@ impl ParquetWriter {
     ///
     /// This function must be called before complete the write process.
     pub async fn close(self) -> Result<(FileMetaData, u64)> {
-        let written_size = self.get_written_size();
-        Ok((self.writer.close().await?, written_size))
+        let written_size = self.written_size.clone();
+        let file_metadata = self.writer.close().await?;
+        let written_size = written_size.load(std::sync::atomic::Ordering::SeqCst);
+        Ok((file_metadata, written_size))
     }
 
     /// Return the written size.
@@ -102,7 +104,7 @@ impl ParquetWriter {
     /// # Note
     /// The size is incorrect until we call close (data could be still in buffer). It is only used as a suggestion.
     pub fn get_written_size(&self) -> u64 {
-        self.written_size.load(std::sync::atomic::Ordering::Relaxed)
+        self.written_size.load(std::sync::atomic::Ordering::SeqCst)
     }
 }
 

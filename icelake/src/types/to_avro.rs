@@ -12,20 +12,17 @@ use serde_json::{Number, Value as JsonValue};
 use std::collections::BTreeMap;
 use std::iter::Iterator;
 
-impl<'a> TryFrom<&'a Schema> for AvroSchema {
-    type Error = Error;
+pub fn to_avro_schema(value: &Schema, name: Option<&str>) -> Result<AvroSchema> {
+    let avro_fields: Vec<AvroRecordField> = value
+        .fields
+        .iter()
+        .map(AvroRecordField::try_from)
+        .collect::<Result<Vec<AvroRecordField>>>()?;
 
-    fn try_from(value: &'a Schema) -> Result<AvroSchema> {
-        let avro_fields: Vec<AvroRecordField> = value
-            .fields
-            .iter()
-            .map(AvroRecordField::try_from)
-            .collect::<Result<Vec<AvroRecordField>>>()?;
-        Ok(AvroSchema::Record(avro_record_schema(
-            format!("r_{}", value.schema_id).as_str(),
-            avro_fields,
-        )))
-    }
+    let name = name
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| format!("r_{}", value.schema_id));
+    Ok(AvroSchema::Record(avro_record_schema(name, avro_fields)))
 }
 
 impl<'a> TryFrom<&'a Field> for AvroRecordField {
@@ -47,6 +44,7 @@ impl<'a> TryFrom<&'a Field> for AvroRecordField {
                 }
                 avro_schema
             }
+            Any::List(_list) => AvroSchema::try_from(&value.field_type)?,
             _ => {
                 let mut avro_schema = AvroSchema::try_from(&value.field_type)?;
                 if !value.required {
@@ -176,7 +174,7 @@ impl<'a> TryFrom<&'a Any> for AvroSchema {
 }
 
 fn avro_record_schema(
-    name: &str,
+    name: impl Into<String>,
     fields: impl IntoIterator<Item = AvroRecordField>,
 ) -> AvroRecordSchema {
     let avro_fields = fields.into_iter().collect::<Vec<AvroRecordField>>();
@@ -187,7 +185,7 @@ fn avro_record_schema(
         .collect();
 
     AvroRecordSchema {
-        name: Name::from(name),
+        name: Name::from(name.into().as_str()),
         fields: avro_fields,
         aliases: None,
         doc: None,
@@ -343,6 +341,6 @@ mod tests {
             AvroSchema::parse_str(raw_schema).unwrap()
         };
 
-        assert_eq!(expected_avro_schema, AvroSchema::try_from(&schema).unwrap());
+        assert_eq!(expected_avro_schema, to_avro_schema(&schema, None).unwrap());
     }
 }

@@ -17,6 +17,7 @@ pub fn parse_snapshot(bs: &[u8]) -> Result<types::Snapshot> {
 #[serde(rename_all = "kebab-case")]
 pub struct Snapshot {
     snapshot_id: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
     parent_snapshot_id: Option<i64>,
     #[serde(default)]
     sequence_number: i64,

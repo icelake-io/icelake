@@ -7,6 +7,7 @@ use serde::Deserialize;
 use serde::Serialize;
 
 use crate::types;
+use crate::types::to_avro::to_avro_schema;
 use crate::types::ManifestList;
 use crate::Error;
 use crate::ErrorKind;
@@ -49,18 +50,18 @@ struct ManifestListEntry {
     #[serde(default)]
     added_snapshot_id: i64,
     #[serde(default)]
-    added_files_count: i32,
+    added_data_files_count: i32,
     #[serde(default)]
-    existing_files_count: i32,
+    existing_data_files_count: i32,
     #[serde(default)]
-    deleted_files_count: i32,
+    deleted_data_files_count: i32,
     #[serde(default)]
     added_rows_count: i64,
     #[serde(default)]
     existing_rows_count: i64,
     #[serde(default)]
     deleted_rows_count: i64,
-    partitions: Option<Vec<FieldSummary>>,
+    partitions: Vec<FieldSummary>,
     key_metadata: Option<Vec<u8>>,
 }
 
@@ -70,16 +71,11 @@ impl TryFrom<ManifestListEntry> for types::ManifestListEntry {
     fn try_from(v: ManifestListEntry) -> Result<Self> {
         let content = (v.content as u8).try_into()?;
 
-        let partitions = match v.partitions {
-            Some(v) => {
-                let mut partitions = Vec::with_capacity(v.len());
-                for partition in v {
-                    partitions.push(partition.try_into()?);
-                }
-                Some(partitions)
-            }
-            None => None,
-        };
+        let partitions = v
+            .partitions
+            .into_iter()
+            .map(types::FieldSummary::try_from)
+            .collect::<Result<Vec<types::FieldSummary>>>()?;
 
         Ok(types::ManifestListEntry {
             manifest_path: v.manifest_path,
@@ -89,9 +85,9 @@ impl TryFrom<ManifestListEntry> for types::ManifestListEntry {
             sequence_number: v.sequence_number,
             min_sequence_number: v.min_sequence_number,
             added_snapshot_id: v.added_snapshot_id,
-            added_files_count: v.added_files_count,
-            existing_files_count: v.existing_files_count,
-            deleted_files_count: v.deleted_files_count,
+            added_data_files_count: v.added_data_files_count,
+            existing_data_files_count: v.existing_data_files_count,
+            deleted_data_files_count: v.deleted_data_files_count,
             added_rows_count: v.added_rows_count,
             existing_rows_count: v.existing_rows_count,
             deleted_rows_count: v.deleted_rows_count,
@@ -105,16 +101,11 @@ impl From<types::ManifestListEntry> for ManifestListEntry {
     fn from(value: types::ManifestListEntry) -> Self {
         let content: i32 = value.content as i32;
 
-        let partitions = match value.partitions {
-            Some(v) => {
-                let mut partitions = Vec::with_capacity(v.len());
-                for partition in v {
-                    partitions.push(partition.into());
-                }
-                Some(partitions)
-            }
-            None => None,
-        };
+        let partitions = value
+            .partitions
+            .into_iter()
+            .map(FieldSummary::from)
+            .collect::<Vec<FieldSummary>>();
 
         Self {
             manifest_path: value.manifest_path,
@@ -124,9 +115,9 @@ impl From<types::ManifestListEntry> for ManifestListEntry {
             sequence_number: value.sequence_number,
             min_sequence_number: value.min_sequence_number,
             added_snapshot_id: value.added_snapshot_id,
-            added_files_count: value.added_files_count,
-            existing_files_count: value.existing_files_count,
-            deleted_files_count: value.deleted_files_count,
+            added_data_files_count: value.added_data_files_count,
+            existing_data_files_count: value.existing_data_files_count,
+            deleted_data_files_count: value.deleted_data_files_count,
             added_rows_count: value.added_rows_count,
             existing_rows_count: value.existing_rows_count,
             deleted_rows_count: value.deleted_rows_count,
@@ -197,8 +188,8 @@ impl ManifestListWriter {
     }
 
     /// Write manifest list to file. Return the absolute path of the file.
-    pub(crate) async fn write(self, manifest_list: ManifestList) -> Result<String> {
-        let avro_schema = AvroSchema::try_from(&types::ManifestList::v2_schema())?;
+    pub(crate) async fn write(self, manifest_list: ManifestList) -> Result<()> {
+        let avro_schema = to_avro_schema(&types::ManifestList::v2_schema(), Some("manifest_file"))?;
         let mut avro_writer = self.v2_writer(&avro_schema)?;
 
         for entry in manifest_list.entries {
@@ -209,7 +200,7 @@ impl ManifestListWriter {
         let connect = avro_writer.into_inner()?;
         self.op.write(self.output_path.as_str(), connect).await?;
 
-        Ok(format!("{}/{}", self.op.info().root(), &self.output_path))
+        Ok(())
     }
 
     fn v2_writer<'a>(&self, avro_schema: &'a AvroSchema) -> Result<AvroWriter<'a, Vec<u8>>> {
@@ -232,7 +223,6 @@ impl ManifestListWriter {
 mod tests {
     use std::env;
     use std::fs;
-    use std::fs::canonicalize;
     use std::fs::read;
 
     use anyhow::Result;
@@ -269,13 +259,13 @@ mod tests {
                 sequence_number: 0,
                 min_sequence_number: 0,
                 added_snapshot_id: 1646658105718557341,
-                added_files_count: 0,
-                existing_files_count: 0,
-                deleted_files_count: 0,
+                added_data_files_count: 3,
+                existing_data_files_count: 0,
+                deleted_data_files_count: 0,
                 added_rows_count: 3,
                 existing_rows_count: 0,
                 deleted_rows_count: 0,
-                partitions: Some(vec![]),
+                partitions: vec![],
                 key_metadata: None,
             }
         );
@@ -306,13 +296,13 @@ mod tests {
                 sequence_number: 0,
                 min_sequence_number: 0,
                 added_snapshot_id: 1646658105718557341,
-                added_files_count: 0,
-                existing_files_count: 0,
-                deleted_files_count: 0,
+                added_data_files_count: 3,
+                existing_data_files_count: 0,
+                deleted_data_files_count: 0,
                 added_rows_count: 3,
                 existing_rows_count: 0,
                 deleted_rows_count: 0,
-                partitions: Some(vec![]),
+                partitions: vec![],
                 key_metadata: None,
             }
         );
@@ -348,15 +338,7 @@ mod tests {
         };
 
         let writer = ManifestListWriter::new(operator, filename.to_string(), 0, 0, 0);
-        let manifest_list_path = writer.write(manifest_file.clone()).await.unwrap();
-
-        assert_eq!(
-            canonicalize(format!("{dir_path}/{filename}"))
-                .unwrap()
-                .to_str()
-                .unwrap(),
-            manifest_list_path
-        );
+        writer.write(manifest_file.clone()).await.unwrap();
 
         let restored_manifest_file =
             { parse_manifest_list(&read(tmp_dir.path().join(filename)).unwrap()).unwrap() };

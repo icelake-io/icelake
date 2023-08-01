@@ -1,35 +1,39 @@
 [package]
 name = "icelake"
-version = "0.0.9"
-edition = "2021"
-license = "Apache-2.0"
+version = { workspace = true }
+edition = { workspace = true }
+license = { workspace = true }
 description = "Pure Rust Iceberg Implementation"
 
 [package.metadata.docs.rs]
 all-features = true
 
 [dependencies]
-anyhow = {workspace = true}
-async-trait = {workspace = true}
-apache-avro = {workspace = true}
-arrow = {workspace = true}
-bytes = {workspace = true}
-futures = {workspace = true}
-opendal = {workspace = true}
-uuid = {workspace = true}
-serde = {workspace = true}
-serde_json = {workspace = true}
-serde_with = {workspace = true}
-tokio ={workspace = true}
-parquet ={workspace = true}
-rust_decimal ={workspace = true}
-chrono ={workspace = true}
-faster-hex ={workspace = true}
-once_cell = {workspace = true}
-ordered-float = "3.7.0"
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+arrow = { workspace = true }
+bytes = { workspace = true }
+futures = { workspace = true }
+opendal = { workspace = true }
+uuid = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_with = { workspace = true }
+tokio = { workspace = true }
+parquet = { workspace = true }
+rust_decimal = { workspace = true }
+chrono = { workspace = true }
+faster-hex = { workspace = true }
+once_cell = { workspace = true }
+url = { workspace = true }
+log = { workspace = true }
+regex = { workspace = true }
+ordered-float = { workspace = true }
+apache-avro = { workspace = true }
+
 
 [dev-dependencies]
-tempfile = {workspace = true}
+tempfile = { workspace = true }
 
 [[example]]
 name = "read_iceberg_table"
