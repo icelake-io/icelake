@@ -1,5 +1,5 @@
 use super::Transform;
-
+use arrow::array::ArrayRef;
 mod identity;
 
 /// TransformFunction is a trait that defines the interface of a transform function.
@@ -7,7 +7,7 @@ pub trait TransformFunction {
     /// transform will take an input array and transform it into a new array.
     /// The implementation of this function will need to check and downcast the input to specific
     /// type.
-    fn transform(&self, input: arrow_array::ArrayRef) -> arrow_array::ArrayRef;
+    fn transform(&self, input: ArrayRef) -> ArrayRef;
 }
 
 /// BoxedTransformFunction is a boxed trait object of TransformFunction.

@@ -10,8 +10,7 @@ members = [
 anyhow = "1"
 async-trait = "0.1"
 apache-avro = { version = "0.15", features = ["derive"] }
-arrow-array = { version = ">=40, <45" }
-arrow-schema = { version = ">=40, <45" }
+arrow = { version = ">=40, <45" }
 bytes = "1"
 futures = "0.3"
 opendal = ">=0.37, <0.40"

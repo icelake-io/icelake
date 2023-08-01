@@ -1,8 +1,8 @@
 //! task_writer module provide a task writer for writing data in a table.
 //! table writer used directly by the compute engine.
 
-use arrow_array::RecordBatch;
-use arrow_schema::Schema as ArrowSchema;
+use arrow::datatypes::Schema as ArrowSchema;
+use arrow::record_batch::RecordBatch;
 use opendal::Operator;
 
 use super::data_file_writer::DataFileWriter;
