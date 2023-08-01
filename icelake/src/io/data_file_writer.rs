@@ -260,7 +260,7 @@ mod test {
 
         let mut writer = data_file_writer::DataFileWriter::try_new(
             op.clone(),
-            "file:///tmp".to_string(),
+            "/tmp/table".to_string(),
             location_generator,
             to_write.schema(),
             1024,

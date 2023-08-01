@@ -161,6 +161,7 @@ struct DataFile {
     #[serde_as(as = "Option<Bytes>")]
     key_metadata: Option<Vec<u8>>,
     split_offsets: Vec<i64>,
+    #[serde(default)]
     equality_ids: Vec<i32>,
     sort_order_id: Option<i32>,
 }
