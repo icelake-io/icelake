@@ -36,3 +36,4 @@ csv = "1"
 url = "2"
 regex = "1"
 clap = { version = "4", features = ["derive"]}
+ordered-float = "3.7.0"

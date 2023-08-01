@@ -1,6 +1,6 @@
-use arrow_array::RecordBatch;
-use arrow_csv::ReaderBuilder;
-use arrow_schema::{DataType, Field, Schema};
+use arrow::record_batch::RecordBatch;
+use arrow::csv::ReaderBuilder;
+use arrow::datatypes::{DataType, Field, Schema};
 use clap::Parser;
 use icelake::transaction::Transaction;
 use icelake::Table;

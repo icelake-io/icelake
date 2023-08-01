@@ -11,9 +11,7 @@ all-features = true
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
-apache-avro = { workspace = true }
-arrow-schema = { workspace = true }
-arrow-array = { workspace = true }
+arrow = { workspace = true }
 bytes = { workspace = true }
 futures = { workspace = true }
 opendal = { workspace = true }
@@ -30,7 +28,8 @@ once_cell = { workspace = true }
 url = { workspace = true }
 log = { workspace = true }
 regex = { workspace = true }
-ordered-float = "3.7.0"
+ordered-float = { workspace = true }
+apache-avro = { workspace = true }
 
 
 [dev-dependencies]

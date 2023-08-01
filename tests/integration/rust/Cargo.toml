@@ -13,7 +13,5 @@ tokio = { workspace = true }
 opendal = { workspace = true }
 serde = { workspace = true }
 csv = { workspace = true }
-arrow-array = { workspace = true }
-arrow-csv = { workspace = true }
-arrow-schema = { workspace = true }
+arrow = { workspace = true }
 clap = { workspace = true }

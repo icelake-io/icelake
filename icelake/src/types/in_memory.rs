@@ -23,7 +23,7 @@ use crate::Result;
 use crate::{Error, Table};
 
 pub(crate) const UNASSIGNED_SEQ_NUM: i64 = -1;
-const MAIN_BRANCH: &'static str = "main";
+const MAIN_BRANCH: &str = "main";
 
 /// All data types are either primitives or nested types, which are maps, lists, or structs.
 #[derive(Debug, PartialEq, Clone)]
