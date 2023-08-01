@@ -613,7 +613,8 @@ mod tests {
             fields: vec![],
         };
 
-        let writer = ManifestWriter::new(partition_spec, operator, dir_path.as_str(), filename, 3, 1);
+        let writer =
+            ManifestWriter::new(partition_spec, operator, dir_path.as_str(), filename, 3, 1);
         let manifest_list_entry = writer.write(manifest_file.clone()).await.unwrap();
 
         assert_eq!(

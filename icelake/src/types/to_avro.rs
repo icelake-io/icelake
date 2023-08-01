@@ -44,7 +44,7 @@ impl<'a> TryFrom<&'a Field> for AvroRecordField {
                 }
                 avro_schema
             }
-            Any::List(_list) =>  AvroSchema::try_from(&value.field_type)?,
+            Any::List(_list) => AvroSchema::try_from(&value.field_type)?,
             _ => {
                 let mut avro_schema = AvroSchema::try_from(&value.field_type)?;
                 if !value.required {
