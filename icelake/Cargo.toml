@@ -12,8 +12,7 @@ all-features = true
 anyhow = {workspace = true}
 async-trait = {workspace = true}
 apache-avro = {workspace = true}
-arrow-array = {workspace = true}
-arrow-schema = {workspace = true}
+arrow = {workspace = true}
 bytes = {workspace = true}
 futures = {workspace = true}
 opendal = {workspace = true}

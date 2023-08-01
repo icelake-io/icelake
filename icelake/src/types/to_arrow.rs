@@ -5,10 +5,10 @@ use std::convert::TryFrom;
 use std::sync::Arc;
 
 use crate::error::Error;
-use arrow_schema::DataType as ArrowDataType;
-use arrow_schema::Field as ArrowField;
-use arrow_schema::Schema as ArrowSchema;
-use arrow_schema::TimeUnit;
+use arrow::datatypes::DataType as ArrowDataType;
+use arrow::datatypes::Field as ArrowField;
+use arrow::datatypes::Schema as ArrowSchema;
+use arrow::datatypes::TimeUnit;
 
 use super::in_memory as types;
 

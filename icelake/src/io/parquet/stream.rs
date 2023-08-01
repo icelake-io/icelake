@@ -2,7 +2,7 @@ use std::pin::Pin;
 use std::task::Context;
 use std::task::Poll;
 
-use arrow_array::RecordBatch;
+use arrow::record_batch::RecordBatch;
 use futures::Stream;
 use futures::StreamExt;
 use opendal::Reader;
@@ -72,9 +72,9 @@ mod tests {
     use std::sync::Arc;
 
     use anyhow::Result;
-    use arrow_array::ArrayRef;
-    use arrow_array::Int64Array;
-    use arrow_array::RecordBatch;
+    use arrow::array::ArrayRef;
+    use arrow::array::Int64Array;
+    use arrow::record_batch::RecordBatch;
     use opendal::services::Memory;
     use opendal::Operator;
     use parquet::arrow::AsyncArrowWriter;

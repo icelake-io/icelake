@@ -1,8 +1,8 @@
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
-use arrow_array::RecordBatch;
-use arrow_schema::SchemaRef;
+use arrow::datatypes::SchemaRef;
+use arrow::record_batch::RecordBatch;
 use opendal::Writer;
 use parquet::arrow::AsyncArrowWriter;
 use parquet::file::properties::WriterProperties;
@@ -111,9 +111,9 @@ mod tests {
     use std::sync::Arc;
 
     use anyhow::Result;
-    use arrow_array::ArrayRef;
-    use arrow_array::Int64Array;
-    use arrow_array::RecordBatch;
+    use arrow::array::ArrayRef;
+    use arrow::array::Int64Array;
+    use arrow::record_batch::RecordBatch;
     use bytes::Bytes;
     use opendal::services::Memory;
     use opendal::Operator;
