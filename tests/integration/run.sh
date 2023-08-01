@@ -10,6 +10,7 @@ cd "$SCRIPT_DIR"/docker
 docker compose up -d --wait spark
 
 cd "$SCRIPT_DIR"/python
+poetry update
 poetry run python init.py -s sc://localhost:15002 -f "$SCRIPT_DIR"/testdata/insert1.csv
 
 "$PROJ_DIR"/target/debug/icelake-integration-tests \
