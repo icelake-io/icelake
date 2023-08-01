@@ -5,6 +5,12 @@ services:
     image: apache/spark:3.4.1
     container_name: spark
     user: root
+    depends_on:
+      - mc
+    healthcheck:
+      test: netstat -ltn | grep -c ":15002"
+      interval: 5s
+      retries: 120
     ports:
       - "15002:15002"
     networks:
@@ -52,8 +58,8 @@ services:
       /bin/sh -c "
       until (/usr/bin/mc config host add minio http://minio:9000 admin password) do echo '...waiting...' && sleep 1; done;
       /usr/bin/mc rm -r --force minio/icebergdata;
-      /usr/bin/mc mb minio/icebergdata;
-      /usr/bin/mc policy set public minio/icebergdata;
+      /usr/bin/mc mb minio/icebergdata/demo;
+      /usr/bin/mc policy set public minio/icebergdata/demo;
       tail -f /dev/null
       "
 networks:
