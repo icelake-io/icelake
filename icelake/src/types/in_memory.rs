@@ -33,7 +33,7 @@ pub enum Any {
     /// A Primitive type
     Primitive(Primitive),
     /// A Struct type
-    Struct(Struct),
+    Struct(Arc<Struct>),
     /// A List type.
     List(List),
     /// A Map type
@@ -256,11 +256,6 @@ impl Struct {
     /// Return the reference to the field of this struct.
     pub fn fields(&self) -> &[Field] {
         &self.fields
-    }
-
-    /// Return the fields of this struct.
-    pub fn into_fields(self) -> Vec<Field> {
-        self.fields
     }
 
     /// Lookup the field type according to the field id.
@@ -1022,12 +1017,15 @@ mod manifest_list {
             Any::List(List {
                 element_id: 13,
                 element_required: false,
-                element_type: Box::new(Any::Struct(Struct::new(vec![
-                    Field::required(0, "contains_null", Any::Primitive(Primitive::Boolean)),
-                    Field::optional(1, "contains_nan", Any::Primitive(Primitive::Boolean)),
-                    Field::optional(2, "lower_bound", Any::Primitive(Primitive::Binary)),
-                    Field::optional(2, "upper_bound", Any::Primitive(Primitive::Binary)),
-                ]))),
+                element_type: Box::new(Any::Struct(
+                    Struct::new(vec![
+                        Field::required(0, "contains_null", Any::Primitive(Primitive::Boolean)),
+                        Field::optional(1, "contains_nan", Any::Primitive(Primitive::Boolean)),
+                        Field::optional(2, "lower_bound", Any::Primitive(Primitive::Binary)),
+                        Field::optional(2, "upper_bound", Any::Primitive(Primitive::Binary)),
+                    ])
+                    .into(),
+                )),
             }),
         )
     });
@@ -1153,24 +1151,27 @@ impl ManifestFile {
                 Field::required(
                     manifest_file::DATA_FILE_ID,
                     manifest_file::DATA_FILE_NAME,
-                    Any::Struct(Struct::new(vec![
-                        datafile::CONTENT.clone().with_required(),
-                        datafile::FILE_PATH.clone(),
-                        datafile::FILE_FORMAT.clone(),
-                        DataFile::partition_field(partition_type),
-                        datafile::RECORD_COUNT.clone(),
-                        datafile::FILE_SIZE.clone(),
-                        datafile::COLUMN_SIZES.clone(),
-                        datafile::VALUE_COUNTS.clone(),
-                        datafile::NULL_VALUE_COUNTS.clone(),
-                        datafile::NAN_VALUE_COUNTS.clone(),
-                        datafile::LOWER_BOUNDS.clone(),
-                        datafile::UPPER_BOUNDS.clone(),
-                        datafile::KEY_METADATA.clone(),
-                        datafile::SPLIT_OFFSETS.clone(),
-                        datafile::EQUALITY_IDS.clone(),
-                        datafile::SORT_ORDER_ID.clone(),
-                    ])),
+                    Any::Struct(
+                        Struct::new(vec![
+                            datafile::CONTENT.clone().with_required(),
+                            datafile::FILE_PATH.clone(),
+                            datafile::FILE_FORMAT.clone(),
+                            DataFile::partition_field(partition_type),
+                            datafile::RECORD_COUNT.clone(),
+                            datafile::FILE_SIZE.clone(),
+                            datafile::COLUMN_SIZES.clone(),
+                            datafile::VALUE_COUNTS.clone(),
+                            datafile::NULL_VALUE_COUNTS.clone(),
+                            datafile::NAN_VALUE_COUNTS.clone(),
+                            datafile::LOWER_BOUNDS.clone(),
+                            datafile::UPPER_BOUNDS.clone(),
+                            datafile::KEY_METADATA.clone(),
+                            datafile::SPLIT_OFFSETS.clone(),
+                            datafile::EQUALITY_IDS.clone(),
+                            datafile::SORT_ORDER_ID.clone(),
+                        ])
+                        .into(),
+                    ),
                 ),
             ],
         }
@@ -1530,7 +1531,7 @@ mod datafile {
 
 impl DataFile {
     pub(crate) fn partition_field(partition_type: Struct) -> Field {
-        Field::required(102, "partition", Any::Struct(partition_type))
+        Field::required(102, "partition", Any::Struct(partition_type.into()))
             .with_comment("Partition data tuple, schema based on the partition spec")
     }
 

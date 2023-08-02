@@ -2,6 +2,7 @@ use crate::types::StructValueBuilder;
 use std::fmt;
 use std::marker::PhantomData;
 use std::str::FromStr;
+use std::sync::Arc;
 
 use chrono::DateTime;
 use chrono::NaiveDate;
@@ -131,7 +132,7 @@ impl TryFrom<Types> for types::Any {
                     fields.push(field);
                 }
 
-                types::Any::Struct(types::Struct::new(fields))
+                types::Any::Struct(types::Struct::new(fields).into())
             }
             "list" => {
                 let element_id = v.element_id;
@@ -772,10 +773,10 @@ fn parse_json_value_to_binary(value: serde_json::Value) -> Result<types::AnyValu
 ///
 /// For example: `{"1": 1, "2": "bar"}`
 fn parse_json_value_to_struct(
-    expect_struct: &types::Struct,
+    expect_struct: &Arc<types::Struct>,
     value: serde_json::Value,
 ) -> Result<types::AnyValue> {
-    let mut builder = StructValueBuilder::new(expect_struct.clone().into());
+    let mut builder = StructValueBuilder::new(expect_struct.clone());
 
     match value {
         serde_json::Value::Object(o) => {
