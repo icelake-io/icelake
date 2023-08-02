@@ -162,7 +162,7 @@ impl<'a> TryFrom<&'a Any> for AvroSchema {
             }
             Any::Struct(s) => {
                 let avro_fields: Vec<AvroRecordField> = s
-                    .fields
+                    .fields()
                     .iter()
                     .map(AvroRecordField::try_from)
                     .collect::<Result<Vec<AvroRecordField>>>()?;
@@ -233,8 +233,8 @@ mod tests {
                     id: 2,
                     name: "b".to_string(),
                     required: true,
-                    field_type: Any::Struct(Struct {
-                        fields: vec![
+                    field_type: Any::Struct(
+                        Struct::new(vec![
                             Field {
                                 id: 3,
                                 name: "c".to_string(),
@@ -281,8 +281,9 @@ mod tests {
                                 initial_default: None,
                                 write_default: None,
                             },
-                        ],
-                    }),
+                        ])
+                        .into(),
+                    ),
                     comment: Some("comment_b".to_string()),
                     initial_default: None,
                     write_default: None,

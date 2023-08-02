@@ -1,6 +1,7 @@
 //! in_memory module provides the definition of iceberg in-memory data types.
 
 use std::hash::Hasher;
+use std::sync::Arc;
 use std::{collections::HashMap, str::FromStr};
 
 use bitvec::vec::BitVec;
@@ -27,12 +28,12 @@ pub(crate) const UNASSIGNED_SEQ_NUM: i64 = -1;
 const MAIN_BRANCH: &str = "main";
 
 /// All data types are either primitives or nested types, which are maps, lists, or structs.
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Eq)]
 pub enum Any {
     /// A Primitive type
     Primitive(Primitive),
     /// A Struct type
-    Struct(Struct),
+    Struct(Arc<Struct>),
     /// A List type.
     List(List),
     /// A Map type
@@ -224,25 +225,49 @@ impl Serialize for PrimitiveValue {
 /// - Fields may be any type.
 /// - Fields may have an optional comment or doc string.
 /// - Fields can have default values.
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Default, Debug, PartialEq, Clone, Eq)]
 pub struct Struct {
     /// Fields contained in this struct.
-    pub fields: Vec<Field>,
+    fields: Vec<Field>,
+    /// Map field id to index
+    id_lookup: HashMap<i32, usize>,
 }
 
 impl Struct {
-    /// Generate map from field id to field name map for this struct.
-    pub fn generate_field_name_map(&self) -> HashMap<i32, String> {
-        let mut map = HashMap::with_capacity(self.fields.len());
-        for field in &self.fields {
-            map.insert(field.id, field.name.clone());
-        }
-        map
+    /// Create a new struct.
+    pub fn new(fields: Vec<Field>) -> Self {
+        let mut id_lookup = HashMap::with_capacity(fields.len());
+        fields.iter().enumerate().for_each(|(index, field)| {
+            id_lookup.insert(field.id, index);
+        });
+        Self { fields, id_lookup }
+    }
+
+    /// Return the number of fields in the struct.
+    pub fn len(&self) -> usize {
+        self.fields.len()
+    }
+
+    /// Check if the struct is empty.
+    pub fn is_empty(&self) -> bool {
+        self.fields.is_empty()
+    }
+
+    /// Return the reference to the field of this struct.
+    pub fn fields(&self) -> &[Field] {
+        &self.fields
+    }
+
+    /// Lookup the field type according to the field id.
+    pub fn lookup_type(&self, field_id: i32) -> Option<Any> {
+        self.id_lookup
+            .get(&field_id)
+            .map(|&idx| self.fields[idx].field_type.clone())
     }
 }
 
 /// A Field is the field of a struct.
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Eq)]
 pub struct Field {
     /// An integer id that is unique in the table schema
     pub id: i32,
@@ -301,22 +326,24 @@ impl Field {
 /// A Struct type is a tuple of typed values.
 #[derive(Default, Debug, PartialEq, Clone, Eq)]
 pub struct StructValue {
-    field_value: Vec<AnyValue>,
-    field_id: Vec<i32>,
-    field_name: Vec<String>,
+    field_values: Vec<AnyValue>,
+    type_info: Arc<Struct>,
     null_bitmap: BitVec,
 }
 
 impl StructValue {
     /// Create a iterator to read the field in order of (field_id, field_value, field_name).
-    pub fn iter(&self) -> impl Iterator<Item = (&i32, Option<&AnyValue>, &str)> {
+    pub fn iter(&self) -> impl Iterator<Item = (i32, Option<&AnyValue>, &str)> {
         self.null_bitmap
             .iter()
-            .zip(self.field_value.iter())
-            .zip(self.field_id.iter())
-            .zip(self.field_name.iter())
-            .map(|(((null, value), id), name)| {
-                (id, if *null { None } else { Some(value) }, name.as_str())
+            .zip(self.field_values.iter())
+            .zip(self.type_info.fields().iter())
+            .map(|((null, value), field)| {
+                (
+                    field.id,
+                    if *null { None } else { Some(value) },
+                    field.name.as_str(),
+                )
             })
     }
 }
@@ -326,7 +353,7 @@ impl Serialize for StructValue {
     where
         S: serde::Serializer,
     {
-        let mut record = serializer.serialize_struct("", self.field_value.len())?;
+        let mut record = serializer.serialize_struct("", self.field_values.len())?;
         for (_, value, key) in self.iter() {
             if let Some(value) = value {
                 // NOTE: Here we use `Box::leak` to convert `&str` to `&'static str`. The safe is guaranteed by serializer.
@@ -351,59 +378,60 @@ impl Hash for StructValue {
     }
 }
 
-/// A builder to build a struct value.
-#[derive(Default)]
+/// A builder to build a struct value. Buidler will guaranteed that the StructValue is valid for the Struct.
 pub struct StructValueBuilder {
     fileds: HashMap<i32, Option<AnyValue>>,
-    field_names: HashMap<i32, String>,
+    type_info: Arc<Struct>,
 }
 
 impl StructValueBuilder {
     /// Create a new builder.
-    pub fn new() -> Self {
+    pub fn new(type_info: Arc<Struct>) -> Self {
         Self {
-            fileds: HashMap::new(),
-            field_names: HashMap::new(),
+            fileds: HashMap::with_capacity(type_info.len()),
+            type_info,
         }
     }
 
     /// Add a field to the struct value.
-    pub fn add_field(
-        &mut self,
-        field_id: i32,
-        field_name: impl Into<String>,
-        field_value: Option<AnyValue>,
-    ) -> &mut Self {
+    pub fn add_field(&mut self, field_id: i32, field_value: Option<AnyValue>) -> Result<()> {
+        // Check the field id is valid.
+        self.type_info.lookup_type(field_id).ok_or(Error::new(
+            ErrorKind::IcebergDataInvalid,
+            format!("Field {} is not found", field_id),
+        ))?;
+        // TODO: Check the field type is consistent.
+        // TODO: Check the duplication of field.
+
         self.fileds.insert(field_id, field_value);
-        self.field_names.insert(field_id, field_name.into());
-        self
+        Ok(())
     }
 
     /// Build the struct value.
-    pub fn build(self) -> StructValue {
-        let mut field_value = Vec::with_capacity(self.fileds.len());
-        let mut field_id = Vec::with_capacity(self.fileds.len());
-        let mut field_name = Vec::with_capacity(self.fileds.len());
+    pub fn build(mut self) -> Result<StructValue> {
+        let mut field_values = Vec::with_capacity(self.fileds.len());
         let mut null_bitmap = BitVec::with_capacity(self.fileds.len());
 
-        for (id, value) in self.fileds {
-            field_id.push(id);
-            field_name.push(self.field_names[&id].clone());
-            if let Some(value) = value {
+        for field in self.type_info.fields.iter() {
+            let field_value = self.fileds.remove(&field.id).ok_or(Error::new(
+                ErrorKind::IcebergDataInvalid,
+                format!("Field {} is required", field.name),
+            ))?;
+            if let Some(value) = field_value {
                 null_bitmap.push(false);
-                field_value.push(value);
+                field_values.push(value);
             } else {
                 null_bitmap.push(true);
                 // `1` is just as a placeholder. It will be ignored.
-                field_value.push(AnyValue::Primitive(PrimitiveValue::Int(1)));
+                field_values.push(AnyValue::Primitive(PrimitiveValue::Int(1)));
             }
         }
-        StructValue {
-            field_value,
-            field_id,
-            field_name,
+
+        Ok(StructValue {
+            field_values,
+            type_info: self.type_info,
             null_bitmap,
-        }
+        })
     }
 }
 
@@ -412,7 +440,7 @@ impl StructValueBuilder {
 /// - The element field has an integer id that is unique in the table schema.
 /// - Elements can be either optional or required.
 /// - Element types may be any type.
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Eq)]
 pub struct List {
     /// an integer id that is unique in the table schema.
     pub element_id: i32,
@@ -427,7 +455,7 @@ pub struct List {
 /// - Both the key field and value field each have an integer id that is unique in the table schema.
 /// - Map keys are required and map values can be either optional or required.
 /// - Both map keys and map values may be any type, including nested types.
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Eq)]
 pub struct Map {
     /// an integer id that is unique in the table schema
     pub key_id: i32,
@@ -682,7 +710,7 @@ impl PartitionSpec {
             ));
         }
 
-        Ok(Struct { fields })
+        Ok(Struct::new(fields))
     }
 
     /// Check if this partition spec is unpartitioned.
@@ -989,14 +1017,15 @@ mod manifest_list {
             Any::List(List {
                 element_id: 13,
                 element_required: false,
-                element_type: Box::new(Any::Struct(Struct {
-                    fields: vec![
+                element_type: Box::new(Any::Struct(
+                    Struct::new(vec![
                         Field::required(0, "contains_null", Any::Primitive(Primitive::Boolean)),
                         Field::optional(1, "contains_nan", Any::Primitive(Primitive::Boolean)),
                         Field::optional(2, "lower_bound", Any::Primitive(Primitive::Binary)),
                         Field::optional(2, "upper_bound", Any::Primitive(Primitive::Binary)),
-                    ],
-                })),
+                    ])
+                    .into(),
+                )),
             }),
         )
     });
@@ -1122,8 +1151,8 @@ impl ManifestFile {
                 Field::required(
                     manifest_file::DATA_FILE_ID,
                     manifest_file::DATA_FILE_NAME,
-                    Any::Struct(Struct {
-                        fields: vec![
+                    Any::Struct(
+                        Struct::new(vec![
                             datafile::CONTENT.clone().with_required(),
                             datafile::FILE_PATH.clone(),
                             datafile::FILE_FORMAT.clone(),
@@ -1140,8 +1169,9 @@ impl ManifestFile {
                             datafile::SPLIT_OFFSETS.clone(),
                             datafile::EQUALITY_IDS.clone(),
                             datafile::SORT_ORDER_ID.clone(),
-                        ],
-                    }),
+                        ])
+                        .into(),
+                    ),
                 ),
             ],
         }
@@ -1501,7 +1531,7 @@ mod datafile {
 
 impl DataFile {
     pub(crate) fn partition_field(partition_type: Struct) -> Field {
-        Field::required(102, "partition", Any::Struct(partition_type))
+        Field::required(102, "partition", Any::Struct(partition_type.into()))
             .with_comment("Partition data tuple, schema based on the partition spec")
     }
 
@@ -1994,7 +2024,7 @@ impl ToString for TableFormatVersion {
 mod test {
     use apache_avro::{schema, types::Value};
 
-    use crate::types::{PrimitiveValue, StructValueBuilder};
+    use crate::types::{Field, PrimitiveValue, Struct, StructValueBuilder};
 
     use super::AnyValue;
 
@@ -2002,16 +2032,29 @@ mod test {
     fn test_struct_to_avro() {
         let value = {
             let struct_value = {
-                let mut builder = StructValueBuilder::new();
-                builder.add_field(1, "a", None);
-                builder.add_field(
-                    2,
-                    "b",
-                    Some(AnyValue::Primitive(PrimitiveValue::String(
-                        "hello".to_string(),
-                    ))),
-                );
-                AnyValue::Struct(builder.build())
+                let struct_type = Struct::new(vec![
+                    Field::optional(
+                        1,
+                        "a",
+                        crate::types::Any::Primitive(crate::types::Primitive::Int),
+                    ),
+                    Field::required(
+                        2,
+                        "b",
+                        crate::types::Any::Primitive(crate::types::Primitive::String),
+                    ),
+                ]);
+                let mut builder = StructValueBuilder::new(struct_type.into());
+                builder.add_field(1, None).unwrap();
+                builder
+                    .add_field(
+                        2,
+                        Some(AnyValue::Primitive(PrimitiveValue::String(
+                            "hello".to_string(),
+                        ))),
+                    )
+                    .unwrap();
+                AnyValue::Struct(builder.build().unwrap())
             };
 
             let mut res = apache_avro::to_value(struct_value).unwrap();
