@@ -3,6 +3,7 @@
 use std::hash::Hasher;
 use std::{collections::HashMap, str::FromStr};
 
+use bitvec::vec::BitVec;
 use chrono::DateTime;
 use chrono::NaiveDate;
 use chrono::NaiveDateTime;
@@ -300,10 +301,24 @@ impl Field {
 /// A Struct type is a tuple of typed values.
 #[derive(Default, Debug, PartialEq, Clone, Eq)]
 pub struct StructValue {
-    /// fields is a map from field id to field value.
-    pub fields: HashMap<i32, AnyValue>,
-    /// field_names is a map from field id to field name.
-    pub field_names: HashMap<i32, String>,
+    field_value: Vec<AnyValue>,
+    field_id: Vec<i32>,
+    field_name: Vec<String>,
+    null_bitmap: BitVec,
+}
+
+impl StructValue {
+    /// Create a iterator to read the field in order of (field_id, field_value, field_name).
+    pub fn iter(&self) -> impl Iterator<Item = (&i32, Option<&AnyValue>, &str)> {
+        self.null_bitmap
+            .iter()
+            .zip(self.field_value.iter())
+            .zip(self.field_id.iter())
+            .zip(self.field_name.iter())
+            .map(|(((null, value), id), name)| {
+                (id, if *null { None } else { Some(value) }, name.as_str())
+            })
+    }
 }
 
 impl Serialize for StructValue {
@@ -311,11 +326,16 @@ impl Serialize for StructValue {
     where
         S: serde::Serializer,
     {
-        let mut record = serializer.serialize_struct("", self.fields.len())?;
-        for (id, value) in self.fields.iter() {
-            let key = self.field_names.get(id).unwrap();
-            // NOTE: Here we use `Box::leak` to convert `&str` to `&'static str`. The safe is guaranteed by serializer.
-            record.serialize_field(Box::leak(key.clone().into_boxed_str()), value)?;
+        let mut record = serializer.serialize_struct("", self.field_value.len())?;
+        for (_, value, key) in self.iter() {
+            if let Some(value) = value {
+                // NOTE: Here we use `Box::leak` to convert `&str` to `&'static str`. The safe is guaranteed by serializer.
+                record.serialize_field(Box::leak(key.to_string().into_boxed_str()), value)?;
+            } else {
+                // `i32` is just as a placeholder, it will be ignored by serializer.
+                record
+                    .serialize_field(Box::leak(key.to_string().into_boxed_str()), &None::<i32>)?;
+            }
         }
         record.end()
     }
@@ -323,9 +343,66 @@ impl Serialize for StructValue {
 
 impl Hash for StructValue {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        for (id, value) in self.fields.iter() {
+        for (id, value, name) in self.iter() {
             id.hash(state);
             value.hash(state);
+            name.hash(state);
+        }
+    }
+}
+
+/// A builder to build a struct value.
+#[derive(Default)]
+pub struct StructValueBuilder {
+    fileds: HashMap<i32, Option<AnyValue>>,
+    field_names: HashMap<i32, String>,
+}
+
+impl StructValueBuilder {
+    /// Create a new builder.
+    pub fn new() -> Self {
+        Self {
+            fileds: HashMap::new(),
+            field_names: HashMap::new(),
+        }
+    }
+
+    /// Add a field to the struct value.
+    pub fn add_field(
+        &mut self,
+        field_id: i32,
+        field_name: impl Into<String>,
+        field_value: Option<AnyValue>,
+    ) -> &mut Self {
+        self.fileds.insert(field_id, field_value);
+        self.field_names.insert(field_id, field_name.into());
+        self
+    }
+
+    /// Build the struct value.
+    pub fn build(self) -> StructValue {
+        let mut field_value = Vec::with_capacity(self.fileds.len());
+        let mut field_id = Vec::with_capacity(self.fileds.len());
+        let mut field_name = Vec::with_capacity(self.fileds.len());
+        let mut null_bitmap = BitVec::with_capacity(self.fileds.len());
+
+        for (id, value) in self.fileds {
+            field_id.push(id);
+            field_name.push(self.field_names[&id].clone());
+            if let Some(value) = value {
+                null_bitmap.push(false);
+                field_value.push(value);
+            } else {
+                null_bitmap.push(true);
+                // `1` is just as a placeholder. It will be ignored.
+                field_value.push(AnyValue::Primitive(PrimitiveValue::Int(1)));
+            }
+        }
+        StructValue {
+            field_value,
+            field_id,
+            field_name,
+            null_bitmap,
         }
     }
 }
@@ -1915,33 +1992,26 @@ impl ToString for TableFormatVersion {
 
 #[cfg(test)]
 mod test {
-    use std::collections::HashMap;
-
     use apache_avro::{schema, types::Value};
 
-    use super::{Any, AnyValue, Field, Primitive, Struct};
+    use crate::types::{PrimitiveValue, StructValueBuilder};
+
+    use super::AnyValue;
 
     #[test]
     fn test_struct_to_avro() {
         let value = {
-            let struct_types = Struct {
-                fields: vec![
-                    Field::required(1, "a", Any::Primitive(Primitive::Int)),
-                    Field::required(2, "b", Any::Primitive(Primitive::String)),
-                ],
-            };
-
             let struct_value = {
-                let mut fields = HashMap::new();
-                fields.insert(1, AnyValue::Primitive(super::PrimitiveValue::Int(1)));
-                fields.insert(
+                let mut builder = StructValueBuilder::new();
+                builder.add_field(1, "a", None);
+                builder.add_field(
                     2,
-                    AnyValue::Primitive(super::PrimitiveValue::String("hello".to_string())),
+                    "b",
+                    Some(AnyValue::Primitive(PrimitiveValue::String(
+                        "hello".to_string(),
+                    ))),
                 );
-                AnyValue::Struct(super::StructValue {
-                    fields,
-                    field_names: struct_types.generate_field_name_map(),
-                })
+                AnyValue::Struct(builder.build())
             };
 
             let mut res = apache_avro::to_value(struct_value).unwrap();
@@ -1960,7 +2030,7 @@ mod test {
                     "type": "record",
                     "name": "test",
                     "fields": [
-                        {"name": "a", "type": "int"},
+                        {"name": "a", "type": ["int","null"]},
                         {"name": "b", "type": "string"}
                     ]
                 }
@@ -1969,12 +2039,14 @@ mod test {
             let schema = schema::Schema::parse_str(raw_schema).unwrap();
 
             let mut record = apache_avro::types::Record::new(&schema).unwrap();
-            record.put("a", 1);
+            record.put("a", None::<String>);
             record.put("b", "hello");
 
             record.into()
         };
 
+        println!("{:#?}", value);
+        println!("{:#?}", expect_value);
         assert_eq!(value, expect_value);
     }
 }

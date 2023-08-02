@@ -30,6 +30,7 @@ log = { workspace = true }
 regex = { workspace = true }
 ordered-float = { workspace = true }
 apache-avro = { workspace = true }
+bitvec = "1.0.1"
 
 
 [dev-dependencies]
