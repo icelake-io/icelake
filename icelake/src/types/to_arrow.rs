@@ -48,7 +48,7 @@ impl TryFrom<types::Any> for ArrowDataType {
             super::Any::Primitive(v) => v.try_into(),
             super::Any::Struct(v) => {
                 let mut fields = vec![];
-                for f in v.fields {
+                for f in v.into_fields() {
                     fields.push(ArrowField::try_from(f)?);
                 }
                 Ok(ArrowDataType::Struct(fields.into()))

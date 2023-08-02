@@ -1,5 +1,4 @@
 use crate::types::StructValueBuilder;
-use std::collections::HashMap;
 use std::fmt;
 use std::marker::PhantomData;
 use std::str::FromStr;
@@ -132,7 +131,7 @@ impl TryFrom<Types> for types::Any {
                     fields.push(field);
                 }
 
-                types::Any::Struct(types::Struct { fields })
+                types::Any::Struct(types::Struct::new(fields))
             }
             "list" => {
                 let element_id = v.element_id;
@@ -207,7 +206,8 @@ impl TryFrom<Any> for Types {
                     ..Default::default()
                 })
             }
-            types::Any::Struct(types::Struct { fields }) => {
+            types::Any::Struct(struct_type) => {
+                let fields = struct_type.fields();
                 let json_fields = fields
                     .iter()
                     .map(|f| -> Result<Field> {
@@ -332,7 +332,7 @@ impl TryFrom<types::Field> for Field {
 ///
 /// Reference: <https://iceberg.apache.org/spec/#json-single-value-serialization>
 fn parse_json_value(expect_type: &types::Any, value: serde_json::Value) -> Result<types::AnyValue> {
-    match expect_type {
+    match &expect_type {
         types::Any::Primitive(v) => match v {
             types::Primitive::Boolean => parse_json_value_to_boolean(value),
             types::Primitive::Int => parse_json_value_to_int(value),
@@ -775,15 +775,7 @@ fn parse_json_value_to_struct(
     expect_struct: &types::Struct,
     value: serde_json::Value,
 ) -> Result<types::AnyValue> {
-    let field_types = expect_struct
-        .fields
-        .iter()
-        .map(|v| (v.id, &v.field_type))
-        .collect::<HashMap<_, _>>();
-
-    let field_names = expect_struct.generate_field_name_map();
-
-    let mut builder = StructValueBuilder::new();
+    let mut builder = StructValueBuilder::new(expect_struct.clone().into());
 
     match value {
         serde_json::Value::Object(o) => {
@@ -796,16 +788,16 @@ fn parse_json_value_to_struct(
                     .set_source(err)
                 })?;
 
-                let expect_type = field_types.get(&key).ok_or_else(|| {
+                let expect_type = expect_struct.lookup_type(key).ok_or_else(|| {
                     Error::new(
                         ErrorKind::IcebergDataInvalid,
                         format!("expect filed id {:?} but not exist", key),
                     )
                 })?;
 
-                let value = parse_json_value(expect_type, value)?;
+                let value = parse_json_value(&expect_type, value)?;
 
-                builder.add_field(key, field_names.get(&key).unwrap(), Some(value));
+                builder.add_field(key, Some(value))?;
             }
         }
         _ => {
@@ -816,7 +808,7 @@ fn parse_json_value_to_struct(
         }
     }
 
-    Ok(types::AnyValue::Struct(builder.build()))
+    Ok(types::AnyValue::Struct(builder.build()?))
 }
 
 /// JSON single-value serialization requires List been

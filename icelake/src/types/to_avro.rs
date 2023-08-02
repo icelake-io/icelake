@@ -162,7 +162,7 @@ impl<'a> TryFrom<&'a Any> for AvroSchema {
             }
             Any::Struct(s) => {
                 let avro_fields: Vec<AvroRecordField> = s
-                    .fields
+                    .fields()
                     .iter()
                     .map(AvroRecordField::try_from)
                     .collect::<Result<Vec<AvroRecordField>>>()?;
@@ -233,56 +233,54 @@ mod tests {
                     id: 2,
                     name: "b".to_string(),
                     required: true,
-                    field_type: Any::Struct(Struct {
-                        fields: vec![
-                            Field {
-                                id: 3,
-                                name: "c".to_string(),
-                                required: true,
-                                field_type: Any::Primitive(Primitive::Uuid),
-                                comment: Some("comment_c".to_string()),
-                                initial_default: None,
-                                write_default: None,
-                            },
-                            Field {
-                                id: 4,
-                                name: "d".to_string(),
-                                required: true,
-                                field_type: Any::Primitive(Primitive::Boolean),
-                                comment: Some("comment_d".to_string()),
-                                initial_default: None,
-                                write_default: None,
-                            },
-                            Field {
-                                id: 5,
-                                name: "e".to_string(),
-                                required: true,
-                                field_type: Any::List(List {
-                                    element_id: 1,
-                                    element_required: true,
-                                    element_type: Box::new(Any::Primitive(Primitive::Long)),
-                                }),
-                                comment: Some("comment_e".to_string()),
-                                initial_default: None,
-                                write_default: None,
-                            },
-                            Field {
-                                id: 6,
-                                name: "f".to_string(),
-                                required: true,
-                                field_type: Any::Map(Map {
-                                    key_id: 2,
-                                    key_type: Box::new(Any::Primitive(Primitive::String)),
-                                    value_id: 3,
-                                    value_required: true,
-                                    value_type: Box::new(Any::Primitive(Primitive::Binary)),
-                                }),
-                                comment: Some("comment_f".to_string()),
-                                initial_default: None,
-                                write_default: None,
-                            },
-                        ],
-                    }),
+                    field_type: Any::Struct(Struct::new(vec![
+                        Field {
+                            id: 3,
+                            name: "c".to_string(),
+                            required: true,
+                            field_type: Any::Primitive(Primitive::Uuid),
+                            comment: Some("comment_c".to_string()),
+                            initial_default: None,
+                            write_default: None,
+                        },
+                        Field {
+                            id: 4,
+                            name: "d".to_string(),
+                            required: true,
+                            field_type: Any::Primitive(Primitive::Boolean),
+                            comment: Some("comment_d".to_string()),
+                            initial_default: None,
+                            write_default: None,
+                        },
+                        Field {
+                            id: 5,
+                            name: "e".to_string(),
+                            required: true,
+                            field_type: Any::List(List {
+                                element_id: 1,
+                                element_required: true,
+                                element_type: Box::new(Any::Primitive(Primitive::Long)),
+                            }),
+                            comment: Some("comment_e".to_string()),
+                            initial_default: None,
+                            write_default: None,
+                        },
+                        Field {
+                            id: 6,
+                            name: "f".to_string(),
+                            required: true,
+                            field_type: Any::Map(Map {
+                                key_id: 2,
+                                key_type: Box::new(Any::Primitive(Primitive::String)),
+                                value_id: 3,
+                                value_required: true,
+                                value_type: Box::new(Any::Primitive(Primitive::Binary)),
+                            }),
+                            comment: Some("comment_f".to_string()),
+                            initial_default: None,
+                            write_default: None,
+                        },
+                    ])),
                     comment: Some("comment_b".to_string()),
                     initial_default: None,
                     write_default: None,
