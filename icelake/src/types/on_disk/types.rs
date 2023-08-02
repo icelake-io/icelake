@@ -1,3 +1,4 @@
+use crate::types::StructValueBuilder;
 use std::collections::HashMap;
 use std::fmt;
 use std::marker::PhantomData;
@@ -19,8 +20,6 @@ use uuid::Uuid;
 
 use crate::types;
 use crate::types::Any;
-use crate::types::AnyValue;
-use crate::types::StructValue;
 use crate::Error;
 use crate::ErrorKind;
 use crate::Result;
@@ -30,7 +29,6 @@ use crate::Result;
 pub struct Types {
     #[serde(rename = "type")]
     typ: String,
-
     /// Only available when typ == "struct"
     fields: Vec<Field>,
 
@@ -785,7 +783,7 @@ fn parse_json_value_to_struct(
 
     let field_names = expect_struct.generate_field_name_map();
 
-    let mut fields: HashMap<i32, AnyValue> = HashMap::with_capacity(field_types.len());
+    let mut builder = StructValueBuilder::new();
 
     match value {
         serde_json::Value::Object(o) => {
@@ -807,7 +805,7 @@ fn parse_json_value_to_struct(
 
                 let value = parse_json_value(expect_type, value)?;
 
-                fields.insert(key, value);
+                builder.add_field(key, field_names.get(&key).unwrap(), Some(value));
             }
         }
         _ => {
@@ -818,10 +816,7 @@ fn parse_json_value_to_struct(
         }
     }
 
-    Ok(types::AnyValue::Struct(StructValue {
-        fields,
-        field_names,
-    }))
+    Ok(types::AnyValue::Struct(builder.build()))
 }
 
 /// JSON single-value serialization requires List been
