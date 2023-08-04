@@ -12,7 +12,7 @@ use std::fs::File;
 use std::path::Path;
 use std::process::Command;
 use std::sync::Arc;
-use tokio::runtime::{Builder, Runtime};
+use tokio::runtime::Builder;
 
 #[derive(Config, Debug)]
 struct TestConfig {
@@ -107,7 +107,7 @@ fn run_command(mut cmd: Command, desc: impl ToString) {
     if exit.success() {
         log::info!("{} succeed!", desc.to_string())
     } else {
-        assert!(false, "{} failed: {:?}", desc.to_string(), exit);
+        panic!("{} failed: {:?}", desc, exit);
     }
 }
 
@@ -143,7 +143,7 @@ fn init_iceberg_table_with_spark(config: &TestConfig) {
         "-s",
         config.spark_url.as_str(),
         "-f",
-       path_of("../testdata/insert1.csv").as_str(),
+        path_of("../testdata/insert1.csv").as_str(),
     ])
     .current_dir(path_of("../python"));
 
@@ -190,8 +190,8 @@ async fn do_test_append_data() {
 pub fn test_append_data() {
     let rt = Builder::new_multi_thread()
         .enable_all()
-        .worker_threads(1).build().unwrap();
-    rt.block_on(async {
-        do_test_append_data().await
-    });
+        .worker_threads(1)
+        .build()
+        .unwrap();
+    rt.block_on(async { do_test_append_data().await });
 }
