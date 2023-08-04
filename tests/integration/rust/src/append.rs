@@ -12,6 +12,7 @@ use std::fs::File;
 use std::path::Path;
 use std::process::Command;
 use std::sync::Arc;
+use tokio::runtime::{Builder, Runtime};
 
 #[derive(Config, Debug)]
 struct TestConfig {
@@ -106,7 +107,7 @@ fn run_command(mut cmd: Command, desc: impl ToString) {
     if exit.success() {
         log::info!("{} succeed!", desc.to_string())
     } else {
-        log::info!("{} failed: {:?}", desc.to_string(), exit);
+        assert!(false, "{} failed: {:?}", desc.to_string(), exit);
     }
 }
 
@@ -138,8 +139,11 @@ fn init_iceberg_table_with_spark(config: &TestConfig) {
     cmd.args([
         "run",
         "python",
-        format!("-s {}", config.spark_url).as_str(),
-        format!("-f {}", path_of("../testdata/insert1.csv")).as_str(),
+        "init.py",
+        "-s",
+        config.spark_url.as_str(),
+        "-f",
+       path_of("../testdata/insert1.csv").as_str(),
     ])
     .current_dir(path_of("../python"));
 
@@ -151,8 +155,11 @@ fn check_iceberg_table_with_spark(config: &TestConfig) {
     cmd.args([
         "run",
         "python",
-        format!("-s {}", config.spark_url).as_str(),
-        format!("-f {}", path_of("../testdata/query1.csv")).as_str(),
+        "check.py",
+        "-s",
+        config.spark_url.as_str(),
+        "-f",
+        path_of("../testdata/query1.csv").as_str(),
     ])
     .current_dir(path_of("../python"));
 
@@ -167,7 +174,7 @@ fn shutdown_docker_compose() {
     run_command(cmd, "shutdown docker compose");
 }
 
-pub async fn test_append_data() {
+async fn do_test_append_data() {
     let mut fixture = prepare_env().await;
     start_docker_compose();
 
@@ -178,4 +185,13 @@ pub async fn test_append_data() {
 
     check_iceberg_table_with_spark(&fixture.args);
     shutdown_docker_compose();
+}
+
+pub fn test_append_data() {
+    let rt = Builder::new_multi_thread()
+        .enable_all()
+        .worker_threads(1).build().unwrap();
+    rt.block_on(async {
+        do_test_append_data().await
+    });
 }

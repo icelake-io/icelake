@@ -16,6 +16,7 @@ csv = { workspace = true }
 arrow = { workspace = true }
 confique = { workspace = true }
 libtest-mimic = { workspace = true }
+futures = { workspace = true }
 
 [[test]]
 name = "integration-test"

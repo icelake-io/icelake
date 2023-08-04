@@ -17,7 +17,6 @@ async-trait = "0.1"
 apache-avro = { version = "0.15", features = ["derive"] }
 arrow = { version = ">=40, <45" }
 bytes = "1"
-futures = "0.3"
 opendal = ">=0.37, <0.40"
 uuid = { version = "1", features = ["v4"] }
 serde = "1"
@@ -39,3 +38,4 @@ clap = { version = "4", features = ["derive"] }
 ordered-float = "3.7.0"
 confique = "0.2"
 libtest-mimic = "0.6"
+futures = { version = "0.3", features = ["executor"]}
