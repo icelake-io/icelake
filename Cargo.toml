@@ -35,5 +35,7 @@ env_logger = "0.10.0"
 csv = "1"
 url = "2"
 regex = "1"
-clap = { version = "4", features = ["derive"]}
+clap = { version = "4", features = ["derive"] }
 ordered-float = "3.7.0"
+confique = "0.2"
+libtest-mimic = "0.6"

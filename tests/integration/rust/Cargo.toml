@@ -14,4 +14,10 @@ opendal = { workspace = true }
 serde = { workspace = true }
 csv = { workspace = true }
 arrow = { workspace = true }
-clap = { workspace = true }
+confique = { workspace = true }
+libtest-mimic = { workspace = true }
+
+[[test]]
+name = "integration-test"
+path = "src/tests.rs"
+harness = false
