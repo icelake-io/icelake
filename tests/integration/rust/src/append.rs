@@ -105,7 +105,7 @@ fn run_command(mut cmd: Command, desc: impl ToString) {
     log::info!("Starting to {}, command: {:?}", &desc, cmd);
     let exit = cmd.status().unwrap();
     if exit.success() {
-        log::info!("{} succeed!", desc.to_string())
+        log::info!("{} succeed!", desc)
     } else {
         panic!("{} failed: {:?}", desc, exit);
     }
