@@ -218,16 +218,8 @@ impl TryFrom<Any> for Types {
                             required: f.required,
                             typ: f.field_type.clone().try_into()?,
                             doc: f.comment.clone(),
-                            initial_default: f
-                                .initial_default
-                                .clone()
-                                .map(serialize_value_to_json)
-                                .transpose()?,
-                            write_default: f
-                                .initial_default
-                                .clone()
-                                .map(serialize_value_to_json)
-                                .transpose()?,
+                            initial_default: serialize_value_to_json(f.initial_default.clone())?,
+                            write_default: serialize_value_to_json(f.write_default.clone())?,
                         })
                     })
                     .collect::<Result<Vec<Field>>>()?;
@@ -278,10 +270,10 @@ pub struct Field {
     typ: Types,
     #[serde(skip_serializing_if = "Option::is_none")]
     doc: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    initial_default: Option<serde_json::Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    write_default: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "serde_json::Value::is_null", default)]
+    initial_default: serde_json::Value,
+    #[serde(skip_serializing_if = "serde_json::Value::is_null", default)]
+    write_default: serde_json::Value,
 }
 
 impl TryFrom<Field> for types::Field {
@@ -290,15 +282,9 @@ impl TryFrom<Field> for types::Field {
     fn try_from(v: Field) -> Result<Self> {
         let field_type = v.typ.try_into()?;
 
-        let initial_default = v
-            .initial_default
-            .map(|v| parse_json_value(&field_type, v))
-            .transpose()?;
+        let initial_default = parse_json_value(&field_type, v.initial_default)?;
 
-        let write_default = v
-            .write_default
-            .map(|v| parse_json_value(&field_type, v))
-            .transpose()?;
+        let write_default = parse_json_value(&field_type, v.write_default)?;
 
         let field = types::Field {
             id: v.id,
@@ -323,8 +309,8 @@ impl TryFrom<types::Field> for Field {
             required: v.required,
             typ: v.field_type.try_into()?,
             doc: v.comment,
-            initial_default: v.initial_default.map(serialize_value_to_json).transpose()?,
-            write_default: v.write_default.map(serialize_value_to_json).transpose()?,
+            initial_default: serialize_value_to_json(v.initial_default)?,
+            write_default: serialize_value_to_json(v.write_default)?,
         })
     }
 }
@@ -332,8 +318,14 @@ impl TryFrom<types::Field> for Field {
 /// parse_json_value will parse given json value into icelake AnyValue.
 ///
 /// Reference: <https://iceberg.apache.org/spec/#json-single-value-serialization>
-fn parse_json_value(expect_type: &types::Any, value: serde_json::Value) -> Result<types::AnyValue> {
-    match &expect_type {
+fn parse_json_value(
+    expect_type: &types::Any,
+    value: serde_json::Value,
+) -> Result<Option<types::AnyValue>> {
+    if value.is_null() {
+        return Ok(None);
+    }
+    let res = match &expect_type {
         types::Any::Primitive(v) => match v {
             types::Primitive::Boolean => parse_json_value_to_boolean(value),
             types::Primitive::Int => parse_json_value_to_int(value),
@@ -353,10 +345,11 @@ fn parse_json_value(expect_type: &types::Any, value: serde_json::Value) -> Resul
         types::Any::Struct(v) => parse_json_value_to_struct(v, value),
         types::Any::List(v) => parse_json_value_to_list(v, value),
         types::Any::Map(v) => parse_json_value_to_map(v, value),
-    }
+    };
+    Ok(Some(res?))
 }
 
-fn serialize_value_to_json(value: types::AnyValue) -> Result<serde_json::Value> {
+fn serialize_value_to_json(value: Option<types::AnyValue>) -> Result<serde_json::Value> {
     Ok(serde_json::to_value(value)?)
 }
 
@@ -798,7 +791,7 @@ fn parse_json_value_to_struct(
 
                 let value = parse_json_value(&expect_type, value)?;
 
-                builder.add_field(key, Some(value))?;
+                builder.add_field(key, value)?;
             }
         }
         _ => {
@@ -862,7 +855,10 @@ fn parse_json_value_to_map(
     let mut keys = Vec::with_capacity(mv.keys.len());
 
     for v in mv.keys {
-        keys.push(parse_json_value(key_type, v)?)
+        keys.push(parse_json_value(key_type, v)?.ok_or(Error::new(
+            ErrorKind::IcebergDataInvalid,
+            "map key can not be null",
+        ))?);
     }
 
     let value_type = &expect_map.value_type;

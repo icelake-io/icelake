@@ -53,7 +53,7 @@ pub enum AnyValue {
     /// struct value stores as a map from field id to field value.
     Struct(StructValue),
     /// A list type with a list of typed values.
-    List(Vec<AnyValue>),
+    List(Vec<Option<AnyValue>>),
     /// A map is a collection of key-value pairs with a key type and a value type.
     ///
     /// map value carries the value of a map type, could be used as
@@ -62,7 +62,7 @@ pub enum AnyValue {
         /// All keys in this map.
         keys: Vec<AnyValue>,
         /// All values in this map.
-        values: Vec<AnyValue>,
+        values: Vec<Option<AnyValue>>,
     },
 }
 
