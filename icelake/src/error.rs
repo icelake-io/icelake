@@ -27,6 +27,10 @@ pub enum ErrorKind {
     ///
     /// This error is returned when given iceberg feature is not supported.
     IcebergFeatureUnsupported,
+    /// Arrow data type is not supported.
+    ///
+    /// This error is returned when fail to convert from or convert to arrow data or type.
+    ArrowUnsupported,
 }
 
 impl ErrorKind {
@@ -48,6 +52,7 @@ impl From<ErrorKind> for &'static str {
             ErrorKind::Unexpected => "Unexpected",
             ErrorKind::IcebergDataInvalid => "IcebergDataInvalid",
             ErrorKind::IcebergFeatureUnsupported => "IcebergFeatureUnsupported",
+            ErrorKind::ArrowUnsupported => "ArrowUnsupported",
         }
     }
 }

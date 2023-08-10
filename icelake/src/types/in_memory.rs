@@ -144,6 +144,12 @@ pub enum Primitive {
     Binary,
 }
 
+impl From<Primitive> for Any {
+    fn from(value: Primitive) -> Self {
+        Any::Primitive(value)
+    }
+}
+
 /// Primitive Values within a schema.
 ///
 /// Used to represent the value of a primitive type, like as default value.
@@ -289,7 +295,8 @@ pub struct Field {
 }
 
 impl Field {
-    fn required(id: i32, name: impl Into<String>, r#type: Any) -> Self {
+    /// Create a required field.
+    pub fn required(id: i32, name: impl Into<String>, r#type: Any) -> Self {
         Self {
             id,
             name: name.into(),
@@ -301,7 +308,8 @@ impl Field {
         }
     }
 
-    fn optional(id: i32, name: impl Into<String>, r#type: Any) -> Self {
+    /// Create an optional field.
+    pub fn optional(id: i32, name: impl Into<String>, r#type: Any) -> Self {
         Self {
             id,
             name: name.into(),
@@ -330,6 +338,12 @@ pub struct StructValue {
     field_values: Vec<AnyValue>,
     type_info: Arc<Struct>,
     null_bitmap: BitVec,
+}
+
+impl From<StructValue> for AnyValue {
+    fn from(value: StructValue) -> Self {
+        AnyValue::Struct(value)
+    }
 }
 
 impl StructValue {
