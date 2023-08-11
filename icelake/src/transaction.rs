@@ -2,8 +2,8 @@
 
 use crate::error::Result;
 use crate::types::{
-    DataFile, DataFileFormat, ManifestContentType, ManifestEntry, ManifestFile, ManifestListWriter,
-    ManifestMetadata, ManifestStatus, ManifestWriter, Snapshot,
+    DataFile, DataFileFormat, ManifestContentType, ManifestEntry, ManifestFile, ManifestList,
+    ManifestListWriter, ManifestMetadata, ManifestStatus, ManifestWriter, Snapshot,
 };
 use crate::Table;
 use opendal::Operator;
@@ -142,11 +142,16 @@ impl<'a> Transaction<'a> {
             let manifest_list_entry = writer.write(manifest_file).await?;
 
             // Load existing manifest list
-            let mut manifest_list = cur_metadata
-                .current_snapshot()?
-                .load_manifest_list(&ctx.io)
-                .await?;
-            manifest_list.entries.push(manifest_list_entry);
+            let manifest_list = match cur_metadata.current_snapshot()? {
+                Some(s) => {
+                    let mut ret = s.load_manifest_list(&ctx.io).await?;
+                    ret.entries.push(manifest_list_entry);
+                    ret
+                }
+                None => ManifestList {
+                    entries: vec![manifest_list_entry],
+                },
+            };
 
             let manifest_list_path = Transaction::manifest_list_path(&mut ctx, next_snapshot_id);
             // Writing manifest list
@@ -164,14 +169,20 @@ impl<'a> Transaction<'a> {
             format!("{}/{manifest_list_path}", cur_metadata.location)
         };
 
-        let cur_snapshot = cur_metadata.current_snapshot()?;
-        let mut new_snapshot = cur_snapshot.clone();
+        let mut new_snapshot = match cur_metadata.current_snapshot()? {
+            Some(cur_snapshot) => {
+                let mut new_snapshot = cur_snapshot.clone();
+                new_snapshot.parent_snapshot_id = Some(cur_snapshot.snapshot_id);
+                new_snapshot
+            }
+            None => Snapshot::default(),
+        };
         new_snapshot.snapshot_id = next_snapshot_id;
-        new_snapshot.parent_snapshot_id = Some(cur_snapshot.snapshot_id);
         new_snapshot.sequence_number = next_seq_number;
         new_snapshot.timestamp_ms =
             SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as i64;
         new_snapshot.manifest_list = manifest_list_path;
+        new_snapshot.schema_id = Some(cur_metadata.current_schema_id as i64);
 
         // TODO: Add operations
         Ok(new_snapshot)
