@@ -26,6 +26,7 @@ use crate::{Error, Table};
 
 pub(crate) const UNASSIGNED_SEQ_NUM: i64 = -1;
 const MAIN_BRANCH: &str = "main";
+const EMPTY_SNAPSHOT_ID: i64 = -1;
 
 /// All data types are either primitives or nested types, which are maps, lists, or structs.
 #[derive(Debug, PartialEq, Clone, Eq)]
@@ -1632,7 +1633,7 @@ impl ToString for DataFileFormat {
 }
 
 /// Snapshot of contains all data of a table at a point in time.
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Default)]
 pub struct Snapshot {
     /// A unique long ID
     pub snapshot_id: i64,
@@ -1926,22 +1927,24 @@ impl TableMetadata {
     }
 
     /// Current schema.
-    pub fn current_snapshot(&self) -> Result<&Snapshot> {
+    pub fn current_snapshot(&self) -> Result<Option<&Snapshot>> {
         if let (Some(snapshots), Some(snapshot_id)) = (&self.snapshots, self.current_snapshot_id) {
-            snapshots
-                .iter()
-                .find(|s| s.snapshot_id == snapshot_id)
-                .ok_or_else(|| {
-                    Error::new(
-                        ErrorKind::IcebergDataInvalid,
-                        format!("Snapshot id {snapshot_id} not found!"),
-                    )
-                })
-        } else {
-            Err(Error::new(
-                ErrorKind::IcebergDataInvalid,
-                "Current snapshot missing!",
+            if snapshot_id == EMPTY_SNAPSHOT_ID {
+                return Ok(None);
+            }
+            Ok(Some(
+                snapshots
+                    .iter()
+                    .find(|s| s.snapshot_id == snapshot_id)
+                    .ok_or_else(|| {
+                        Error::new(
+                            ErrorKind::IcebergDataInvalid,
+                            format!("Snapshot id {snapshot_id} not found!"),
+                        )
+                    })?,
             ))
+        } else {
+            Ok(None)
         }
     }
 

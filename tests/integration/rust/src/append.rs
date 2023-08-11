@@ -143,7 +143,7 @@ fn init_iceberg_table_with_spark(config: &TestConfig) {
         "-s",
         config.spark_url.as_str(),
         "-f",
-        path_of("../testdata/insert1.csv").as_str(),
+        path_of("../testdata/data.csv").as_str(),
     ])
     .current_dir(path_of("../python"));
 
@@ -159,7 +159,7 @@ fn check_iceberg_table_with_spark(config: &TestConfig) {
         "-s",
         config.spark_url.as_str(),
         "-f",
-        path_of("../testdata/query1.csv").as_str(),
+        path_of("../testdata/data.csv").as_str(),
     ])
     .current_dir(path_of("../python"));
 

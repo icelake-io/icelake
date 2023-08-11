@@ -1,5 +1,4 @@
 from pyspark.sql import SparkSession
-import csv
 import argparse
 
 
@@ -23,15 +22,6 @@ def check(args):
     for sql in init_table_sqls:
         print(f"Executing sql: {sql}")
         spark.sql(sql)
-
-    with open(args.file, newline='') as insert_csv_file:
-        inserts = ", ".join([f"""({row[0]}, "{row[1]}", {row[2]})""" for row in csv.reader(insert_csv_file)])
-        sql = f"""
-         INSERT INTO s1.t1 VALUES {inserts}
-         """
-        print(f"Executing sql: {sql}")
-        spark.sql(sql)
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Test icelake with spark')
