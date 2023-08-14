@@ -5,12 +5,12 @@ use std::convert::TryFrom;
 use std::sync::Arc;
 
 use crate::error::Error;
+use crate::types;
+use crate::types::Any;
 use arrow::datatypes::DataType as ArrowDataType;
 use arrow::datatypes::Field as ArrowField;
 use arrow::datatypes::Schema as ArrowSchema;
 use arrow::datatypes::TimeUnit;
-
-use super::in_memory as types;
 
 impl TryFrom<types::Schema> for ArrowSchema {
     type Error = Error;
@@ -45,15 +45,15 @@ impl TryFrom<types::Any> for ArrowDataType {
 
     fn try_from(value: types::Any) -> Result<Self, Self::Error> {
         match value {
-            super::Any::Primitive(v) => v.try_into(),
-            super::Any::Struct(v) => {
+            Any::Primitive(v) => v.try_into(),
+            Any::Struct(v) => {
                 let mut fields = vec![];
                 for f in v.fields() {
                     fields.push(ArrowField::try_from(f.clone())?);
                 }
                 Ok(ArrowDataType::Struct(fields.into()))
             }
-            super::Any::List(v) => {
+            Any::List(v) => {
                 let field = ArrowField::new_dict(
                     "item",
                     (*v.element_type).try_into()?,
@@ -64,7 +64,7 @@ impl TryFrom<types::Any> for ArrowDataType {
 
                 Ok(ArrowDataType::List(Arc::new(field)))
             }
-            super::Any::Map(v) => {
+            Any::Map(v) => {
                 let field = ArrowField::new(
                     "entries",
                     ArrowDataType::Struct(

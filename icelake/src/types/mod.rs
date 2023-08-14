@@ -7,7 +7,7 @@ pub use in_memory::*;
 mod on_disk;
 pub use on_disk::*;
 
-mod to_arrow;
+mod arrow;
 
 mod to_avro;
 
