@@ -1376,13 +1376,6 @@ pub struct DataFile {
     pub sort_order_id: Option<i32>,
 }
 
-// impl DataFile {
-//     /// Set the partition for this data file.
-//     pub fn set_partition(&mut self, partition: StructValue) {
-//         self.partition = partition;
-//     }
-// }
-
 mod datafile {
     use super::*;
     use once_cell::sync::Lazy;
