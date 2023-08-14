@@ -2,8 +2,8 @@
 //! formats and the convert functions to in-memory.
 
 mod manifest_file;
-pub use manifest_file::parse_manifest_file;
 pub(crate) use manifest_file::ManifestWriter;
+pub use manifest_file::{data_file_from_json, data_file_to_json, parse_manifest_file};
 
 mod manifest_list;
 pub use manifest_list::parse_manifest_list;
