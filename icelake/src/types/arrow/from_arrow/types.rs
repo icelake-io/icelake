@@ -53,11 +53,80 @@ impl TryFrom<ArrowDataType> for Any {
             }
             _ => {
                 return Err(Error::new(
-                    crate::ErrorKind::ArrowUnsupported,
+                    crate::ErrorKind::DataTypeUnsupported,
                     format!("Unsupported convert arrow type: {:?} to Any", value),
                 ));
             }
         };
         Ok(res)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use arrow::datatypes::Field as ArrowField;
+    #[test]
+    fn test_simple_try_into_any() {
+        let arrow_struct = ArrowDataType::Struct(
+            vec![
+                ArrowField::new("a", ArrowDataType::Int32, true),
+                ArrowField::new("b", ArrowDataType::Utf8, false),
+            ]
+            .into(),
+        );
+
+        let expect_any_struct = Any::Struct(
+            types::Struct::new(vec![
+                Field::optional(0, "a", types::Primitive::Int.into()),
+                Field::required(1, "b", types::Primitive::String.into()),
+            ])
+            .into(),
+        );
+
+        assert_eq!(expect_any_struct, arrow_struct.try_into().unwrap());
+    }
+
+    #[test]
+    fn test_nest_try_into_any() {
+        let arrow_struct = ArrowDataType::Struct(
+            vec![
+                ArrowField::new("a", ArrowDataType::Int32, true),
+                ArrowField::new("b", ArrowDataType::Utf8, false),
+                ArrowField::new(
+                    "c",
+                    ArrowDataType::Struct(
+                        vec![
+                            ArrowField::new("d", ArrowDataType::Int32, true),
+                            ArrowField::new("e", ArrowDataType::Utf8, false),
+                        ]
+                        .into(),
+                    ),
+                    false,
+                ),
+            ]
+            .into(),
+        );
+
+        let expect_any_struct = Any::Struct(
+            types::Struct::new(vec![
+                Field::optional(0, "a", types::Primitive::Int.into()),
+                Field::required(1, "b", types::Primitive::String.into()),
+                Field::required(
+                    2,
+                    "c",
+                    Any::Struct(
+                        types::Struct::new(vec![
+                            Field::optional(0, "d", types::Primitive::Int.into()),
+                            Field::required(1, "e", types::Primitive::String.into()),
+                        ])
+                        .into(),
+                    ),
+                ),
+            ])
+            .into(),
+        );
+
+        assert_eq!(expect_any_struct, arrow_struct.try_into().unwrap());
     }
 }

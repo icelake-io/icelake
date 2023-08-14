@@ -201,6 +201,12 @@ pub enum PrimitiveValue {
     Binary(Vec<u8>),
 }
 
+impl From<PrimitiveValue> for AnyValue {
+    fn from(value: PrimitiveValue) -> Self {
+        AnyValue::Primitive(value)
+    }
+}
+
 impl Serialize for PrimitiveValue {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where

@@ -16,7 +16,7 @@ impl ToPrimitiveValue for i8 {
             // TODO: Is that right?
             arrow::datatypes::DataType::Int8 => Ok(PrimitiveValue::Int(self.into())),
             _ => Err(Error::new(
-                ErrorKind::ArrowUnsupported,
+                ErrorKind::DataTypeUnsupported,
                 format!("Cannot convert i8 to {:?}", data_type),
             )),
         }
@@ -28,7 +28,7 @@ impl ToPrimitiveValue for i16 {
         match data_type {
             arrow::datatypes::DataType::Int16 => Ok(PrimitiveValue::Int(self.into())),
             _ => Err(Error::new(
-                ErrorKind::ArrowUnsupported,
+                ErrorKind::DataTypeUnsupported,
                 format!("Cannot convert i16 to {:?}", data_type),
             )),
         }
@@ -45,7 +45,7 @@ impl ToPrimitiveValue for i32 {
             }
             arrow::datatypes::DataType::Time32(_) => todo!(),
             _ => Err(Error::new(
-                ErrorKind::ArrowUnsupported,
+                ErrorKind::DataTypeUnsupported,
                 format!("Cannot convert i32 to {:?}", data_type),
             )),
         }
@@ -66,7 +66,7 @@ impl ToPrimitiveValue for i64 {
             arrow::datatypes::DataType::Time64(_) => todo!(),
             arrow::datatypes::DataType::Timestamp(_, None) => todo!(),
             _ => Err(Error::new(
-                ErrorKind::ArrowUnsupported,
+                ErrorKind::DataTypeUnsupported,
                 format!("Cannot convert i64 to {:?}", data_type),
             )),
         }
@@ -81,7 +81,7 @@ impl ToPrimitiveValue for i128 {
                 todo!()
             }
             _ => Err(Error::new(
-                ErrorKind::ArrowUnsupported,
+                ErrorKind::DataTypeUnsupported,
                 format!("Cannot convert i128 to {:?}", data_type),
             )),
         }
@@ -93,7 +93,7 @@ impl ToPrimitiveValue for i256 {
         match data_type {
             arrow::datatypes::DataType::Decimal256(_, _) => todo!(),
             _ => Err(Error::new(
-                ErrorKind::ArrowUnsupported,
+                ErrorKind::DataTypeUnsupported,
                 format!("Cannot convert i256 to {:?}", data_type),
             )),
         }
@@ -105,7 +105,7 @@ impl ToPrimitiveValue for f32 {
         match data_type {
             arrow::datatypes::DataType::Float32 => Ok(PrimitiveValue::Float(self.into())),
             _ => Err(Error::new(
-                ErrorKind::ArrowUnsupported,
+                ErrorKind::DataTypeUnsupported,
                 format!("Cannot convert f32 to {:?}", data_type),
             )),
         }
@@ -117,7 +117,7 @@ impl ToPrimitiveValue for f64 {
         match data_type {
             arrow::datatypes::DataType::Float64 => Ok(PrimitiveValue::Double(self.into())),
             _ => Err(Error::new(
-                ErrorKind::ArrowUnsupported,
+                ErrorKind::DataTypeUnsupported,
                 format!("Cannot convert f64 to {:?}", data_type),
             )),
         }
@@ -129,7 +129,7 @@ impl ToPrimitiveValue for u8 {
         match data_type {
             arrow::datatypes::DataType::UInt8 => todo!(),
             _ => Err(Error::new(
-                ErrorKind::ArrowUnsupported,
+                ErrorKind::DataTypeUnsupported,
                 format!("Cannot convert u8 to {:?}", data_type),
             )),
         }
@@ -141,7 +141,7 @@ impl ToPrimitiveValue for u16 {
         match data_type {
             arrow::datatypes::DataType::UInt16 => todo!(),
             _ => Err(Error::new(
-                ErrorKind::ArrowUnsupported,
+                ErrorKind::DataTypeUnsupported,
                 format!("Cannot convert u16 to {:?}", data_type),
             )),
         }
@@ -153,7 +153,7 @@ impl ToPrimitiveValue for u32 {
         match data_type {
             arrow::datatypes::DataType::UInt32 => todo!(),
             _ => Err(Error::new(
-                ErrorKind::ArrowUnsupported,
+                ErrorKind::DataTypeUnsupported,
                 format!("Cannot convert u32 to {:?}", data_type),
             )),
         }
@@ -165,7 +165,7 @@ impl ToPrimitiveValue for u64 {
         match data_type {
             arrow::datatypes::DataType::UInt64 => todo!(),
             _ => Err(Error::new(
-                ErrorKind::ArrowUnsupported,
+                ErrorKind::DataTypeUnsupported,
                 format!("Cannot convert u64 to {:?}", data_type),
             )),
         }
