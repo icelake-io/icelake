@@ -100,6 +100,24 @@ pub fn parse_manifest_file(bs: &[u8]) -> Result<types::ManifestFile> {
     Ok(types::ManifestFile { metadata, entries })
 }
 
+pub fn data_file_to_json(data_file: types::DataFile) -> Result<serde_json::Value> {
+    let data = DataFile::try_from(data_file)?;
+    serde_json::to_value(data).map_err(|e| {
+        Error::new(
+            ErrorKind::Unexpected,
+            "Failed to serialize data file to json",
+        )
+        .set_source(e)
+    })
+}
+
+pub fn data_file_from_json(value: serde_json::Value) -> Result<types::DataFile> {
+    let data_file = serde_json::from_value::<DataFile>(value).map_err(|e| {
+        Error::new(ErrorKind::Unexpected, "Failed to parse data file from json").set_source(e)
+    })?;
+    types::DataFile::try_from(data_file)
+}
+
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(test, derive(Debug, PartialEq))]
 struct ManifestEntry {
