@@ -8,6 +8,8 @@ mod on_disk;
 pub use on_disk::*;
 
 mod arrow;
+pub use self::arrow::from_arrow::*;
+pub use self::arrow::to_arrow::*;
 
 mod to_avro;
 

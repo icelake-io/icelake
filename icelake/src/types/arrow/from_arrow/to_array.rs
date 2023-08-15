@@ -1,7 +1,7 @@
 use super::to_primitive::ToPrimitiveValue;
 use crate::types::PrimitiveValue;
 use crate::types::{Any, AnyValue, StructValueBuilder};
-use crate::Result;
+use crate::{Error, Result};
 use arrow::array::{
     Array, Date32Array, Date64Array, Float32Array, Float64Array, Int16Array, Int32Array,
     Int64Array, Int8Array, UInt16Array, UInt32Array, UInt64Array, UInt8Array,
@@ -11,7 +11,12 @@ use arrow::{
     datatypes::ArrowPrimitiveType,
 };
 use std::iter::Iterator;
+
+/// This trait is used to convert arrow array into anyvalue array. Most of the arrow arrays
+/// implement this trait. Excepct the array which need to pre-compute the target type like
+/// `StructArray`.
 pub trait ToArray {
+    /// Convert arrow array into anyvalue array.
     fn to_anyvalue_array(&self) -> Result<Vec<Option<AnyValue>>>;
 }
 
@@ -44,7 +49,10 @@ where
 /// We use the custom function to convert struct array to anyvalue array instead of using
 /// `ToArray` beacsue we need to pre-compute the target type of the struct array. This can
 /// save convert time and the memory cost in some case.
-fn struct_to_anyvalue_array_with_type(
+///
+/// # NOTE
+/// Caller should guarantee target type is match with type of array. It's order sensitive.
+pub fn struct_to_anyvalue_array_with_type(
     array: &StructArray,
     target_type: Any,
 ) -> Result<Vec<Option<AnyValue>>> {
@@ -56,6 +64,9 @@ fn struct_to_anyvalue_array_with_type(
             .iter()
             .zip(target_struct.fields().iter())
             .map(|(array, target_field)| {
+                if target_field.field_type != array.data_type().clone().try_into()? {
+                    return Err(Error::new(crate::ErrorKind::DataTypeUnsupported,"target_type is not match with array type. You should guarantee the target_type is the same with array type (including order)."));
+                }
                 Ok(
                     to_anyvalue_array_with_type(&array, target_field.field_type.clone())?
                         .into_iter(),
