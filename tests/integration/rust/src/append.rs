@@ -1,7 +1,7 @@
 //! This module contains append only tests.
 
 use arrow::csv::ReaderBuilder;
-use arrow::datatypes::{DataType, Field, Schema};
+use arrow::datatypes::{DataType, Field, Schema, TimeUnit};
 use arrow::record_batch::RecordBatch;
 use confique::Config;
 use icelake::transaction::Transaction;
@@ -88,8 +88,23 @@ async fn create_icelake_table(args: &TestConfig) -> Table {
 fn read_records_to_arrow(filename: &str) -> Vec<RecordBatch> {
     let schema = Schema::new(vec![
         Field::new("id", DataType::Int64, false),
-        Field::new("name", DataType::Utf8, false),
-        Field::new("distance", DataType::Int64, false),
+        Field::new("v_int", DataType::Int32, true),
+        Field::new("v_long", DataType::Int64, true),
+        Field::new("v_float", DataType::Float32, true),
+        Field::new("v_double", DataType::Float64, true),
+        Field::new("v_varchar", DataType::Utf8, true),
+        Field::new("v_bool", DataType::Boolean, true),
+        Field::new("v_date", DataType::Date32, true),
+        Field::new(
+            "v_timestamp",
+            DataType::Timestamp(TimeUnit::Microsecond, Some("+04:00".into())),
+            true,
+        ),
+        Field::new(
+            "v_decimal",
+            DataType::Decimal128(36, 10),
+            true,
+        ),
     ]);
 
     let csv_reader = ReaderBuilder::new(Arc::new(schema))

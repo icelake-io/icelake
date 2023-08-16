@@ -124,7 +124,7 @@ impl DataFileWriter {
         let file_writer = self.operator.writer(&location).await?;
         let current_writer = {
             let mut props = WriterProperties::builder()
-                .set_writer_version(WriterVersion::PARQUET_2_0)
+                .set_writer_version(WriterVersion::PARQUET_1_0)
                 .set_bloom_filter_enabled(self.table_config.parquet_writer.enable_bloom_filter)
                 .set_compression(self.table_config.parquet_writer.compression)
                 .set_max_row_group_size(self.table_config.parquet_writer.max_row_group_size)
