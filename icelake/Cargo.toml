@@ -31,7 +31,6 @@ regex = { workspace = true }
 ordered-float = { workspace = true }
 apache-avro = { workspace = true }
 bitvec = "1.0.1"
-figment = { workspace = true }
 
 
 [dev-dependencies]

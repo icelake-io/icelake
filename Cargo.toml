@@ -39,4 +39,3 @@ ordered-float = "3.7.0"
 confique = "0.2"
 libtest-mimic = "0.6"
 futures = { version = "0.3", features = ["executor"] }
-figment = { version = "0.10", features = ["toml", "env", "json"] }
