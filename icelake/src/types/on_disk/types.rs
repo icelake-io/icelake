@@ -97,14 +97,14 @@ impl TryFrom<Types> for types::Any {
                     ));
                 }
 
-                let precision = parts[0].parse().map_err(|err| {
+                let precision = parts[0].trim().parse().map_err(|err| {
                     Error::new(
                         ErrorKind::IcebergDataInvalid,
                         format!("decimal type {v:?} is invalid"),
                     )
                     .set_source(err)
                 })?;
-                let scale = parts[1].parse().map_err(|err| {
+                let scale = parts[1].trim().parse().map_err(|err| {
                     Error::new(
                         ErrorKind::IcebergDataInvalid,
                         format!("decimal type {v:?} is invalid"),

@@ -11,9 +11,16 @@ def check(args):
         """
         CREATE TABLE s1.t1
         (
-          id bigint,
-          name string,
-          distance bigint
+          id long,
+          v_int int,
+          v_long long,
+          v_float float,
+          v_double double,
+          v_varchar string,
+          v_bool boolean,
+          v_date date,
+          v_timestamp timestamp,
+          v_decimal decimal(36, 10)
         ) USING iceberg
         TBLPROPERTIES ('format-version'='2');
         """
