@@ -12,6 +12,7 @@ pub use error::Error;
 pub use error::ErrorKind;
 pub use error::Result;
 
+pub mod config;
 pub mod io;
 pub mod transaction;
 pub mod types;

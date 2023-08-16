@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 
+use crate::config::TableConfigRef;
 use crate::{
     types::{DataFile, StructValue},
     Result,
@@ -37,6 +38,8 @@ pub struct DataFileWriter {
     current_location: String,
 
     result: Vec<DataFile>,
+
+    table_config: TableConfigRef,
 }
 
 impl DataFileWriter {
@@ -48,6 +51,7 @@ impl DataFileWriter {
         arrow_schema: SchemaRef,
         rows_divisor: usize,
         target_file_size_in_bytes: u64,
+        table_config: TableConfigRef,
     ) -> Result<Self> {
         let mut writer = Self {
             operator,
@@ -60,6 +64,7 @@ impl DataFileWriter {
             current_row_num: 0,
             current_location: String::new(),
             result: vec![],
+            table_config,
         };
         writer.open_new_writer().await?;
         Ok(writer)
@@ -118,11 +123,20 @@ impl DataFileWriter {
         let location = self.location_generator.generate_name();
         let file_writer = self.operator.writer(&location).await?;
         let current_writer = {
-            let props = WriterProperties::builder()
+            let mut props = WriterProperties::builder()
                 .set_writer_version(WriterVersion::PARQUET_2_0)
-                .build();
+                .set_bloom_filter_enabled(self.table_config.parquet_writer.enable_bloom_filter)
+                .set_compression(self.table_config.parquet_writer.compression)
+                .set_max_row_group_size(self.table_config.parquet_writer.max_row_group_size)
+                .set_write_batch_size(self.table_config.parquet_writer.write_batch_size)
+                .set_data_page_size_limit(self.table_config.parquet_writer.data_page_size);
+
+            if let Some(created_by) = self.table_config.parquet_writer.created_by.as_ref() {
+                props = props.set_created_by(created_by.to_string());
+            }
+
             ParquetWriterBuilder::new(file_writer, self.arrow_schema.clone())
-                .with_properties(props)
+                .with_properties(props.build())
                 .build()?
         };
         self.current_writer = Some(current_writer);
@@ -227,6 +241,7 @@ mod test {
     use anyhow::Result;
     use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 
+    use crate::config::TableConfig;
     use crate::{
         io::{data_file_writer, location_generator::DataFileLocationGenerator},
         types::parse_table_metadata,
@@ -265,6 +280,7 @@ mod test {
             to_write.schema(),
             1024,
             1024 * 1024,
+            Arc::new(TableConfig::default()),
         )
         .await?;
 
