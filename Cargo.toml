@@ -38,4 +38,4 @@ clap = { version = "4", features = ["derive"] }
 ordered-float = "3.7.0"
 confique = "0.2"
 libtest-mimic = "0.6"
-futures = { version = "0.3", features = ["executor"]}
+futures = { version = "0.3", features = ["executor"] }

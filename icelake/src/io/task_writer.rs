@@ -1,6 +1,7 @@
 //! task_writer module provide a task writer for writing data in a table.
 //! table writer used directly by the compute engine.
 
+use crate::config::TableConfigRef;
 use arrow::datatypes::Schema as ArrowSchema;
 use arrow::record_batch::RecordBatch;
 use opendal::Operator;
@@ -34,6 +35,7 @@ impl TaskWriter {
         partition_id: usize,
         task_id: usize,
         suffix: Option<String>,
+        table_config: TableConfigRef,
     ) -> Result<Self> {
         let schema: ArrowSchema = table_metadata
             .schemas
@@ -74,6 +76,7 @@ impl TaskWriter {
                         suffix,
                     )?,
                     operator,
+                    table_config,
                 )
                 .await?,
             ))
@@ -112,6 +115,7 @@ impl UnpartitionedWriter {
         table_location: String,
         location_generator: DataFileLocationGenerator,
         operator: Operator,
+        table_config: TableConfigRef,
     ) -> Result<Self> {
         Ok(Self {
             data_file_writer: DataFileWriter::try_new(
@@ -121,6 +125,7 @@ impl UnpartitionedWriter {
                 schema.into(),
                 1024,
                 1024 * 1024,
+                table_config,
             )
             .await?,
         })

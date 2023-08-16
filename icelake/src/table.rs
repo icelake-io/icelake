@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::sync::atomic::AtomicUsize;
+use std::sync::Arc;
 
 use crate::error::Result;
 use futures::StreamExt;
@@ -10,6 +11,7 @@ use regex::Regex;
 use url::Url;
 use uuid::Uuid;
 
+use crate::config::{TableConfig, TableConfigRef};
 use crate::io::task_writer::TaskWriter;
 use crate::types::{serialize_table_meta, DataFile, TableMetadata};
 use crate::{types, Error, ErrorKind};
@@ -34,11 +36,18 @@ pub struct Table {
     current_table_version: i64,
 
     task_id: AtomicUsize,
+
+    table_config: TableConfigRef,
 }
 
 impl Table {
     /// Create a new table via the given operator.
     pub fn new(op: Operator) -> Self {
+        Self::with_config(op, Arc::new(TableConfig::default()))
+    }
+
+    /// Creates a new table with operator and config.
+    pub fn with_config(op: Operator, config: TableConfigRef) -> Self {
         Self {
             op,
 
@@ -48,6 +57,7 @@ impl Table {
             current_location: None,
             task_id: AtomicUsize::new(0),
             current_table_version: 0,
+            table_config: config,
         }
     }
 
@@ -126,6 +136,13 @@ impl Table {
     /// Open an iceberg table by operator
     pub async fn open_with_op(op: Operator) -> Result<Table> {
         let mut table = Table::new(op);
+        table.load().await?;
+        Ok(table)
+    }
+
+    /// Open an iceberg table with operator and config.
+    pub async fn open_with_config(op: Operator, config: TableConfigRef) -> Result<Self> {
+        let mut table = Table::with_config(op, config);
         table.load().await?;
         Ok(table)
     }
@@ -295,6 +312,7 @@ impl Table {
             0,
             task_id,
             None,
+            self.table_config.clone(),
         )
         .await?;
         Ok(task_writer)
