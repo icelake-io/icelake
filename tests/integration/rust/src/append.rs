@@ -101,6 +101,11 @@ fn read_records_to_arrow(filename: &str) -> Vec<RecordBatch> {
             true,
         ),
         Field::new("v_decimal", DataType::Decimal128(36, 10), true),
+        Field::new(
+            "v_ts_ntz",
+            DataType::Timestamp(TimeUnit::Microsecond, None),
+            true,
+        ),
     ]);
 
     let csv_reader = ReaderBuilder::new(Arc::new(schema))

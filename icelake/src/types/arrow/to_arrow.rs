@@ -115,7 +115,10 @@ impl TryFrom<types::Primitive> for ArrowDataType {
             }
             types::Primitive::Timestampz => {
                 // Timestampz always stored as UTC
-                Ok(ArrowDataType::Timestamp(TimeUnit::Microsecond, None))
+                Ok(ArrowDataType::Timestamp(
+                    TimeUnit::Microsecond,
+                    Some("UTC".into()),
+                ))
             }
             types::Primitive::String => Ok(ArrowDataType::Utf8),
             types::Primitive::Uuid => Ok(ArrowDataType::FixedSizeBinary(16)),

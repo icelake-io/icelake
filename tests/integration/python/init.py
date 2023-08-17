@@ -20,7 +20,8 @@ def check(args):
           v_bool boolean,
           v_date date,
           v_timestamp timestamp,
-          v_decimal decimal(36, 10)
+          v_decimal decimal(36, 10),
+          v_ts_ntz timestamp_ntz
         ) USING iceberg
         TBLPROPERTIES ('format-version'='2');
         """
