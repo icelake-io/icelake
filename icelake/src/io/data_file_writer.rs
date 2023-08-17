@@ -1,6 +1,6 @@
 //! data_file is used create a data file writer to write data into files.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use crate::config::TableConfigRef;
 use crate::{
@@ -23,7 +23,7 @@ use super::{
 pub struct DataFileWriter {
     operator: Operator,
     table_location: String,
-    location_generator: DataFileLocationGenerator,
+    location_generator: Arc<DataFileLocationGenerator>,
     arrow_schema: SchemaRef,
 
     rows_divisor: usize,
@@ -47,7 +47,7 @@ impl DataFileWriter {
     pub async fn try_new(
         operator: Operator,
         table_location: String,
-        location_generator: DataFileLocationGenerator,
+        location_generator: Arc<DataFileLocationGenerator>,
         arrow_schema: SchemaRef,
         rows_divisor: usize,
         target_file_size_in_bytes: u64,
@@ -276,7 +276,7 @@ mod test {
         let mut writer = data_file_writer::DataFileWriter::try_new(
             op.clone(),
             "/tmp/table".to_string(),
-            location_generator,
+            location_generator.into(),
             to_write.schema(),
             1024,
             1024 * 1024,

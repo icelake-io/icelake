@@ -1,4 +1,5 @@
 use super::Transform;
+use crate::Result;
 use arrow::array::ArrayRef;
 mod identity;
 
@@ -7,16 +8,19 @@ pub trait TransformFunction {
     /// transform will take an input array and transform it into a new array.
     /// The implementation of this function will need to check and downcast the input to specific
     /// type.
-    fn transform(&self, input: ArrayRef) -> ArrayRef;
+    fn transform(&self, input: ArrayRef) -> Result<ArrayRef>;
 }
 
 /// BoxedTransformFunction is a boxed trait object of TransformFunction.
 pub type BoxedTransformFunction = Box<dyn TransformFunction>;
 
 /// Create a transform function from a Transform.
-pub fn create_transform_function(transform: Transform) -> BoxedTransformFunction {
+pub fn create_transform_function(transform: &Transform) -> Result<BoxedTransformFunction> {
     match transform {
-        Transform::Identity => Box::new(identity::Identity {}),
-        _ => todo!(),
+        Transform::Identity => Ok(Box::new(identity::Identity {})),
+        _ => Err(crate::error::Error::new(
+            crate::ErrorKind::IcebergFeatureUnsupported,
+            format!("Transform {:?} is not implemented", transform),
+        )),
     }
 }

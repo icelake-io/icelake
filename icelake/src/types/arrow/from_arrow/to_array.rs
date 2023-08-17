@@ -53,19 +53,19 @@ where
 /// # NOTE
 /// Caller should guarantee target type is match with type of array. It's order sensitive.
 pub fn struct_to_anyvalue_array_with_type(
-    array: &StructArray,
+    struct_array: &StructArray,
     target_type: Any,
 ) -> Result<Vec<Option<AnyValue>>> {
-    let row_num = array.len();
+    let row_num = struct_array.len();
     if let Any::Struct(target_struct) = target_type {
-        let arrays = array.columns();
+        let arrays = struct_array.columns();
 
         let mut arrays = arrays
             .iter()
             .zip(target_struct.fields().iter())
             .map(|(array, target_field)| {
                 if target_field.field_type != array.data_type().clone().try_into()? {
-                    return Err(Error::new(crate::ErrorKind::DataTypeUnsupported,"target_type is not match with array type. You should guarantee the target_type is the same with array type (including order)."));
+                    return Err(Error::new(crate::ErrorKind::DataTypeUnsupported,format!("target_type {:?} is not match with array type {}. You should guarantee the target_type is the same with array type (including order).",target_struct,struct_array.data_type())));
                 }
                 Ok(
                     to_anyvalue_array_with_type(&array, target_field.field_type.clone())?
@@ -74,7 +74,7 @@ pub fn struct_to_anyvalue_array_with_type(
             })
             .collect::<Result<Vec<_>>>()?;
 
-        let mut null_iter = array.nulls().map(|null_buf| null_buf.into_iter());
+        let mut null_iter = struct_array.nulls().map(|null_buf| null_buf.into_iter());
         let mut res = Vec::with_capacity(row_num);
         for _ in 0..row_num {
             if let Some(null_iter) = null_iter.as_mut() {

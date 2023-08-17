@@ -31,6 +31,10 @@ pub enum ErrorKind {
     ///
     /// This error is returned when fail to convert data type between external format.
     DataTypeUnsupported,
+    /// Arrow error.
+    ///
+    /// This error is returned when we used arrow lib to process data but failed.
+    ArrowError,
 }
 
 impl ErrorKind {
@@ -53,6 +57,7 @@ impl From<ErrorKind> for &'static str {
             ErrorKind::IcebergDataInvalid => "IcebergDataInvalid",
             ErrorKind::IcebergFeatureUnsupported => "IcebergFeatureUnsupported",
             ErrorKind::DataTypeUnsupported => "DataTypeUnsupported",
+            ErrorKind::ArrowError => "ArrowError",
         }
     }
 }
