@@ -21,10 +21,6 @@ struct TestConfig {
     s3_username: String,
     s3_password: String,
     s3_region: String,
-
-    table_path: String,
-    csv_file: String,
-
     spark_url: String,
 }
 
@@ -33,14 +29,14 @@ struct TestFixture {
 }
 
 impl TestFixture {
-    async fn write_data_with_icelake(&mut self) {
-        let mut table = create_icelake_table(&self.args).await;
+    async fn write_data_with_icelake(&mut self, table_root: &str, csv_file: &str) {
+        let mut table = create_icelake_table(&self.args, table_root).await;
         log::info!(
             "Real path of table is: {}",
             table.current_table_metadata().location
         );
 
-        let records = read_records_to_arrow(self.args.csv_file.as_str());
+        let records = read_records_to_arrow(csv_file);
 
         let mut task_writer = table.task_writer().await.unwrap();
 
@@ -72,9 +68,9 @@ async fn prepare_env() -> TestFixture {
     }
 }
 
-async fn create_icelake_table(args: &TestConfig) -> Table {
+async fn create_icelake_table(args: &TestConfig, table_root: &str) -> Table {
     let mut builder = S3::default();
-    builder.root(args.table_path.as_str());
+    builder.root(table_root);
     builder.bucket(args.s3_bucket.as_str());
     builder.endpoint(args.s3_endpoint.as_str());
     builder.access_key_id(args.s3_username.as_str());
@@ -152,21 +148,13 @@ fn start_docker_compose() {
 
 fn init_iceberg_table_with_spark(config: &TestConfig) {
     let mut cmd = Command::new("poetry");
-    cmd.args([
-        "run",
-        "python",
-        "init.py",
-        "-s",
-        config.spark_url.as_str(),
-        "-f",
-        path_of("../testdata/data.csv").as_str(),
-    ])
-    .current_dir(path_of("../python"));
+    cmd.args(["run", "python", "init.py", "-s", config.spark_url.as_str()])
+        .current_dir(path_of("../python"));
 
     run_command(cmd, "init iceberg table")
 }
 
-fn check_iceberg_table_with_spark(config: &TestConfig) {
+fn check_iceberg_table_with_spark(config: &TestConfig, table_name: &str, data_csv: &str) {
     let mut cmd = Command::new("poetry");
     cmd.args([
         "run",
@@ -175,7 +163,9 @@ fn check_iceberg_table_with_spark(config: &TestConfig) {
         "-s",
         config.spark_url.as_str(),
         "-f",
-        path_of("../testdata/data.csv").as_str(),
+        path_of(format!("../testdata/{}", data_csv)).as_str(),
+        "-t",
+        table_name,
     ])
     .current_dir(path_of("../python"));
 
@@ -197,9 +187,18 @@ async fn do_test_append_data() {
     run_poetry_update();
     init_iceberg_table_with_spark(&fixture.args);
 
-    fixture.write_data_with_icelake().await;
+    // Check simple table
+    fixture
+        .write_data_with_icelake("demo/s1/t1", "data.csv")
+        .await;
+    check_iceberg_table_with_spark(&fixture.args, "t1", "data.csv");
 
-    check_iceberg_table_with_spark(&fixture.args);
+    // Check partition table
+    fixture
+        .write_data_with_icelake("demo/s1/t2", "partition_data.csv")
+        .await;
+    check_iceberg_table_with_spark(&fixture.args, "t2", "partition_data.csv");
+
     shutdown_docker_compose();
 }
 
