@@ -19,6 +19,8 @@ def strtodate(v):
 def strtots(v):
     return datetime.fromisoformat(v).astimezone(timezone.utc).replace(tzinfo=None)
 
+def strtots_no_tz(v):
+    return datetime.fromisoformat(v)
 
 def check(args):
     tc = unittest.TestCase()
@@ -46,6 +48,7 @@ def check(args):
             tc.assertEqual(row1[7], strtodate(row2[7]))
             tc.assertEqual(row1[8], strtots(row2[8]))
             tc.assertEqual(row1[9], Decimal(row2[9]))
+            tc.assertEqual(row1[10], strtots_no_tz(row2[10]))
 
 
 if __name__ == "__main__":
