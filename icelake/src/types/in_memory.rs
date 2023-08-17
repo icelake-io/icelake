@@ -422,10 +422,12 @@ impl StructValueBuilder {
         if self
             .type_info
             .lookup_field(field_id)
-            .ok_or(Error::new(
-                ErrorKind::IcebergDataInvalid,
-                format!("Field {} is not found", field_id),
-            ))?
+            .ok_or_else(|| {
+                Error::new(
+                    ErrorKind::IcebergDataInvalid,
+                    format!("Field {} is not found", field_id),
+                )
+            })?
             .required
             && field_value.is_none()
         {
@@ -435,10 +437,12 @@ impl StructValueBuilder {
             ));
         }
         // Check the field id is valid.
-        self.type_info.lookup_type(field_id).ok_or(Error::new(
-            ErrorKind::IcebergDataInvalid,
-            format!("Field {} is not found", field_id),
-        ))?;
+        self.type_info.lookup_type(field_id).ok_or_else(|| {
+            Error::new(
+                ErrorKind::IcebergDataInvalid,
+                format!("Field {} is not found", field_id),
+            )
+        })?;
         // TODO: Check the field type is consistent.
         // TODO: Check the duplication of field.
 
@@ -452,10 +456,12 @@ impl StructValueBuilder {
         let mut null_bitmap = BitVec::with_capacity(self.fileds.len());
 
         for field in self.type_info.fields.iter() {
-            let field_value = self.fileds.remove(&field.id).ok_or(Error::new(
-                ErrorKind::IcebergDataInvalid,
-                format!("Field {} is required", field.name),
-            ))?;
+            let field_value = self.fileds.remove(&field.id).ok_or_else(|| {
+                Error::new(
+                    ErrorKind::IcebergDataInvalid,
+                    format!("Field {} is required", field.name),
+                )
+            })?;
             if let Some(value) = field_value {
                 null_bitmap.push(false);
                 field_values.push(value);

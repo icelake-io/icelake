@@ -56,13 +56,15 @@ impl DataFileLocationGenerator {
             if let Some(data_location) = data_location {
                 data_location
                     .strip_prefix(base_location)
-                    .ok_or(Error::new(
-                        ErrorKind::IcebergDataInvalid,
-                        format!(
-                            "data location {} is not a subpath of table location {}",
-                            data_location, base_location
-                        ),
-                    ))?
+                    .ok_or_else(|| {
+                        Error::new(
+                            ErrorKind::IcebergDataInvalid,
+                            format!(
+                                "data location {} is not a subpath of table location {}",
+                                data_location, base_location
+                            ),
+                        )
+                    })?
                     .to_string()
             } else {
                 "data".to_string()
