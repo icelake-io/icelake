@@ -61,7 +61,7 @@ struct ManifestListEntry {
     existing_rows_count: i64,
     #[serde(default)]
     deleted_rows_count: i64,
-    partitions: Vec<FieldSummary>,
+    partitions: Option<Vec<FieldSummary>>,
     key_metadata: Option<Vec<u8>>,
 }
 
@@ -71,11 +71,16 @@ impl TryFrom<ManifestListEntry> for types::ManifestListEntry {
     fn try_from(v: ManifestListEntry) -> Result<Self> {
         let content = (v.content as u8).try_into()?;
 
-        let partitions = v
-            .partitions
-            .into_iter()
-            .map(types::FieldSummary::try_from)
-            .collect::<Result<Vec<types::FieldSummary>>>()?;
+        let partitions = if let Some(partitions) = v.partitions {
+            Some(
+                partitions
+                    .into_iter()
+                    .map(types::FieldSummary::try_from)
+                    .collect::<Result<Vec<types::FieldSummary>>>()?,
+            )
+        } else {
+            None
+        };
 
         Ok(types::ManifestListEntry {
             manifest_path: v.manifest_path,
@@ -101,11 +106,12 @@ impl From<types::ManifestListEntry> for ManifestListEntry {
     fn from(value: types::ManifestListEntry) -> Self {
         let content: i32 = value.content as i32;
 
-        let partitions = value
-            .partitions
-            .into_iter()
-            .map(FieldSummary::from)
-            .collect::<Vec<FieldSummary>>();
+        let partitions = value.partitions.map(|partitions| {
+            partitions
+                .into_iter()
+                .map(FieldSummary::from)
+                .collect::<Vec<FieldSummary>>()
+        });
 
         Self {
             manifest_path: value.manifest_path,
@@ -127,8 +133,7 @@ impl From<types::ManifestListEntry> for ManifestListEntry {
     }
 }
 
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(test, derive(Debug, PartialEq, Eq))]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 struct FieldSummary {
     /// field: 509
     ///
@@ -139,6 +144,11 @@ struct FieldSummary {
     /// Whether the manifest contains at least one partition with a NaN
     /// value for the field
     contains_nan: Option<bool>,
+
+    #[serde(with = "serde_bytes")]
+    lower_bound: Option<Vec<u8>>,
+    #[serde(with = "serde_bytes")]
+    upper_bound: Option<Vec<u8>>,
 }
 
 impl TryFrom<FieldSummary> for types::FieldSummary {
@@ -148,6 +158,8 @@ impl TryFrom<FieldSummary> for types::FieldSummary {
         Ok(types::FieldSummary {
             contains_null: v.contains_null,
             contains_nan: v.contains_nan,
+            lower_bound: v.lower_bound,
+            upper_bound: v.upper_bound,
         })
     }
 }
@@ -157,6 +169,8 @@ impl From<types::FieldSummary> for FieldSummary {
         Self {
             contains_null: v.contains_null,
             contains_nan: v.contains_nan,
+            lower_bound: v.lower_bound,
+            upper_bound: v.upper_bound,
         }
     }
 }
@@ -265,7 +279,7 @@ mod tests {
                 added_rows_count: 3,
                 existing_rows_count: 0,
                 deleted_rows_count: 0,
-                partitions: vec![],
+                partitions: Some(vec![]),
                 key_metadata: None,
             }
         );
@@ -302,7 +316,7 @@ mod tests {
                 added_rows_count: 3,
                 existing_rows_count: 0,
                 deleted_rows_count: 0,
-                partitions: vec![],
+                partitions: Some(vec![]),
                 key_metadata: None,
             }
         );

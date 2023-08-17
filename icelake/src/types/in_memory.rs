@@ -277,6 +277,11 @@ impl Struct {
             .get(&field_id)
             .map(|&idx| self.fields[idx].field_type.clone())
     }
+
+    /// Lookup the field according to the field id.
+    pub fn lookup_field(&self, field_id: i32) -> Option<&Field> {
+        self.id_lookup.get(&field_id).map(|&idx| &self.fields[idx])
+    }
 }
 
 /// A Field is the field of a struct.
@@ -375,14 +380,11 @@ impl Serialize for StructValue {
         S: serde::Serializer,
     {
         let mut record = serializer.serialize_struct("", self.field_values.len())?;
-        for (_, value, key) in self.iter() {
-            if let Some(value) = value {
-                // NOTE: Here we use `Box::leak` to convert `&str` to `&'static str`. The safe is guaranteed by serializer.
-                record.serialize_field(Box::leak(key.to_string().into_boxed_str()), value)?;
+        for (field_id, value, key) in self.iter() {
+            if self.type_info.lookup_field(field_id).unwrap().required {
+                record.serialize_field(Box::leak(key.to_string().into_boxed_str()), &value.expect("Struct Builder should guaranteed that the value is always if the field is required."))?;
             } else {
-                // `i32` is just as a placeholder, it will be ignored by serializer.
-                record
-                    .serialize_field(Box::leak(key.to_string().into_boxed_str()), &None::<i32>)?;
+                record.serialize_field(Box::leak(key.to_string().into_boxed_str()), &value)?;
             }
         }
         record.end()
@@ -416,11 +418,31 @@ impl StructValueBuilder {
 
     /// Add a field to the struct value.
     pub fn add_field(&mut self, field_id: i32, field_value: Option<AnyValue>) -> Result<()> {
+        // Check the value is valid if the field is required.
+        if self
+            .type_info
+            .lookup_field(field_id)
+            .ok_or_else(|| {
+                Error::new(
+                    ErrorKind::IcebergDataInvalid,
+                    format!("Field {} is not found", field_id),
+                )
+            })?
+            .required
+            && field_value.is_none()
+        {
+            return Err(Error::new(
+                ErrorKind::IcebergDataInvalid,
+                format!("Field {} is required", field_id),
+            ));
+        }
         // Check the field id is valid.
-        self.type_info.lookup_type(field_id).ok_or(Error::new(
-            ErrorKind::IcebergDataInvalid,
-            format!("Field {} is not found", field_id),
-        ))?;
+        self.type_info.lookup_type(field_id).ok_or_else(|| {
+            Error::new(
+                ErrorKind::IcebergDataInvalid,
+                format!("Field {} is not found", field_id),
+            )
+        })?;
         // TODO: Check the field type is consistent.
         // TODO: Check the duplication of field.
 
@@ -434,10 +456,12 @@ impl StructValueBuilder {
         let mut null_bitmap = BitVec::with_capacity(self.fileds.len());
 
         for field in self.type_info.fields.iter() {
-            let field_value = self.fileds.remove(&field.id).ok_or(Error::new(
-                ErrorKind::IcebergDataInvalid,
-                format!("Field {} is required", field.name),
-            ))?;
+            let field_value = self.fileds.remove(&field.id).ok_or_else(|| {
+                Error::new(
+                    ErrorKind::IcebergDataInvalid,
+                    format!("Field {} is required", field.name),
+                )
+            })?;
             if let Some(value) = field_value {
                 null_bitmap.push(false);
                 field_values.push(value);
@@ -980,7 +1004,7 @@ pub struct ManifestListEntry {
     /// A list of field summaries for each partition field in the spec. Each
     /// field in the list corresponds to a field in the manifest file’s
     /// partition spec.
-    pub partitions: Vec<FieldSummary>,
+    pub partitions: Option<Vec<FieldSummary>>,
     /// field: 519
     ///
     /// Implementation-specific key metadata for encryption
@@ -1033,17 +1057,17 @@ mod manifest_list {
         Lazy::new(|| Field::required(514, "deleted_rows_count", Any::Primitive(Primitive::Long)));
     pub static PARTITIONS: Lazy<Field> = Lazy::new(|| {
         Field::optional(
-            13,
+            507,
             "partitions",
             Any::List(List {
-                element_id: 13,
-                element_required: false,
+                element_id: 508,
+                element_required: true,
                 element_type: Box::new(Any::Struct(
                     Struct::new(vec![
-                        Field::required(0, "contains_null", Any::Primitive(Primitive::Boolean)),
-                        Field::optional(1, "contains_nan", Any::Primitive(Primitive::Boolean)),
-                        Field::optional(2, "lower_bound", Any::Primitive(Primitive::Binary)),
-                        Field::optional(2, "upper_bound", Any::Primitive(Primitive::Binary)),
+                        Field::required(509, "contains_null", Any::Primitive(Primitive::Boolean)),
+                        Field::optional(518, "contains_nan", Any::Primitive(Primitive::Boolean)),
+                        Field::optional(510, "lower_bound", Any::Primitive(Primitive::Binary)),
+                        Field::optional(511, "upper_bound", Any::Primitive(Primitive::Binary)),
                     ])
                     .into(),
                 )),
@@ -1070,6 +1094,14 @@ pub struct FieldSummary {
     /// Whether the manifest contains at least one partition with a NaN
     /// value for the field
     pub contains_nan: Option<bool>,
+    /// field: 510
+    /// The minimum value for the field in the manifests
+    /// partitions.
+    pub lower_bound: Option<Vec<u8>>,
+    /// field: 511
+    /// The maximum value for the field in the manifests
+    /// partitions.
+    pub upper_bound: Option<Vec<u8>>,
 }
 
 /// A manifest is an immutable Avro file that lists data files or delete
@@ -1374,7 +1406,7 @@ pub struct DataFile {
     ///
     /// Split offsets for the data file. For example, all row group offsets
     /// in a Parquet file. Must be sorted ascending
-    pub split_offsets: Vec<i64>,
+    pub split_offsets: Option<Vec<i64>>,
     /// field id: 135
     /// element field id: 136
     ///
@@ -1382,7 +1414,7 @@ pub struct DataFile {
     /// Required when content is EqualityDeletes and should be null
     /// otherwise. Fields with ids listed in this column must be present
     /// in the delete file
-    pub equality_ids: Vec<i32>,
+    pub equality_ids: Option<Vec<i32>>,
     /// field id: 140
     ///
     /// ID representing sort order for this file.
@@ -1572,8 +1604,8 @@ impl DataFile {
             lower_bounds: None,
             upper_bounds: None,
             key_metadata: None,
-            split_offsets: vec![],
-            equality_ids: vec![],
+            split_offsets: None,
+            equality_ids: None,
             sort_order_id: None,
         }
     }

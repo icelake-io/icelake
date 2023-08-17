@@ -188,10 +188,12 @@ impl Table {
             ))?
             .iter()
             .find(|v| v.snapshot_id == current_snapshot_id)
-            .ok_or(Error::new(
-                crate::ErrorKind::IcebergDataInvalid,
-                format!("snapshot with id {} is not found", current_snapshot_id),
-            ))?;
+            .ok_or_else(|| {
+                Error::new(
+                    crate::ErrorKind::IcebergDataInvalid,
+                    format!("snapshot with id {} is not found", current_snapshot_id),
+                )
+            })?;
 
         let manifest_list_path = self.rel_path(&current_snapshot.manifest_list)?;
         let manifest_list_content = self.op.read(&manifest_list_path).await?;

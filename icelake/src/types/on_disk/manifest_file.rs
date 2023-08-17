@@ -180,9 +180,9 @@ struct DataFile {
     upper_bounds: Option<Vec<BytesEntry>>,
     #[serde_as(as = "Option<Bytes>")]
     key_metadata: Option<Vec<u8>>,
-    split_offsets: Vec<i64>,
+    split_offsets: Option<Vec<i64>>,
     #[serde(default)]
-    equality_ids: Vec<i32>,
+    equality_ids: Option<Vec<i32>>,
     sort_order_id: Option<i32>,
 }
 
@@ -420,7 +420,7 @@ impl ManifestWriter {
             added_rows_count: self.added_rows,
             existing_rows_count: self.existing_rows,
             deleted_rows_count: self.deleted_rows,
-            partitions: Vec::default(),
+            partitions: None,
             key_metadata: None,
         })
     }

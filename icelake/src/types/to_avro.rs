@@ -25,53 +25,88 @@ pub fn to_avro_schema(value: &Schema, name: Option<&str>) -> Result<AvroSchema> 
     Ok(AvroSchema::Record(avro_record_schema(name, avro_fields)))
 }
 
+/// Create the avro record filed according the iceberg spec. In this module, we should
+/// use this function to create the avro record field all the time.
+fn new_avro_record_field(
+    name: String,
+    doc: Option<String>,
+    schema: AvroSchema,
+    field_id: i32,
+    order: Option<RecordFieldOrder>,
+) -> AvroRecordField {
+    // If this field is a optional field, default value should be null. (ref: https://iceberg.apache.org/spec/#avro:~:text=Optional%20fields%20must%20always%20set%20the%20Avro%20field%20default%20value%20to%20null.)
+    let default = if let AvroSchema::Union(union_schema) = &schema {
+        if union_schema.variants().len() == 2 && union_schema.is_nullable() {
+            Some(JsonValue::Null)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let custom_attributes = {
+        let mut map = BTreeMap::new();
+        map.insert(
+            "field-id".to_string(),
+            JsonValue::Number(Number::from(field_id)),
+        );
+        map
+    };
+
+    AvroRecordField {
+        name,
+        doc,
+        aliases: None,
+        default,
+        schema,
+        order: order.unwrap_or(RecordFieldOrder::Ascending),
+        position: 0,
+        custom_attributes,
+    }
+}
+
 impl<'a> TryFrom<&'a Field> for AvroRecordField {
     type Error = Error;
 
     fn try_from(value: &'a Field) -> Result<AvroRecordField> {
-        let avro_schema = match &value.field_type {
-            Any::Struct(_) => {
-                let mut avro_schema = AvroSchema::try_from(&value.field_type)?;
-                // An ugly workaround, let's fix it later.
-                if let Any::Struct(_) = &value.field_type {
-                    match &mut avro_schema {
-                        AvroSchema::Record(r) => {
-                            r.name = Name::from(value.name.as_str());
-                            r.doc = value.comment.clone();
-                        }
-                        _ => panic!("Struct record should be converted to avro struct schema."),
-                    }
-                }
-                avro_schema
-            }
-            Any::List(_list) => AvroSchema::try_from(&value.field_type)?,
-            _ => {
-                let mut avro_schema = AvroSchema::try_from(&value.field_type)?;
-                if !value.required {
-                    avro_schema =
-                        AvroSchema::Union(UnionSchema::new(vec![AvroSchema::Null, avro_schema])?);
-                }
-                avro_schema
-            }
-        };
+        let mut avro_schema = AvroSchema::try_from(AnyWithFieldId {
+            any: &value.field_type,
+            field_id: &mut Some(value.id),
+        })?;
+        if !value.required {
+            avro_schema = to_avro_option(avro_schema)?;
+        }
 
-        Ok(AvroRecordField {
-            name: value.name.clone(),
-            doc: value.comment.clone(),
-            aliases: None,
-            default: None,
-            schema: avro_schema,
-            order: RecordFieldOrder::Ignore,
-            position: 0,
-            custom_attributes: BTreeMap::default(),
-        })
+        Ok(new_avro_record_field(
+            value.name.clone(),
+            value.comment.clone(),
+            avro_schema,
+            value.id,
+            None,
+        ))
     }
 }
 
-impl<'a> TryFrom<&'a Any> for AvroSchema {
+/// For converting Any to AvroSchema, Record in AvroSchema must has the name.
+/// In iceberg(ref: https://github.com/apache/iceberg/blob/c07f2aabc0a1d02f068ecf1514d2479c0fbdd3b0/core/src/main/java/org/apache/iceberg/avro/TypeToSchema.java#L33),
+/// this name is "r+ field_id", so we wrap Any with field_id to deal with this case.
+struct AnyWithFieldId<'a, 'b> {
+    any: &'a Any,
+    /// We need to guaranteed that there is only one record use thi field_id. Otherwise there will
+    /// be dulplicate name in AvroSchema. So we use Option to make sure that there is only one
+    /// record take it.
+    ///
+    /// For now, iceberg spec guaranteed there isn't this schema. So we panic if there is the case
+    /// and which means that we may need to fix internal implementation.
+    field_id: &'b mut Option<i32>,
+}
+
+impl<'a, 'b> TryFrom<AnyWithFieldId<'a, 'b>> for AvroSchema {
     type Error = Error;
 
-    fn try_from(value: &'a Any) -> Result<AvroSchema> {
+    fn try_from(value_with_id: AnyWithFieldId<'a, 'b>) -> Result<AvroSchema> {
+        let value = value_with_id.any;
         let avro_schema = match &value {
             Any::Primitive(data_type) => match data_type {
                 Primitive::Boolean => AvroSchema::Boolean,
@@ -99,52 +134,43 @@ impl<'a> TryFrom<&'a Any> for AvroSchema {
 
             Any::Map(map) => {
                 if let Any::Primitive(Primitive::String) = *map.key_type {
-                    let mut value_avro_schema = AvroSchema::try_from(&*map.value_type)?;
+                    let mut value_avro_schema = AvroSchema::try_from(AnyWithFieldId {
+                        any: &map.value_type,
+                        field_id: value_with_id.field_id,
+                    })?;
                     if !map.value_required {
                         value_avro_schema = to_avro_option(value_avro_schema)?;
                     }
 
                     AvroSchema::Map(Box::new(value_avro_schema))
                 } else {
-                    let key_field = {
-                        let mut field = AvroRecordField {
-                            name: "key".to_string(),
-                            doc: None,
-                            aliases: None,
-                            default: None,
-                            schema: AvroSchema::try_from(&*map.key_type)?,
-                            order: RecordFieldOrder::Ignore,
-                            position: 0,
-                            custom_attributes: BTreeMap::default(),
-                        };
-                        field.custom_attributes.insert(
-                            "field-id".to_string(),
-                            JsonValue::Number(Number::from(map.key_id)),
-                        );
-                        field
-                    };
+                    let key_field = new_avro_record_field(
+                        "key".to_string(),
+                        None,
+                        AvroSchema::try_from(AnyWithFieldId {
+                            any: &map.key_type,
+                            field_id: &mut Some(map.key_id),
+                        })?,
+                        map.key_id,
+                        None,
+                    );
 
                     let value_field = {
-                        let mut value_schema = AvroSchema::try_from(&*map.value_type)?;
+                        let mut value_schema = AvroSchema::try_from(AnyWithFieldId {
+                            any: &map.value_type,
+                            field_id: &mut Some(map.value_id),
+                        })?;
                         if !map.value_required {
                             value_schema = to_avro_option(value_schema)?;
                         }
 
-                        let mut field = AvroRecordField {
-                            name: "value".to_string(),
-                            doc: None,
-                            aliases: None,
-                            default: None,
-                            schema: value_schema,
-                            order: RecordFieldOrder::Ignore,
-                            position: 0,
-                            custom_attributes: BTreeMap::default(),
-                        };
-                        field.custom_attributes.insert(
-                            "field-id".to_string(),
-                            JsonValue::Number(Number::from(map.value_id)),
-                        );
-                        field
+                        new_avro_record_field(
+                            "value".to_string(),
+                            None,
+                            value_schema,
+                            map.value_id,
+                            None,
+                        )
                     };
 
                     AvroSchema::Array(Box::new(AvroSchema::Record(avro_record_schema(
@@ -154,7 +180,10 @@ impl<'a> TryFrom<&'a Any> for AvroSchema {
                 }
             }
             Any::List(list) => {
-                let mut avro_schema = AvroSchema::try_from(&*list.element_type)?;
+                let mut avro_schema = AvroSchema::try_from(AnyWithFieldId {
+                    any: &list.element_type,
+                    field_id: &mut Some(list.element_id),
+                })?;
                 if !list.element_required {
                     avro_schema = to_avro_option(avro_schema)?;
                 }
@@ -166,7 +195,14 @@ impl<'a> TryFrom<&'a Any> for AvroSchema {
                     .iter()
                     .map(AvroRecordField::try_from)
                     .collect::<Result<Vec<AvroRecordField>>>()?;
-                AvroSchema::Record(avro_record_schema("invalid_name", avro_fields))
+                let name = format!(
+                    "r{}",
+                    value_with_id
+                        .field_id
+                        .take()
+                        .expect("Iceberg Spec guaranteed that only one record in one field.")
+                );
+                AvroSchema::Record(avro_record_schema(name, avro_fields))
             }
         };
         Ok(avro_schema)
@@ -212,136 +248,372 @@ fn to_avro_option(avro_schema: AvroSchema) -> Result<AvroSchema> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{List, Map, Struct};
+    use crate::types::{self, Struct};
 
     #[test]
-    fn test_convert_to_avro() {
-        let schema = Schema {
-            schema_id: 0,
-            identifier_field_ids: None,
-            fields: vec![
-                Field {
-                    id: 1,
-                    name: "a".to_string(),
-                    required: true,
-                    field_type: Any::Primitive(Primitive::Double),
-                    comment: Some("comment_a".to_string()),
-                    initial_default: None,
-                    write_default: None,
-                },
-                Field {
-                    id: 2,
-                    name: "b".to_string(),
-                    required: true,
-                    field_type: Any::Struct(
-                        Struct::new(vec![
-                            Field {
-                                id: 3,
-                                name: "c".to_string(),
-                                required: true,
-                                field_type: Any::Primitive(Primitive::Uuid),
-                                comment: Some("comment_c".to_string()),
-                                initial_default: None,
-                                write_default: None,
-                            },
-                            Field {
-                                id: 4,
-                                name: "d".to_string(),
-                                required: true,
-                                field_type: Any::Primitive(Primitive::Boolean),
-                                comment: Some("comment_d".to_string()),
-                                initial_default: None,
-                                write_default: None,
-                            },
-                            Field {
-                                id: 5,
-                                name: "e".to_string(),
-                                required: true,
-                                field_type: Any::List(List {
-                                    element_id: 1,
-                                    element_required: true,
-                                    element_type: Box::new(Any::Primitive(Primitive::Long)),
-                                }),
-                                comment: Some("comment_e".to_string()),
-                                initial_default: None,
-                                write_default: None,
-                            },
-                            Field {
-                                id: 6,
-                                name: "f".to_string(),
-                                required: true,
-                                field_type: Any::Map(Map {
-                                    key_id: 2,
-                                    key_type: Box::new(Any::Primitive(Primitive::String)),
-                                    value_id: 3,
-                                    value_required: true,
-                                    value_type: Box::new(Any::Primitive(Primitive::Binary)),
-                                }),
-                                comment: Some("comment_f".to_string()),
-                                initial_default: None,
-                                write_default: None,
-                            },
-                        ])
-                        .into(),
-                    ),
-                    comment: Some("comment_b".to_string()),
-                    initial_default: None,
-                    write_default: None,
-                },
-            ],
-        };
-
-        let expected_avro_schema = {
-            let raw_schema = r#"
-{
-    "type": "record",
-    "name": "r_0",
-    "fields": [
-        {
-            "name": "a",
-            "type": "double",
-            "doc": "comment_a",
-            "order": "ignore"
+    fn test_to_manifest_schema() {
+        let schema_str = r#"
+    {
+      "type" : "record",
+      "name" : "manifest_entry",
+      "fields" : [ {
+        "name" : "status",
+        "type" : "int",
+        "field-id" : 0
+      }, {
+        "name" : "snapshot_id",
+        "type" : [ "null", "long" ],
+        "default" : null,
+        "field-id" : 1
+      }, {
+        "name" : "sequence_number",
+        "type" : [ "null", "long" ],
+        "default" : null,
+        "field-id" : 3
+      }, {
+        "name" : "file_sequence_number",
+        "type" : [ "null", "long" ],
+        "default" : null,
+        "field-id" : 4
+      }, {
+        "name" : "data_file",
+        "type" : {
+          "type" : "record",
+          "name" : "r2",
+          "fields" : [ {
+            "name" : "content",
+            "type" : "int",
+            "doc" : "Contents of the file: 0=data, 1=position deletes, 2=equality deletes",
+            "field-id" : 134
+          }, {
+            "name" : "file_path",
+            "type" : "string",
+            "doc" : "Location URI with FS scheme",
+            "field-id" : 100
+          }, {
+            "name" : "file_format",
+            "type" : "string",
+            "doc" : "File format name: avro, orc, or parquet",
+            "field-id" : 101
+          }, {
+            "name" : "partition",
+            "type" : {
+              "type" : "record",
+              "name" : "r102",
+              "fields" : [ ]
+            },
+            "doc" : "Partition data tuple, schema based on the partition spec",
+            "field-id" : 102
+          }, {
+            "name" : "record_count",
+            "type" : "long",
+            "doc" : "Number of records in the file",
+            "field-id" : 103
+          }, {
+            "name" : "file_size_in_bytes",
+            "type" : "long",
+            "doc" : "Total file size in bytes",
+            "field-id" : 104
+          }, {
+            "name" : "column_sizes",
+            "type" : [ "null", {
+              "type" : "array",
+              "items" : {
+                "type" : "record",
+                "name" : "k117_v118",
+                "fields" : [ {
+                  "name" : "key",
+                  "type" : "int",
+                  "field-id" : 117
+                }, {
+                  "name" : "value",
+                  "type" : "long",
+                  "field-id" : 118
+                } ]
+              },
+              "logicalType" : "map"
+            } ],
+            "doc" : "Map of column id to total size on disk",
+            "default" : null,
+            "field-id" : 108
+          }, {
+            "name" : "value_counts",
+            "type" : [ "null", {
+              "type" : "array",
+              "items" : {
+                "type" : "record",
+                "name" : "k119_v120",
+                "fields" : [ {
+                  "name" : "key",
+                  "type" : "int",
+                  "field-id" : 119
+                }, {
+                  "name" : "value",
+                  "type" : "long",
+                  "field-id" : 120
+                } ]
+              },
+              "logicalType" : "map"
+            } ],
+            "doc" : "Map of column id to total count, including null and NaN",
+            "default" : null,
+            "field-id" : 109
+          }, {
+            "name" : "null_value_counts",
+            "type" : [ "null", {
+              "type" : "array",
+              "items" : {
+                "type" : "record",
+                "name" : "k121_v122",
+                "fields" : [ {
+                  "name" : "key",
+                  "type" : "int",
+                  "field-id" : 121
+                }, {
+                  "name" : "value",
+                  "type" : "long",
+                  "field-id" : 122
+                } ]
+              },
+              "logicalType" : "map"
+            } ],
+            "doc" : "Map of column id to null value count",
+            "default" : null,
+            "field-id" : 110
+          }, {
+            "name" : "nan_value_counts",
+            "type" : [ "null", {
+              "type" : "array",
+              "items" : {
+                "type" : "record",
+                "name" : "k138_v139",
+                "fields" : [ {
+                  "name" : "key",
+                  "type" : "int",
+                  "field-id" : 138
+                }, {
+                  "name" : "value",
+                  "type" : "long",
+                  "field-id" : 139
+                } ]
+              },
+              "logicalType" : "map"
+            } ],
+            "doc" : "Map of column id to number of NaN values in the column",
+            "default" : null,
+            "field-id" : 137
+          }, {
+            "name" : "lower_bounds",
+            "type" : [ "null", {
+              "type" : "array",
+              "items" : {
+                "type" : "record",
+                "name" : "k126_v127",
+                "fields" : [ {
+                  "name" : "key",
+                  "type" : "int",
+                  "field-id" : 126
+                }, {
+                  "name" : "value",
+                  "type" : "bytes",
+                  "field-id" : 127
+                } ]
+              },
+              "logicalType" : "map"
+            } ],
+            "doc" : "Map of column id to lower bound",
+            "default" : null,
+            "field-id" : 125
+          }, {
+            "name" : "upper_bounds",
+            "type" : [ "null", {
+              "type" : "array",
+              "items" : {
+                "type" : "record",
+                "name" : "k129_v130",
+                "fields" : [ {
+                  "name" : "key",
+                  "type" : "int",
+                  "field-id" : 129
+                }, {
+                  "name" : "value",
+                  "type" : "bytes",
+                  "field-id" : 130
+                } ]
+              },
+              "logicalType" : "map"
+            } ],
+            "doc" : "Map of column id to upper bound",
+            "default" : null,
+            "field-id" : 128
+          }, {
+            "name" : "key_metadata",
+            "type" : [ "null", "bytes" ],
+            "doc" : "Encryption key metadata blob",
+            "default" : null,
+            "field-id" : 131
+          }, {
+            "name" : "split_offsets",
+            "type" : [ "null", {
+              "type" : "array",
+              "items" : "long",
+              "element-id" : 133
+            } ],
+            "doc" : "Splittable offsets",
+            "default" : null,
+            "field-id" : 132
+          }, {
+            "name" : "equality_ids",
+            "type" : [ "null", {
+              "type" : "array",
+              "items" : "int",
+              "element-id" : 136
+            } ],
+            "doc" : "Equality comparison field IDs",
+            "default" : null,
+            "field-id" : 135
+          }, {
+            "name" : "sort_order_id",
+            "type" : [ "null", "int" ],
+            "doc" : "Sort order ID",
+            "default" : null,
+            "field-id" : 140
+          } ]
         },
-        {
-            "name": "b",
-            "type": "record",
-            "doc": "comment_b",
-            "fields": [
-                {
-                    "name": "c",
-                    "type": "string",
-                    "logicalType": "uuid",
-                    "doc": "comment_c",
-                    "order": "ignore"
-                },
-                {
-                    "name": "d",
-                    "type": "boolean",
-                    "doc": "comment_d",
-                    "order": "ignore"
-                },
-                {
-                    "name": "e",
-                    "type": { "type": "array", "items": "long" },
-                    "doc": "comment_e",
-                    "order": "ignore"
-                },
-                {
-                    "name": "f",
-                    "type": { "type": "map", "values": "bytes" },
-                    "doc": "comment_f",
-                    "order": "ignore"
-                }
-            ],
-            "order": "ignore"
-        }
-    ]
-}
-            "#;
-            AvroSchema::parse_str(raw_schema).unwrap()
-        };
+        "field-id" : 2
+    } ] }"#;
+        let expect_schema = AvroSchema::parse(&serde_json::from_str(schema_str).unwrap()).unwrap();
 
-        assert_eq!(expected_avro_schema, to_avro_schema(&schema, None).unwrap());
+        let partition_type = Struct::new(vec![]);
+        let avro_schema = to_avro_schema(
+            &types::ManifestFile::v2_schema(partition_type),
+            Some("manifest_entry"),
+        )
+        .unwrap();
+
+        assert_eq!(avro_schema, expect_schema);
+    }
+
+    #[test]
+    fn test_to_manifest_list_schema() {
+        let schema_str = r#"
+        {
+          "type" : "record",
+          "name" : "manifest_file",
+          "fields" : [ {
+            "name" : "manifest_path",
+            "type" : "string",
+            "doc" : "Location URI with FS scheme",
+            "field-id" : 500
+          }, {
+            "name" : "manifest_length",
+            "type" : "long",
+            "doc" : "Total file size in bytes",
+            "field-id" : 501
+          }, {
+            "name" : "partition_spec_id",
+            "type" : "int",
+            "doc" : "Spec ID used to write",
+            "field-id" : 502
+          }, {
+            "name" : "content",
+            "type" : "int",
+            "doc" : "Contents of the manifest: 0=data, 1=deletes",
+            "field-id" : 517
+          }, {
+            "name" : "sequence_number",
+            "type" : "long",
+            "doc" : "Sequence number when the manifest was added",
+            "field-id" : 515
+          }, {
+            "name" : "min_sequence_number",
+            "type" : "long",
+            "doc" : "Lowest sequence number in the manifest",
+            "field-id" : 516
+          }, {
+            "name" : "added_snapshot_id",
+            "type" : "long",
+            "doc" : "Snapshot ID that added the manifest",
+            "field-id" : 503
+          }, {
+            "name" : "added_data_files_count",
+            "type" : "int",
+            "doc" : "Added entry count",
+            "field-id" : 504
+          }, {
+            "name" : "existing_data_files_count",
+            "type" : "int",
+            "doc" : "Existing entry count",
+            "field-id" : 505
+          }, {
+            "name" : "deleted_data_files_count",
+            "type" : "int",
+            "doc" : "Deleted entry count",
+            "field-id" : 506
+          }, {
+            "name" : "added_rows_count",
+            "type" : "long",
+            "doc" : "Added rows count",
+            "field-id" : 512
+          }, {
+            "name" : "existing_rows_count",
+            "type" : "long",
+            "doc" : "Existing rows count",
+            "field-id" : 513
+          }, {
+            "name" : "deleted_rows_count",
+            "type" : "long",
+            "doc" : "Deleted rows count",
+            "field-id" : 514
+          }, {
+            "name" : "partitions",
+            "type" : [ "null", {
+              "type" : "array",
+              "items" : {
+                "type" : "record",
+                "name" : "r508",
+                "fields" : [ {
+                  "name" : "contains_null",
+                  "type" : "boolean",
+                  "doc" : "True if any file has a null partition value",
+                  "field-id" : 509
+                }, {
+                  "name" : "contains_nan",
+                  "type" : [ "null", "boolean" ],
+                  "doc" : "True if any file has a nan partition value",
+                  "default" : null,
+                  "field-id" : 518
+                }, {
+                  "name" : "lower_bound",
+                  "type" : [ "null", "bytes" ],
+                  "doc" : "Partition lower bound for all files",
+                  "default" : null,
+                  "field-id" : 510
+                }, {
+                  "name" : "upper_bound",
+                  "type" : [ "null", "bytes" ],
+                  "doc" : "Partition upper bound for all files",
+                  "default" : null,
+                  "field-id" : 511
+                } ]
+              },
+              "element-id" : 508
+            } ],
+            "doc" : "Summary for each partition",
+            "default" : null,
+            "field-id" : 507
+          }, {
+                "name" : "key_metadata",
+                "type" : [ "null", "bytes" ],
+                "default" : null,
+                "field-id" : 519
+          } ]
+        }"#;
+
+        let expect_schema = AvroSchema::parse(&serde_json::from_str(schema_str).unwrap()).unwrap();
+        let avro_schema =
+            to_avro_schema(&types::ManifestList::v2_schema(), Some("manifest_file")).unwrap();
+
+        assert_eq!(avro_schema, expect_schema);
     }
 }
