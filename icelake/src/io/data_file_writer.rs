@@ -215,15 +215,15 @@ impl DataFileWriter {
             /// - `file_offset` in `FileMetaData` always be None now.
             /// - `nan_value_counts` can't get from `FileMetaData` now.
             // Currently arrow parquet writer doesn't fill row group offsets, we can use first column chunk offset for it.
-            split_offsets: meta_data
+            split_offsets: Some(meta_data
                 .row_groups
                 .iter()
                 .filter_map(|group| group.columns.get(0).map(|c| c.file_offset))
-                .collect(),
+                .collect()),
             nan_value_counts: None,
             lower_bounds: None,
             upper_bounds: None,
-            equality_ids: vec![],
+            equality_ids: None,
             sort_order_id: None,
         }
     }
