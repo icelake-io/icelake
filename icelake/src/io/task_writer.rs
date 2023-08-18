@@ -6,10 +6,11 @@ use super::location_generator;
 use crate::config::TableConfigRef;
 use crate::error::Result;
 use crate::io::location_generator::DataFileLocationGenerator;
+use crate::types::BoxedTransformFunction;
 use crate::types::PartitionSpec;
 use crate::types::{create_transform_function, DataFile, TableMetadata};
 use crate::types::{struct_to_anyvalue_array_with_type, Any, AnyValue};
-use arrow::array::{Array, ArrayRef, BooleanArray, StructArray};
+use arrow::array::{Array, BooleanArray, StructArray};
 use arrow::compute::filter_record_batch;
 use arrow::datatypes::Field;
 use arrow::datatypes::SchemaRef as ArrowSchemaRef;
@@ -97,11 +98,11 @@ impl TaskWriter {
                 arrow_schema,
                 table_metadata.location,
                 location_generator,
-                partition_spec.clone(),
+                partition_spec,
                 partition_type,
                 operator,
                 table_config,
-            )))
+            )?))
         }
     }
 
@@ -124,9 +125,6 @@ impl TaskWriter {
 
 /// Unpartitioned task writer
 pub struct UnpartitionedWriter {
-    /// # TODO
-    ///
-    /// Support to config the data file writer.
     data_file_writer: DataFileWriter,
 }
 
@@ -176,17 +174,22 @@ pub struct PartitionedWriter {
     operator: Operator,
     table_location: String,
     location_generator: Arc<DataFileLocationGenerator>,
-    partition_spec: PartitionSpec,
+    /// Paritition fields used to compute:
+    /// - usize: source column index of batch record
+    /// - String: partition field name
+    /// - BoxedTransformFunction: transform function
+    partition_fields: Vec<(usize, String, BoxedTransformFunction)>,
+    /// Partition value type
     partition_type: Any,
     table_config: TableConfigRef,
-    /// # TODO
-    ///
-    /// Support to config the data file writer.
     groups: HashMap<OwnedRow, PartitionGroup>,
 }
 
+/// Each partition group corresponds to partition value.
 struct PartitionGroup {
+    /// The parition_array have only one element which it's the partition value.
     pub partition_array: StructArray,
+    /// Row with same partition value will be written to the same data file writer.
     pub writer: DataFileWriter,
 }
 
@@ -196,21 +199,30 @@ impl PartitionedWriter {
         schema: ArrowSchemaRef,
         table_location: String,
         location_generator: DataFileLocationGenerator,
-        partition_spec: PartitionSpec,
+        partition_spec: &PartitionSpec,
         partition_type: Any,
         operator: Operator,
         table_config: TableConfigRef,
-    ) -> Self {
-        Self {
+    ) -> Result<Self> {
+        let partition_fields = partition_spec
+            .fields
+            .iter()
+            .map(|field| {
+                let index = schema.index_of(field.name.as_str()).unwrap();
+                let transform = create_transform_function(&field.transform)?;
+                Ok((index, field.name.clone(), transform))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        Ok(Self {
             schema,
             operator,
             table_location,
             location_generator: location_generator.into(),
-            partition_spec,
+            partition_fields,
             partition_type,
             table_config,
             groups: HashMap::new(),
-        }
+        })
     }
 
     /// This function do two things:
@@ -227,26 +239,12 @@ impl PartitionedWriter {
         batch: &RecordBatch,
     ) -> Result<HashMap<OwnedRow, RecordBatch>> {
         let value_array = Arc::new(StructArray::from(
-            self.partition_spec
-                .fields
+            self.partition_fields
                 .iter()
-                .map(|field| {
-                    let array: ArrayRef = batch
-                        .column_by_name(&field.name)
-                        .ok_or_else(|| {
-                            crate::error::Error::new(
-                                crate::ErrorKind::IcebergDataInvalid,
-                                format!(
-                                    "Can't find column according partition spec, column name {}",
-                                    field.name
-                                ),
-                            )
-                        })?
-                        .clone();
-                    let transform_func = create_transform_function(&field.transform)?;
-                    let array = transform_func.transform(array)?;
+                .map(|(index_of_batch, field_name, transform)| {
+                    let array = transform.transform(batch.column(*index_of_batch).clone())?;
                     let field = Arc::new(Field::new(
-                        field.name.clone(),
+                        field_name.clone(),
                         array.data_type().clone(),
                         true,
                     ));
@@ -336,10 +334,6 @@ impl PartitionedWriter {
     }
 
     /// Complete the write and return the data files.
-    ///
-    /// # TODO
-    ///
-    /// Partition writer should be responsible for writing the partition value in data file.
     pub async fn close(self) -> Result<Vec<DataFile>> {
         let mut res = vec![];
         for (
