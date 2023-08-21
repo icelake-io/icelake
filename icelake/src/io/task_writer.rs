@@ -143,8 +143,6 @@ impl UnpartitionedWriter {
                 table_location,
                 location_generator.into(),
                 schema,
-                1024,
-                1024 * 1024,
                 table_config,
             )
             .await?,
@@ -279,8 +277,6 @@ impl PartitionedWriter {
                     self.table_location.clone(),
                     self.location_generator.clone(),
                     self.schema.clone(),
-                    1024,
-                    1024 * 1024,
                     self.table_config.clone(),
                 )
                 .await?;
