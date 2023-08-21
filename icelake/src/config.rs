@@ -15,6 +15,26 @@ pub type TableConfigRef = Arc<TableConfig>;
 pub struct TableConfig {
     /// Parquet writer configuration.
     pub parquet_writer: ParquetWriterConfig,
+    /// Datafile configuration
+    pub datafile_writer: DataFileWriterConfig,
+}
+
+/// Data file writer configuration.
+#[derive(PartialEq, Eq, Debug)]
+pub struct DataFileWriterConfig {
+    /// data file writer will keep row number of a data file as a multiple of this value.
+    pub rows_per_file: usize,
+    /// data file writer will keep file size of a data file bigger than this value.
+    pub target_file_size_in_bytes: u64,
+}
+
+impl Default for DataFileWriterConfig {
+    fn default() -> Self {
+        Self {
+            rows_per_file: 1000,
+            target_file_size_in_bytes: 1024 * 1024,
+        }
+    }
 }
 
 /// Parquet writer configuration.
@@ -115,6 +135,32 @@ impl TryFrom<&'_ HashMap<String, String>> for TableConfig {
             })?
             .iter()
             .for_each(|v| config.parquet_writer.data_page_size = *v);
+
+        value
+            .get("iceberg.datafile.rows_per_file")
+            .map(|v| v.parse::<usize>())
+            .transpose()
+            .map_err(|e| {
+                Error::new(
+                    ErrorKind::IcebergDataInvalid,
+                    "Can't parse iceberg.datafile.rows_per_file.",
+                )
+                .set_source(e)
+            })?
+            .iter()
+            .for_each(|v| config.datafile_writer.rows_per_file = *v);
+
+        value
+            .get("iceberg.datafile.target_file_size_in_bytes")
+            .map(|v| v.parse::<u64>())
+            .transpose()
+            .map_err(|e| {
+                Error::new(
+                    ErrorKind::IcebergDataInvalid,
+                    "Can't parse iceberg.datafile.target_file_size_in_bytes.",
+                )
+                .set_source(e)
+            })?;
 
         Ok(config)
     }
@@ -222,6 +268,7 @@ mod tests {
                 write_batch_size: 8888,
                 data_page_size: 7,
             },
+            datafile_writer: Default::default(),
         };
 
         let config_map = HashMap::from([

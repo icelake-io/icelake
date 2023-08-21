@@ -26,9 +26,6 @@ pub struct DataFileWriter {
     location_generator: Arc<DataFileLocationGenerator>,
     arrow_schema: SchemaRef,
 
-    rows_divisor: usize,
-    target_file_size_in_bytes: u64,
-
     /// # TODO
     ///
     /// support to config `ParquetWriter` using `buffer_size` and writer properties.
@@ -49,8 +46,6 @@ impl DataFileWriter {
         table_location: String,
         location_generator: Arc<DataFileLocationGenerator>,
         arrow_schema: SchemaRef,
-        rows_divisor: usize,
-        target_file_size_in_bytes: u64,
         table_config: TableConfigRef,
     ) -> Result<Self> {
         let mut writer = Self {
@@ -58,8 +53,6 @@ impl DataFileWriter {
             table_location,
             location_generator,
             arrow_schema,
-            rows_divisor,
-            target_file_size_in_bytes,
             current_writer: None,
             current_row_num: 0,
             current_location: String::new(),
@@ -93,9 +86,9 @@ impl DataFileWriter {
     }
 
     fn should_split(&self) -> bool {
-        self.current_row_num % self.rows_divisor == 0
+        self.current_row_num % self.table_config.datafile_writer.rows_per_file == 0
             && self.current_writer.as_ref().unwrap().get_written_size()
-                >= self.target_file_size_in_bytes
+                >= self.table_config.datafile_writer.target_file_size_in_bytes
     }
 
     async fn close_current_writer(&mut self) -> Result<()> {
@@ -278,8 +271,6 @@ mod test {
             "/tmp/table".to_string(),
             location_generator.into(),
             to_write.schema(),
-            1024,
-            1024 * 1024,
             Arc::new(TableConfig::default()),
         )
         .await?;
