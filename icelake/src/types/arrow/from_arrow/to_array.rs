@@ -3,8 +3,9 @@ use crate::types::PrimitiveValue;
 use crate::types::{Any, AnyValue, StructValueBuilder};
 use crate::{Error, Result};
 use arrow::array::{
-    Array, Date32Array, Date64Array, Float32Array, Float64Array, Int16Array, Int32Array,
-    Int64Array, Int8Array, UInt16Array, UInt32Array, UInt64Array, UInt8Array, GenericByteArray, OffsetSizeTrait,
+    Array, Date32Array, Date64Array, Float32Array, Float64Array, GenericByteArray, Int16Array,
+    Int32Array, Int64Array, Int8Array, OffsetSizeTrait, UInt16Array, UInt32Array, UInt64Array,
+    UInt8Array,
 };
 use arrow::datatypes::GenericStringType;
 use arrow::{
@@ -53,7 +54,7 @@ impl<T: OffsetSizeTrait> ToArray for GenericByteArray<GenericStringType<T>> {
             .map(|x| {
                 if let Some(x) = x {
                     Ok(Some(AnyValue::Primitive(PrimitiveValue::String(
-                        x.to_string()
+                        x.to_string(),
                     ))))
                 } else {
                     Ok(None)
@@ -248,8 +249,16 @@ pub fn to_anyvalue_array_with_type(
         arrow::datatypes::DataType::RunEndEncoded(_, _) => todo!(),
         arrow::datatypes::DataType::Binary => todo!(),
         arrow::datatypes::DataType::LargeBinary => todo!(),
-        arrow::datatypes::DataType::Utf8 => array.as_any().downcast_ref::<arrow::array::StringArray>().unwrap().to_anyvalue_array(),
-        arrow::datatypes::DataType::LargeUtf8 => array.as_any().downcast_ref::<arrow::array::LargeStringArray>().unwrap().to_anyvalue_array(),
+        arrow::datatypes::DataType::Utf8 => array
+            .as_any()
+            .downcast_ref::<arrow::array::StringArray>()
+            .unwrap()
+            .to_anyvalue_array(),
+        arrow::datatypes::DataType::LargeUtf8 => array
+            .as_any()
+            .downcast_ref::<arrow::array::LargeStringArray>()
+            .unwrap()
+            .to_anyvalue_array(),
     }
 }
 

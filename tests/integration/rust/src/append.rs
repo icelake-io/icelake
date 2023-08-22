@@ -205,7 +205,7 @@ async fn do_test_append_data_partition() {
         PARTITIONED BY (v_int,v_long,v_float,v_double,v_varchar,v_bool,v_date,v_timestamp,v_ts_ntz)
         TBLPROPERTIES ('format-version'='2');",
     ];
-   init_iceberg_table_with_spark(&fixture.args, sqls);
+    init_iceberg_table_with_spark(&fixture.args, sqls);
 
     // Check partition table
     fixture
