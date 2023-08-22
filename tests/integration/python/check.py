@@ -27,7 +27,7 @@ def check(args):
     spark = (SparkSession.builder.remote(args.sparkurl)
              .getOrCreate())
 
-    sql = "SELECT * FROM s1.{table} ORDER BY id ASC".format(table=args.table)
+    sql = args.sql
     print(f"Executing sql: {sql}")
     df = spark.sql(sql).collect()
     for row in df:
@@ -37,7 +37,7 @@ def check(args):
         csv_result = list(csv.reader(insert_csv_file))
         tc.assertEqual(len(df), len(csv_result))
         for (row1, row2) in zip(df, csv_result):
-            print(f"Row1: {row1}, row 2: {row2}")
+            print(f"Row1: {row1}\nRow2: {row2}")
             tc.assertEqual(row1[0], int(row2[0]))
             tc.assertEqual(row1[1], int(row2[1]))
             tc.assertEqual(row1[2], int(row2[2]))
@@ -55,5 +55,5 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Test icelake with spark')
     parser.add_argument('-s', dest='sparkurl', type=str, help='Spark remote url')
     parser.add_argument("-f", dest='file', type=str, help='Path to query csv file')
-    parser.add_argument("-t", dest='table', type=str, help='Table name')
+    parser.add_argument("-q", dest='sql', type=str, help='query sql')
     check(parser.parse_args())

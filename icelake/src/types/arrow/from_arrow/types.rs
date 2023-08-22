@@ -25,7 +25,10 @@ impl TryFrom<ArrowDataType> for Any {
             ArrowDataType::Timestamp(TimeUnit::Microsecond, None) => {
                 types::Primitive::Timestamp.into()
             }
-            ArrowDataType::Utf8 => types::Primitive::String.into(),
+            ArrowDataType::Timestamp(TimeUnit::Microsecond, Some(_)) => {
+                types::Primitive::Timestampz.into()
+            }
+            ArrowDataType::Utf8 | ArrowDataType::LargeUtf8 => types::Primitive::String.into(),
             ArrowDataType::FixedSizeBinary(16) => types::Primitive::Uuid.into(),
             ArrowDataType::FixedSizeBinary(i) => types::Primitive::Fixed(i as u64).into(),
             ArrowDataType::LargeBinary => types::Primitive::Binary.into(),

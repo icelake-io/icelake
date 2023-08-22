@@ -5,11 +5,11 @@ use std::sync::Arc;
 use std::{collections::HashMap, str::FromStr};
 
 use bitvec::vec::BitVec;
-use chrono::DateTime;
 use chrono::NaiveDate;
 use chrono::NaiveDateTime;
 use chrono::NaiveTime;
 use chrono::Utc;
+use chrono::{DateTime, Datelike};
 use opendal::Operator;
 use ordered_float::OrderedFloat;
 use rust_decimal::Decimal;
@@ -219,10 +219,11 @@ impl Serialize for PrimitiveValue {
             PrimitiveValue::Float(value) => serializer.serialize_f32(value.0),
             PrimitiveValue::Double(value) => serializer.serialize_f64(value.0),
             PrimitiveValue::Decimal(value) => serializer.serialize_str(&value.to_string()),
-            PrimitiveValue::Date(value) => serializer.serialize_str(&value.to_string()),
-            PrimitiveValue::Time(value) => serializer.serialize_str(&value.to_string()),
-            PrimitiveValue::Timestamp(value) => serializer.serialize_str(&value.to_string()),
-            PrimitiveValue::Timestampz(value) => serializer.serialize_str(&value.to_string()),
+            PrimitiveValue::Date(value) => serializer.serialize_i32(value.num_days_from_ce()),
+            PrimitiveValue::Time(value) => serializer
+                .serialize_i64(NaiveDateTime::new(NaiveDate::default(), *value).timestamp_micros()),
+            PrimitiveValue::Timestamp(value) => serializer.serialize_i64(value.timestamp_micros()),
+            PrimitiveValue::Timestampz(value) => serializer.serialize_i64(value.timestamp_micros()),
             PrimitiveValue::String(value) => serializer.serialize_str(value),
             PrimitiveValue::Uuid(value) => serializer.serialize_str(&value.to_string()),
             PrimitiveValue::Fixed(value) => serializer.serialize_bytes(value),
