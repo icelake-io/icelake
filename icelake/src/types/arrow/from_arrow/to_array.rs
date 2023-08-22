@@ -4,8 +4,9 @@ use crate::types::{Any, AnyValue, StructValueBuilder};
 use crate::{Error, Result};
 use arrow::array::{
     Array, Date32Array, Date64Array, Float32Array, Float64Array, Int16Array, Int32Array,
-    Int64Array, Int8Array, UInt16Array, UInt32Array, UInt64Array, UInt8Array,
+    Int64Array, Int8Array, UInt16Array, UInt32Array, UInt64Array, UInt8Array, GenericByteArray, OffsetSizeTrait,
 };
+use arrow::datatypes::GenericStringType;
 use arrow::{
     array::{BooleanArray, PrimitiveArray, StructArray},
     datatypes::ArrowPrimitiveType,
@@ -37,7 +38,23 @@ where
         self.into_iter()
             .map(|x| {
                 if let Some(x) = x {
-                    Ok(Some(AnyValue::Primitive(x.to_primitive(T::DATA_TYPE)?)))
+                    Ok(Some(AnyValue::Primitive(x.to_primitive(self.data_type())?)))
+                } else {
+                    Ok(None)
+                }
+            })
+            .collect::<Result<_>>()
+    }
+}
+
+impl<T: OffsetSizeTrait> ToArray for GenericByteArray<GenericStringType<T>> {
+    fn to_anyvalue_array(&self) -> Result<Vec<Option<AnyValue>>> {
+        self.iter()
+            .map(|x| {
+                if let Some(x) = x {
+                    Ok(Some(AnyValue::Primitive(PrimitiveValue::String(
+                        x.to_string()
+                    ))))
                 } else {
                     Ok(None)
                 }
@@ -102,7 +119,7 @@ pub fn to_anyvalue_array_with_type(
     target_type: Any,
 ) -> Result<Vec<Option<AnyValue>>> {
     let data_type = array.data_type();
-    match *data_type {
+    match data_type {
         arrow::datatypes::DataType::Boolean => array
             .as_any()
             .downcast_ref::<BooleanArray>()
@@ -174,8 +191,48 @@ pub fn to_anyvalue_array_with_type(
             .to_anyvalue_array(),
         arrow::datatypes::DataType::Float16 => todo!(),
         arrow::datatypes::DataType::Null => todo!(),
-        arrow::datatypes::DataType::Timestamp(_, _) => todo!(),
-        arrow::datatypes::DataType::Time32(_) => todo!(),
+        arrow::datatypes::DataType::Timestamp(unit, _) => match unit {
+            arrow::datatypes::TimeUnit::Second => array
+                .as_any()
+                .downcast_ref::<arrow::array::TimestampSecondArray>()
+                .unwrap()
+                .to_anyvalue_array(),
+            arrow::datatypes::TimeUnit::Millisecond => array
+                .as_any()
+                .downcast_ref::<arrow::array::TimestampMillisecondArray>()
+                .unwrap()
+                .to_anyvalue_array(),
+            arrow::datatypes::TimeUnit::Microsecond => array
+                .as_any()
+                .downcast_ref::<arrow::array::TimestampMicrosecondArray>()
+                .unwrap()
+                .to_anyvalue_array(),
+            arrow::datatypes::TimeUnit::Nanosecond => array
+                .as_any()
+                .downcast_ref::<arrow::array::TimestampNanosecondArray>()
+                .unwrap()
+                .to_anyvalue_array(),
+        },
+        arrow::datatypes::DataType::Time32(unit) => match unit {
+            arrow::datatypes::TimeUnit::Second => array
+                .as_any()
+                .downcast_ref::<arrow::array::Time32SecondArray>()
+                .unwrap()
+                .to_anyvalue_array(),
+            arrow::datatypes::TimeUnit::Millisecond => array
+                .as_any()
+                .downcast_ref::<arrow::array::Time32MillisecondArray>()
+                .unwrap()
+                .to_anyvalue_array(),
+            arrow::datatypes::TimeUnit::Microsecond => Err(Error::new(
+                crate::ErrorKind::DataTypeUnsupported,
+                "Time32Microsecond is not supported",
+            )),
+            arrow::datatypes::TimeUnit::Nanosecond => Err(Error::new(
+                crate::ErrorKind::DataTypeUnsupported,
+                "Time32Nanosecond is not supported",
+            )),
+        },
         arrow::datatypes::DataType::Time64(_) => todo!(),
         arrow::datatypes::DataType::Duration(_) => todo!(),
         arrow::datatypes::DataType::Interval(_) => todo!(),
@@ -191,8 +248,8 @@ pub fn to_anyvalue_array_with_type(
         arrow::datatypes::DataType::RunEndEncoded(_, _) => todo!(),
         arrow::datatypes::DataType::Binary => todo!(),
         arrow::datatypes::DataType::LargeBinary => todo!(),
-        arrow::datatypes::DataType::Utf8 => todo!(),
-        arrow::datatypes::DataType::LargeUtf8 => todo!(),
+        arrow::datatypes::DataType::Utf8 => array.as_any().downcast_ref::<arrow::array::StringArray>().unwrap().to_anyvalue_array(),
+        arrow::datatypes::DataType::LargeUtf8 => array.as_any().downcast_ref::<arrow::array::LargeStringArray>().unwrap().to_anyvalue_array(),
     }
 }
 
