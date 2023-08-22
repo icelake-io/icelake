@@ -111,7 +111,7 @@ fn read_records_to_arrow(filename: &str) -> Vec<RecordBatch> {
     csv_reader.map(|r| r.unwrap()).collect::<Vec<RecordBatch>>()
 }
 
-fn init_iceberg_table_with_spark(config: &TestConfig, table_name: &str) {
+fn init_iceberg_table_with_spark(config: &TestConfig, sqls: Vec<&str>) {
     let mut cmd = Command::new("poetry");
     cmd.args([
         "run",
@@ -119,15 +119,15 @@ fn init_iceberg_table_with_spark(config: &TestConfig, table_name: &str) {
         "init.py",
         "-s",
         config.spark_url.as_str(),
-        "-t",
-        table_name,
+        "--sql",
     ])
+    .args(sqls)
     .current_dir(path_of("../python"));
 
     run_command(cmd, "init iceberg table")
 }
 
-fn check_iceberg_table_with_spark(config: &TestConfig, table_name: &str, data_csv: &str) {
+fn check_iceberg_table_with_spark(config: &TestConfig, sql: &str, data_csv: &str) {
     let mut cmd = Command::new("poetry");
     cmd.args([
         "run",
@@ -137,8 +137,8 @@ fn check_iceberg_table_with_spark(config: &TestConfig, table_name: &str, data_cs
         config.spark_url.as_str(),
         "-f",
         path_of(format!("../testdata/{}", data_csv)).as_str(),
-        "-t",
-        table_name,
+        "-q",
+        sql,
     ])
     .current_dir(path_of("../python"));
 
@@ -148,25 +148,74 @@ fn check_iceberg_table_with_spark(config: &TestConfig, table_name: &str, data_cs
 async fn do_test_append_data() {
     let mut fixture = prepare_env().await;
 
-    init_iceberg_table_with_spark(&fixture.args, "t1");
+    let sqls = vec![
+        "CREATE SCHEMA IF NOT EXISTS s1",
+        "DROP TABLE IF EXISTS s1.t1",
+        "
+        CREATE TABLE s1.t1
+        (
+          id long,
+          v_int int,
+          v_long long,
+          v_float float,
+          v_double double,
+          v_varchar string,
+          v_bool boolean,
+          v_date date,
+          v_timestamp timestamp,
+          v_decimal decimal(36, 10),
+          v_ts_ntz timestamp_ntz
+        ) USING iceberg
+        TBLPROPERTIES ('format-version'='2');",
+    ];
+    init_iceberg_table_with_spark(&fixture.args, sqls);
 
     // Check simple table
     fixture
         .write_data_with_icelake("demo/s1/t1", "data.csv")
         .await;
-    check_iceberg_table_with_spark(&fixture.args, "t1", "data.csv");
+    check_iceberg_table_with_spark(
+        &fixture.args,
+        "SELECT * FROM s1.t1 ORDER BY id ASC",
+        "data.csv",
+    );
 }
 
 async fn do_test_append_data_partition() {
     let mut fixture = prepare_env().await;
 
-    init_iceberg_table_with_spark(&fixture.args, "t2");
+    let sqls = vec![
+        "CREATE SCHEMA IF NOT EXISTS s1",
+        "DROP TABLE IF EXISTS s1.t2",
+        "
+        CREATE TABLE s1.t2
+        (
+          id long,
+          v_int int,
+          v_long long,
+          v_float float,
+          v_double double,
+          v_varchar string,
+          v_bool boolean,
+          v_date date,
+          v_timestamp timestamp,
+          v_decimal decimal(36, 10),
+          v_ts_ntz timestamp_ntz
+        ) USING iceberg
+        PARTITIONED BY (v_int,v_long,v_float,v_double,v_varchar,v_bool,v_date,v_timestamp,v_ts_ntz)
+        TBLPROPERTIES ('format-version'='2');",
+    ];
+   init_iceberg_table_with_spark(&fixture.args, sqls);
 
     // Check partition table
     fixture
         .write_data_with_icelake("demo/s1/t2", "partition_data.csv")
         .await;
-    check_iceberg_table_with_spark(&fixture.args, "t2", "partition_data.csv");
+    check_iceberg_table_with_spark(
+        &fixture.args,
+        "SELECT * FROM s1.t2 ORDER BY id ASC",
+        "partition_data.csv",
+    );
 }
 
 pub fn test_append_data() {
