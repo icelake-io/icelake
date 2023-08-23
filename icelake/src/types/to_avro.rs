@@ -14,9 +14,9 @@ use std::iter::Iterator;
 
 pub fn to_avro_schema(value: &Schema, name: Option<&str>) -> Result<AvroSchema> {
     let avro_fields: Vec<AvroRecordField> = value
-        .fields
+        .fields()
         .iter()
-        .map(AvroRecordField::try_from)
+        .map(|field| AvroRecordField::try_from(field.as_ref()))
         .collect::<Result<Vec<AvroRecordField>>>()?;
 
     let name = name
@@ -193,7 +193,7 @@ impl<'a, 'b> TryFrom<AnyWithFieldId<'a, 'b>> for AvroSchema {
                 let avro_fields: Vec<AvroRecordField> = s
                     .fields()
                     .iter()
-                    .map(AvroRecordField::try_from)
+                    .map(|field| AvroRecordField::try_from(field.as_ref()))
                     .collect::<Result<Vec<AvroRecordField>>>()?;
                 let name = format!(
                     "r{}",

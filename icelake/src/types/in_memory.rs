@@ -242,19 +242,43 @@ impl Serialize for PrimitiveValue {
 #[derive(Default, Debug, PartialEq, Clone, Eq)]
 pub struct Struct {
     /// Fields contained in this struct.
-    fields: Vec<Field>,
+    fields: Vec<FieldRef>,
     /// Map field id to index
-    id_lookup: HashMap<i32, usize>,
+    id_lookup: HashMap<i32, FieldRef>,
 }
 
 impl Struct {
     /// Create a new struct.
-    pub fn new(fields: Vec<Field>) -> Self {
+    pub fn new(fields: Vec<FieldRef>) -> Self {
         let mut id_lookup = HashMap::with_capacity(fields.len());
-        fields.iter().enumerate().for_each(|(index, field)| {
-            id_lookup.insert(field.id, index);
+        fields.iter().for_each(|field| {
+            id_lookup.insert(field.id, field.clone());
+            Self::fetch_any_field_id_map(&field.field_type, &mut id_lookup)
         });
-        Self { fields, id_lookup }
+        Struct { fields, id_lookup }
+    }
+
+    fn fetch_any_field_id_map(ty: &Any, map: &mut HashMap<i32, FieldRef>) {
+        match ty {
+            Any::Primitive(_) => {
+                // just skip
+            }
+            Any::Struct(inner) => Self::fetch_struct_field_id_map(inner, map),
+            Any::List(_) => {
+                // #TODO
+                // field id map is only used in partition now. For partition, it don't need list,
+                // so we ignore it now.
+            }
+            Any::Map(_) => {
+                // #TODO
+                // field id map is only used in partition now. For partition, it don't need map,
+                // so we ignore it now.
+            }
+        }
+    }
+
+    fn fetch_struct_field_id_map(ty: &Struct, map: &mut HashMap<i32, FieldRef>) {
+        map.extend(ty.id_lookup.clone())
     }
 
     /// Return the number of fields in the struct.
@@ -268,7 +292,7 @@ impl Struct {
     }
 
     /// Return the reference to the field of this struct.
-    pub fn fields(&self) -> &[Field] {
+    pub fn fields(&self) -> &[FieldRef] {
         &self.fields
     }
 
@@ -276,14 +300,17 @@ impl Struct {
     pub fn lookup_type(&self, field_id: i32) -> Option<Any> {
         self.id_lookup
             .get(&field_id)
-            .map(|&idx| self.fields[idx].field_type.clone())
+            .map(|field| field.field_type.clone())
     }
 
     /// Lookup the field according to the field id.
-    pub fn lookup_field(&self, field_id: i32) -> Option<&Field> {
-        self.id_lookup.get(&field_id).map(|&idx| &self.fields[idx])
+    pub fn lookup_field(&self, field_id: i32) -> Option<&FieldRef> {
+        self.id_lookup.get(&field_id)
     }
 }
+
+/// The reference to a Field.
+pub type FieldRef = Arc<Field>;
 
 /// A Field is the field of a struct.
 #[derive(Debug, PartialEq, Clone, Eq)]
@@ -359,8 +386,9 @@ impl From<StructValue> for AnyValue {
 }
 
 impl StructValue {
-    /// Create a iterator to read the field in order of (field_id, field_value, field_name).
-    pub fn iter(&self) -> impl Iterator<Item = (i32, Option<&AnyValue>, &str)> {
+    /// Create a iterator to read the field in order of (field_id, field_value, field_name,
+    /// field_requiered).
+    pub fn iter(&self) -> impl Iterator<Item = (i32, Option<&AnyValue>, &str, bool)> {
         self.null_bitmap
             .iter()
             .zip(self.field_values.iter())
@@ -370,6 +398,7 @@ impl StructValue {
                     field.id,
                     if *null { None } else { Some(value) },
                     field.name.as_str(),
+                    field.required,
                 )
             })
     }
@@ -381,8 +410,8 @@ impl Serialize for StructValue {
         S: serde::Serializer,
     {
         let mut record = serializer.serialize_struct("", self.field_values.len())?;
-        for (field_id, value, key) in self.iter() {
-            if self.type_info.lookup_field(field_id).unwrap().required {
+        for (_, value, key, required) in self.iter() {
+            if required {
                 record.serialize_field(Box::leak(key.to_string().into_boxed_str()), &value.expect("Struct Builder should guaranteed that the value is always if the field is required."))?;
             } else {
                 record.serialize_field(Box::leak(key.to_string().into_boxed_str()), &value)?;
@@ -394,10 +423,11 @@ impl Serialize for StructValue {
 
 impl Hash for StructValue {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        for (id, value, name) in self.iter() {
+        for (id, value, name, requierd) in self.iter() {
             id.hash(state);
             value.hash(state);
             name.hash(state);
+            requierd.hash(state);
         }
     }
 }
@@ -528,7 +558,28 @@ pub struct Schema {
     /// identify rows in a table, using the property identifier-field-ids
     pub identifier_field_ids: Option<Vec<i32>>,
     /// fields contained in this schema.
-    pub fields: Vec<Field>,
+    r#struct: Struct,
+}
+
+impl Schema {
+    /// Create a schema
+    pub fn new(schema_id: i32, identifier_field_ids: Option<Vec<i32>>, r#struct: Struct) -> Self {
+        Schema {
+            schema_id,
+            identifier_field_ids,
+            r#struct,
+        }
+    }
+
+    /// Return the fields of the schema
+    pub fn fields(&self) -> &[FieldRef] {
+        self.r#struct.fields()
+    }
+
+    /// Look up field by field id
+    pub fn look_up_field_by_id(&self, field_id: i32) -> Option<&FieldRef> {
+        self.r#struct.lookup_field(field_id)
+    }
 }
 
 /// Transform is used to transform predicates to partition predicates,
@@ -734,9 +785,7 @@ impl PartitionSpec {
         let mut fields = Vec::with_capacity(self.fields.len());
         for partition_field in &self.fields {
             let source_field = schema
-                .fields
-                .iter()
-                .find(|f| f.id == partition_field.source_column_id)
+                .look_up_field_by_id(partition_field.source_column_id)
                 .ok_or_else(|| {
                     Error::new(
                         ErrorKind::IcebergDataInvalid,
@@ -749,11 +798,14 @@ impl PartitionSpec {
             let result_type = partition_field
                 .transform
                 .result_type(&source_field.field_type)?;
-            fields.push(Field::optional(
-                partition_field.partition_field_id,
-                partition_field.name.as_str(),
-                result_type,
-            ));
+            fields.push(
+                Field::optional(
+                    partition_field.partition_field_id,
+                    partition_field.name.as_str(),
+                    result_type,
+                )
+                .into(),
+            );
         }
 
         Ok(Struct::new(fields))
@@ -910,27 +962,27 @@ pub struct ManifestList {
 
 impl ManifestList {
     pub(crate) fn v2_schema() -> Schema {
-        Schema {
-            schema_id: 1,
-            identifier_field_ids: None,
-            fields: vec![
-                manifest_list::MANIFEST_PATH.clone(),
-                manifest_list::MANIFEST_LENGTH.clone(),
-                manifest_list::PARTITION_SPEC_ID.clone(),
-                manifest_list::CONTENT.clone(),
-                manifest_list::SEQUENCE_NUMBER.clone(),
-                manifest_list::MIN_SEQUENCE_NUMBER.clone(),
-                manifest_list::ADDED_SNAPSHOT_ID.clone(),
-                manifest_list::ADDED_FILES_COUNT.clone(),
-                manifest_list::EXISTING_FILES_COUNT.clone(),
-                manifest_list::DELETED_FILES_COUNT.clone(),
-                manifest_list::ADDED_ROWS_COUNT.clone(),
-                manifest_list::EXISTING_ROWS_COUNT.clone(),
-                manifest_list::DELETED_ROWS_COUNT.clone(),
-                manifest_list::PARTITIONS.clone(),
-                manifest_list::KEY_METADATA.clone(),
-            ],
-        }
+        Schema::new(
+            1,
+            None,
+            Struct::new(vec![
+                manifest_list::MANIFEST_PATH.clone().into(),
+                manifest_list::MANIFEST_LENGTH.clone().into(),
+                manifest_list::PARTITION_SPEC_ID.clone().into(),
+                manifest_list::CONTENT.clone().into(),
+                manifest_list::SEQUENCE_NUMBER.clone().into(),
+                manifest_list::MIN_SEQUENCE_NUMBER.clone().into(),
+                manifest_list::ADDED_SNAPSHOT_ID.clone().into(),
+                manifest_list::ADDED_FILES_COUNT.clone().into(),
+                manifest_list::EXISTING_FILES_COUNT.clone().into(),
+                manifest_list::DELETED_FILES_COUNT.clone().into(),
+                manifest_list::ADDED_ROWS_COUNT.clone().into(),
+                manifest_list::EXISTING_ROWS_COUNT.clone().into(),
+                manifest_list::DELETED_ROWS_COUNT.clone().into(),
+                manifest_list::PARTITIONS.clone().into(),
+                manifest_list::KEY_METADATA.clone().into(),
+            ]),
+        )
     }
 }
 
@@ -1065,10 +1117,14 @@ mod manifest_list {
                 element_required: true,
                 element_type: Box::new(Any::Struct(
                     Struct::new(vec![
-                        Field::required(509, "contains_null", Any::Primitive(Primitive::Boolean)),
-                        Field::optional(518, "contains_nan", Any::Primitive(Primitive::Boolean)),
-                        Field::optional(510, "lower_bound", Any::Primitive(Primitive::Binary)),
-                        Field::optional(511, "upper_bound", Any::Primitive(Primitive::Binary)),
+                        Field::required(509, "contains_null", Any::Primitive(Primitive::Boolean))
+                            .into(),
+                        Field::optional(518, "contains_nan", Any::Primitive(Primitive::Boolean))
+                            .into(),
+                        Field::optional(510, "lower_bound", Any::Primitive(Primitive::Binary))
+                            .into(),
+                        Field::optional(511, "upper_bound", Any::Primitive(Primitive::Binary))
+                            .into(),
                     ])
                     .into(),
                 )),
@@ -1194,41 +1250,42 @@ pub struct ManifestFile {
 
 impl ManifestFile {
     pub(crate) fn v2_schema(partition_type: Struct) -> Schema {
-        Schema {
-            schema_id: 0,
-            identifier_field_ids: None,
-            fields: vec![
-                manifest_file::STATUS.clone(),
-                manifest_file::SNAPSHOT_ID.clone(),
-                manifest_file::SEQUENCE_NUMBER.clone(),
-                manifest_file::FILE_SEQUENCE_NUMBER.clone(),
+        Schema::new(
+            0,
+            None,
+            Struct::new(vec![
+                manifest_file::STATUS.clone().into(),
+                manifest_file::SNAPSHOT_ID.clone().into(),
+                manifest_file::SEQUENCE_NUMBER.clone().into(),
+                manifest_file::FILE_SEQUENCE_NUMBER.clone().into(),
                 Field::required(
                     manifest_file::DATA_FILE_ID,
                     manifest_file::DATA_FILE_NAME,
                     Any::Struct(
                         Struct::new(vec![
-                            datafile::CONTENT.clone().with_required(),
-                            datafile::FILE_PATH.clone(),
-                            datafile::FILE_FORMAT.clone(),
-                            DataFile::partition_field(partition_type),
-                            datafile::RECORD_COUNT.clone(),
-                            datafile::FILE_SIZE.clone(),
-                            datafile::COLUMN_SIZES.clone(),
-                            datafile::VALUE_COUNTS.clone(),
-                            datafile::NULL_VALUE_COUNTS.clone(),
-                            datafile::NAN_VALUE_COUNTS.clone(),
-                            datafile::LOWER_BOUNDS.clone(),
-                            datafile::UPPER_BOUNDS.clone(),
-                            datafile::KEY_METADATA.clone(),
-                            datafile::SPLIT_OFFSETS.clone(),
-                            datafile::EQUALITY_IDS.clone(),
-                            datafile::SORT_ORDER_ID.clone(),
+                            datafile::CONTENT.clone().with_required().into(),
+                            datafile::FILE_PATH.clone().into(),
+                            datafile::FILE_FORMAT.clone().into(),
+                            DataFile::partition_field(partition_type).into(),
+                            datafile::RECORD_COUNT.clone().into(),
+                            datafile::FILE_SIZE.clone().into(),
+                            datafile::COLUMN_SIZES.clone().into(),
+                            datafile::VALUE_COUNTS.clone().into(),
+                            datafile::NULL_VALUE_COUNTS.clone().into(),
+                            datafile::NAN_VALUE_COUNTS.clone().into(),
+                            datafile::LOWER_BOUNDS.clone().into(),
+                            datafile::UPPER_BOUNDS.clone().into(),
+                            datafile::KEY_METADATA.clone().into(),
+                            datafile::SPLIT_OFFSETS.clone().into(),
+                            datafile::EQUALITY_IDS.clone().into(),
+                            datafile::SORT_ORDER_ID.clone().into(),
                         ])
                         .into(),
                     ),
-                ),
-            ],
-        }
+                )
+                .into(),
+            ]),
+        )
     }
 }
 
@@ -2086,12 +2143,14 @@ mod test {
                         1,
                         "a",
                         crate::types::Any::Primitive(crate::types::Primitive::Int),
-                    ),
+                    )
+                    .into(),
                     Field::required(
                         2,
                         "b",
                         crate::types::Any::Primitive(crate::types::Primitive::String),
-                    ),
+                    )
+                    .into(),
                 ]);
                 let mut builder = StructValueBuilder::new(struct_type.into());
                 builder.add_field(1, None).unwrap();
@@ -2140,5 +2199,36 @@ mod test {
         println!("{:#?}", value);
         println!("{:#?}", expect_value);
         assert_eq!(value, expect_value);
+    }
+
+    #[test]
+    fn test_struct_field_id_lookup() {
+        let struct_type1 = Struct::new(vec![
+            Field::optional(
+                1,
+                "a",
+                crate::types::Any::Primitive(crate::types::Primitive::Int),
+            )
+            .into(),
+            Field::required(
+                2,
+                "b",
+                crate::types::Any::Primitive(crate::types::Primitive::String),
+            )
+            .into(),
+        ]);
+        let struct_type2 = Struct::new(vec![
+            Field::required(3, "c", crate::types::Any::Struct(struct_type1.into())).into(),
+            Field::required(
+                4,
+                "d",
+                crate::types::Any::Primitive(crate::types::Primitive::Int),
+            )
+            .into(),
+        ]);
+        assert_eq!(struct_type2.lookup_field(1).unwrap().name, "a");
+        assert_eq!(struct_type2.lookup_field(2).unwrap().name, "b");
+        assert_eq!(struct_type2.lookup_field(3).unwrap().name, "c");
+        assert_eq!(struct_type2.lookup_field(4).unwrap().name, "d");
     }
 }

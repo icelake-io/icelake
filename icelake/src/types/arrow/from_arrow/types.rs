@@ -42,13 +42,15 @@ impl TryFrom<ArrowDataType> for Any {
                                 id as i32,
                                 field.name(),
                                 field.data_type().clone().try_into()?,
-                            ))
+                            )
+                            .into())
                         } else {
                             Ok(Field::required(
                                 id as i32,
                                 field.name(),
                                 field.data_type().clone().try_into()?,
-                            ))
+                            )
+                            .into())
                         }
                     })
                     .collect::<Result<Vec<_>, Self::Error>>()?;
@@ -81,8 +83,8 @@ mod tests {
 
         let expect_any_struct = Any::Struct(
             types::Struct::new(vec![
-                Field::optional(0, "a", types::Primitive::Int.into()),
-                Field::required(1, "b", types::Primitive::String.into()),
+                Field::optional(0, "a", types::Primitive::Int.into()).into(),
+                Field::required(1, "b", types::Primitive::String.into()).into(),
             ])
             .into(),
         );
@@ -113,19 +115,20 @@ mod tests {
 
         let expect_any_struct = Any::Struct(
             types::Struct::new(vec![
-                Field::optional(0, "a", types::Primitive::Int.into()),
-                Field::required(1, "b", types::Primitive::String.into()),
+                Field::optional(0, "a", types::Primitive::Int.into()).into(),
+                Field::required(1, "b", types::Primitive::String.into()).into(),
                 Field::required(
                     2,
                     "c",
                     Any::Struct(
                         types::Struct::new(vec![
-                            Field::optional(0, "d", types::Primitive::Int.into()),
-                            Field::required(1, "e", types::Primitive::String.into()),
+                            Field::optional(0, "d", types::Primitive::Int.into()).into(),
+                            Field::required(1, "e", types::Primitive::String.into()).into(),
                         ])
                         .into(),
                     ),
-                ),
+                )
+                .into(),
             ])
             .into(),
         );

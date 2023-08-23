@@ -359,10 +359,10 @@ mod tests {
             last_sequence_number: 100,
             last_updated_ms: 1686911671713,
             last_column_id: 100,
-            schemas: vec![types::Schema {
-                schema_id: 0,
-                identifier_field_ids: None,
-                fields: vec![types::Field {
+            schemas: vec![types::Schema::new(
+                0,
+                None,
+                types::Struct::new(vec![types::Field {
                     id: 1,
                     name: "VendorID".to_string(),
                     required: false,
@@ -370,8 +370,9 @@ mod tests {
                     comment: None,
                     initial_default: None,
                     write_default: None,
-                }],
-            }],
+                }
+                .into()]),
+            )],
             current_schema_id: 0,
             partition_specs: vec![types::PartitionSpec {
                 spec_id: 1,

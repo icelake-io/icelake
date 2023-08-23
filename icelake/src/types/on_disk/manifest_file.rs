@@ -510,10 +510,10 @@ mod tests {
         assert_eq!(
             metadata,
             types::ManifestMetadata {
-                schema: types::Schema {
-                    schema_id: 0,
-                    identifier_field_ids: None,
-                    fields: vec![
+                schema: types::Schema::new(
+                    0,
+                    None,
+                    types::Struct::new(vec![
                         types::Field {
                             id: 1,
                             name: "id".to_string(),
@@ -522,7 +522,8 @@ mod tests {
                             comment: None,
                             initial_default: None,
                             write_default: None,
-                        },
+                        }
+                        .into(),
                         types::Field {
                             id: 2,
                             name: "data".to_string(),
@@ -531,9 +532,10 @@ mod tests {
                             comment: None,
                             initial_default: None,
                             write_default: None,
-                        },
-                    ],
-                },
+                        }
+                        .into(),
+                    ],)
+                ),
                 schema_id: 0,
                 partition_spec_id: 0,
                 format_version: Some(TableFormatVersion::V1),
@@ -553,10 +555,10 @@ mod tests {
     async fn test_read_write_manifest_file_v2() {
         let manifest_file = types::ManifestFile {
             metadata: types::ManifestMetadata {
-                schema: types::Schema {
-                    schema_id: 0,
-                    identifier_field_ids: None,
-                    fields: vec![
+                schema: types::Schema::new(
+                    0,
+                    None,
+                    types::Struct::new(vec![
                         types::Field {
                             id: 1,
                             name: "id".to_string(),
@@ -565,7 +567,8 @@ mod tests {
                             comment: None,
                             initial_default: None,
                             write_default: None,
-                        },
+                        }
+                        .into(),
                         types::Field {
                             id: 2,
                             name: "data".to_string(),
@@ -574,9 +577,10 @@ mod tests {
                             comment: None,
                             initial_default: None,
                             write_default: None,
-                        },
-                    ],
-                },
+                        }
+                        .into(),
+                    ]),
+                ),
                 schema_id: 0,
                 partition_spec_id: 1,
                 format_version: Some(TableFormatVersion::V2),
