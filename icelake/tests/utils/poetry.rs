@@ -2,7 +2,7 @@ use crate::utils::run_command;
 use std::ffi::OsStr;
 use std::process::Command;
 
-const POETRY_CMD: &'static str = "poetry";
+const POETRY_CMD: &str = "poetry";
 
 pub struct Poetry {
     proj_dir: String,

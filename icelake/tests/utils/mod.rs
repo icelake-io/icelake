@@ -21,7 +21,7 @@ use std::sync::Once;
 static INIT: Once = Once::new();
 
 pub fn set_up() {
-    INIT.call_once(|| env_logger::init());
+    INIT.call_once(env_logger::init);
 }
 pub fn run_command(mut cmd: Command, desc: impl ToString) {
     let desc = desc.to_string();
