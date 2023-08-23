@@ -6,7 +6,6 @@ license = "Apache-2.0"
 [workspace]
 members = [
     "icelake",
-    "tests/integration/rust",
     "rest_api"
 ]
 
@@ -39,3 +38,4 @@ ordered-float = "3.7.0"
 confique = "0.2"
 libtest-mimic = "0.6"
 futures = { version = "0.3", features = ["executor"] }
+testcontainers = {git = "https://github.com/liurenjie1024/testcontainers-rs.git", rev = "24fd08c05aa72ca7542198056c8c592a1899fd39"}
