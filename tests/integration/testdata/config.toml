@@ -1,6 +1,0 @@
-spark_url="sc://localhost:15002"
-s3_bucket="icebergdata"
-s3_endpoint="http://localhost:9000"
-s3_username="admin"
-s3_password="password"
-s3_region="us-east-1"

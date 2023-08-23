@@ -13,8 +13,8 @@ use icelake::Table;
 use opendal::services::S3;
 use opendal::Operator;
 use std::fs::File;
+use std::process::Command;
 use std::sync::Arc;
-use std::{path::Path, process::Command};
 
 use std::sync::Once;
 
@@ -78,14 +78,14 @@ pub struct TestFixture<'a> {
 
 impl TestFixture<'_> {
     pub fn init_table_with_spark(&self) {
+        let args = vec!["-s".to_string(), self.spark_connect_url(), "--sql".to_string()];
+        let args: Vec<String> = args
+            .into_iter()
+            .chain(self.init_spark_table_sqls().into_iter())
+            .collect();
         self.poetry.run_file(
             "init.py",
-            [
-                "-s",
-                &self.spark_connect_url(),
-                "-t",
-                self.table_name.as_str(),
-            ],
+            args,
             format!("Init {} with spark", self.table_name.as_str()),
         )
     }
@@ -98,8 +98,8 @@ impl TestFixture<'_> {
                 &self.spark_connect_url(),
                 "-f",
                 self.csv_file_path().as_str(),
-                "-t",
-                self.table_name.as_str(),
+                "-q",
+                format!("SELECT * FROM s1.{} ORDER BY id ASC", self.table_name).as_str(),
             ],
             format!("Check {} with spark", self.table_name.as_str()),
         )
@@ -173,5 +173,31 @@ impl TestFixture<'_> {
         self.init_table_with_spark();
         self.write_data_with_icelake().await;
         self.check_table_with_spark()
+    }
+
+    pub fn init_spark_table_sqls(&self) -> Vec<String> {
+        vec![
+            "CREATE SCHEMA IF NOT EXISTS s1".to_string(),
+            format!("DROP TABLE IF EXISTS s1.{}", self.table_name),
+            format!(
+                "
+        CREATE TABLE s1.{}
+        (
+          id long,
+          v_int int,
+          v_long long,
+          v_float float,
+          v_double double,
+          v_varchar string,
+          v_bool boolean,
+          v_date date,
+          v_timestamp timestamp,
+          v_decimal decimal(36, 10),
+          v_ts_ntz timestamp_ntz
+        ) USING iceberg
+        TBLPROPERTIES ('format-version'='2');",
+                self.table_name
+            ),
+        ]
     }
 }
