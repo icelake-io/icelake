@@ -1,6 +1,4 @@
-use crate::utils::{
-    mc_image, minio_image, set_up, spark_image, Poetry, TestFixture,
-};
+use crate::utils::{mc_image, minio_image, set_up, spark_image, Poetry, TestFixture};
 use testcontainers::clients::Cli;
 
 mod utils;

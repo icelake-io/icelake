@@ -78,7 +78,11 @@ pub struct TestFixture<'a> {
 
 impl TestFixture<'_> {
     pub fn init_table_with_spark(&self) {
-        let args = vec!["-s".to_string(), self.spark_connect_url(), "--sql".to_string()];
+        let args = vec![
+            "-s".to_string(),
+            self.spark_connect_url(),
+            "--sql".to_string(),
+        ];
         let args: Vec<String> = args
             .into_iter()
             .chain(self.init_spark_table_sqls().into_iter())

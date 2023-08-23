@@ -6,7 +6,6 @@ license = "Apache-2.0"
 [workspace]
 members = [
     "icelake",
-    "tests/integration/rust",
     "rest_api"
 ]
 

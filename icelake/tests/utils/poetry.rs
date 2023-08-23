@@ -1,5 +1,5 @@
-use std::ffi::OsStr;
 use crate::utils::run_command;
+use std::ffi::OsStr;
 use std::process::Command;
 
 const POETRY_CMD: &'static str = "poetry";
