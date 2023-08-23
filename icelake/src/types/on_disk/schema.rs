@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use super::types::*;
 use crate::types;
+use crate::types::Struct;
 use crate::Error;
 use crate::Result;
 
@@ -32,14 +33,14 @@ impl TryFrom<Schema> for types::Schema {
     fn try_from(value: Schema) -> Result<Self> {
         let mut fields = Vec::with_capacity(value.fields.len());
         for field in value.fields {
-            fields.push(field.try_into()?);
+            fields.push(types::Field::try_from(field)?.into());
         }
 
-        Ok(types::Schema {
-            schema_id: value.schema_id,
-            identifier_field_ids: value.identifier_field_ids,
-            fields,
-        })
+        Ok(types::Schema::new(
+            value.schema_id,
+            value.identifier_field_ids,
+            Struct::new(fields),
+        ))
     }
 }
 
@@ -51,9 +52,9 @@ impl<'a> TryFrom<&'a types::Schema> for Schema {
             schema_id: v.schema_id,
             identifier_field_ids: v.identifier_field_ids.as_ref().cloned(),
             fields: v
-                .fields
+                .fields()
                 .iter()
-                .map(|v| Field::try_from(v.clone()))
+                .map(|v| Field::try_from(v.as_ref().to_owned()))
                 .collect::<Result<Vec<Field>>>()?,
             r#type: "struct".to_string(),
         })
@@ -92,10 +93,10 @@ mod tests {
 }
         "#;
 
-        let expected_schema = types::Schema {
-            schema_id: 0,
-            identifier_field_ids: None,
-            fields: vec![types::Field {
+        let expected_schema = types::Schema::new(
+            0,
+            None,
+            types::Struct::new(vec![types::Field {
                 id: 1,
                 name: "VendorID".to_string(),
                 required: false,
@@ -103,8 +104,9 @@ mod tests {
                 comment: None,
                 initial_default: None,
                 write_default: None,
-            }],
-        };
+            }
+            .into()]),
+        );
 
         check_schema_serde_and_parse(json_schema, expected_schema);
     }
@@ -126,10 +128,10 @@ mod tests {
 }
         "#;
 
-        let expected_schema = types::Schema {
-            schema_id: 0,
-            identifier_field_ids: None,
-            fields: vec![types::Field {
+        let expected_schema = types::Schema::new(
+            0,
+            None,
+            Struct::new(vec![types::Field {
                 id: 1,
                 name: "VendorID".to_string(),
                 required: false,
@@ -137,8 +139,9 @@ mod tests {
                 comment: None,
                 initial_default: Some(types::AnyValue::Primitive(types::PrimitiveValue::Long(123))),
                 write_default: Some(types::AnyValue::Primitive(types::PrimitiveValue::Long(456))),
-            }],
-        };
+            }
+            .into()]),
+        );
 
         check_schema_serde_and_parse(json_schema, expected_schema);
     }
@@ -165,10 +168,10 @@ mod tests {
 }
         "#;
 
-        let expected_schema = types::Schema {
-            schema_id: 0,
-            identifier_field_ids: None,
-            fields: vec![types::Field {
+        let expected_schema = types::Schema::new(
+            0,
+            None,
+            types::Struct::new(vec![types::Field {
                 id: 1,
                 name: "VendorID".to_string(),
                 required: false,
@@ -180,8 +183,9 @@ mod tests {
                 comment: None,
                 initial_default: None,
                 write_default: None,
-            }],
-        };
+            }
+            .into()]),
+        );
 
         check_schema_serde_and_parse(json_schema, expected_schema);
     }
@@ -210,10 +214,10 @@ mod tests {
 }
         "#;
 
-        let expected_schema = types::Schema {
-            schema_id: 0,
-            identifier_field_ids: None,
-            fields: vec![types::Field {
+        let expected_schema = types::Schema::new(
+            0,
+            None,
+            Struct::new(vec![types::Field {
                 id: 1,
                 name: "VendorID".to_string(),
                 required: false,
@@ -227,8 +231,9 @@ mod tests {
                 comment: None,
                 initial_default: None,
                 write_default: None,
-            }],
-        };
+            }
+            .into()]),
+        );
 
         check_schema_serde_and_parse(json_schema, expected_schema);
     }

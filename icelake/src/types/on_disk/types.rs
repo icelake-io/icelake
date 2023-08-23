@@ -129,7 +129,7 @@ impl TryFrom<Types> for types::Any {
                         write_default: None,
                     };
 
-                    fields.push(field);
+                    fields.push(field.into());
                 }
 
                 types::Any::Struct(types::Struct::new(fields).into())

@@ -17,9 +17,9 @@ impl TryFrom<types::Schema> for ArrowSchema {
 
     fn try_from(value: types::Schema) -> Result<Self, Self::Error> {
         let fields = value
-            .fields
-            .into_iter()
-            .map(ArrowField::try_from)
+            .fields()
+            .iter()
+            .map(|field| ArrowField::try_from(field.as_ref().to_owned()))
             .collect::<Result<Vec<ArrowField>, Error>>()?;
 
         Ok(ArrowSchema::new(fields))
@@ -49,7 +49,7 @@ impl TryFrom<types::Any> for ArrowDataType {
             Any::Struct(v) => {
                 let mut fields = vec![];
                 for f in v.fields() {
-                    fields.push(ArrowField::try_from(f.clone())?);
+                    fields.push(ArrowField::try_from(f.as_ref().to_owned())?);
                 }
                 Ok(ArrowDataType::Struct(fields.into()))
             }
@@ -137,12 +137,16 @@ impl TryFrom<types::Primitive> for ArrowDataType {
 
 #[cfg(test)]
 mod tests {
+    use crate::types::Struct;
+
     use super::*;
 
     #[test]
     fn test_try_into_arrow_schema() {
-        let schema = types::Schema {
-            fields: vec![
+        let schema = types::Schema::new(
+            0,
+            None,
+            Struct::new(vec![
                 types::Field {
                     name: "id".to_string(),
                     field_type: types::Any::Primitive(types::Primitive::Long),
@@ -151,7 +155,8 @@ mod tests {
                     comment: None,
                     initial_default: None,
                     write_default: None,
-                },
+                }
+                .into(),
                 types::Field {
                     name: "data".to_string(),
                     field_type: types::Any::Primitive(types::Primitive::String),
@@ -160,11 +165,10 @@ mod tests {
                     comment: None,
                     initial_default: None,
                     write_default: None,
-                },
-            ],
-            schema_id: 0,
-            identifier_field_ids: None,
-        };
+                }
+                .into(),
+            ]),
+        );
 
         let arrow_schema = ArrowSchema::try_from(schema).unwrap();
 

@@ -313,8 +313,8 @@ mod tests {
 
         // construct a anyvalue struct array
         let struct_ty = Arc::new(Struct::new(vec![
-            Field::required(0, "b", Primitive::Boolean.into()),
-            Field::required(1, "c", Primitive::Int.into()),
+            Field::required(0, "b", Primitive::Boolean.into()).into(),
+            Field::required(1, "c", Primitive::Int.into()).into(),
         ]));
         let mut expect: Vec<Option<AnyValue>> = Vec::with_capacity(4);
         let mut struct_builder = StructValueBuilder::new(struct_ty.clone());
@@ -385,12 +385,12 @@ mod tests {
 
         // construct the expect any value struct array.
         let struct_sub_ty = Arc::new(Struct::new(vec![
-            Field::required(0, "c", Primitive::Boolean.into()),
-            Field::required(1, "d", Primitive::Int.into()),
+            Field::required(0, "c", Primitive::Boolean.into()).into(),
+            Field::required(1, "d", Primitive::Int.into()).into(),
         ]));
         let struct_ty = Arc::new(Struct::new(vec![
-            Field::required(0, "a", Any::Struct(struct_sub_ty.clone())),
-            Field::required(1, "b", Any::Struct(struct_sub_ty.clone())),
+            Field::required(0, "a", Any::Struct(struct_sub_ty.clone())).into(),
+            Field::required(1, "b", Any::Struct(struct_sub_ty.clone())).into(),
         ]));
         let mut expect: Vec<Option<AnyValue>> = Vec::with_capacity(4);
         let mut struct_builder = StructValueBuilder::new(struct_ty.clone());
