@@ -24,13 +24,40 @@ async fn test_insert_no_partition() {
 
     let poetry = Poetry::new(format!("{}/../testdata/python", env!("CARGO_MANIFEST_DIR")));
 
+    let table_name = "t1".to_string();
+    let table_root = "demo/s1/t1".to_string();
+
+    let init_sqls = vec![
+        "CREATE SCHEMA IF NOT EXISTS s1".to_string(),
+        format!("DROP TABLE IF EXISTS s1.{table_name}"),
+        format!(
+            "
+        CREATE TABLE s1.{table_name}
+        (
+          id long,
+          v_int int,
+          v_long long,
+          v_float float,
+          v_double double,
+          v_varchar string,
+          v_bool boolean,
+          v_date date,
+          v_timestamp timestamp,
+          v_decimal decimal(36, 10),
+          v_ts_ntz timestamp_ntz
+        ) USING iceberg
+        TBLPROPERTIES ('format-version'='2');"
+        ),
+    ];
+
     let test_fixture = TestFixture {
         spark,
         minio,
         poetry,
-        table_name: "t1".to_string(),
+        table_name,
         csv_file: "data.csv".to_string(),
-        table_root: "demo/s1/t1".to_string(),
+        table_root,
+        init_sqls,
     };
 
     test_fixture.run().await
@@ -57,13 +84,42 @@ async fn test_insert_partition() {
 
     let poetry = Poetry::new(format!("{}/../testdata/python", env!("CARGO_MANIFEST_DIR")));
 
+    let table_name = "t2".to_string();
+    let table_root = "demo/s1/t2".to_string();
+
+    let init_sqls = vec![
+        "CREATE SCHEMA IF NOT EXISTS s1".to_string(),
+        format!("DROP TABLE IF EXISTS s1.{}", table_name),
+        format!(
+            "
+        CREATE TABLE s1.{}
+        (
+          id long,
+          v_int int,
+          v_long long,
+          v_float float,
+          v_double double,
+          v_varchar string,
+          v_bool boolean,
+          v_date date,
+          v_timestamp timestamp,
+          v_decimal decimal(36, 10),
+          v_ts_ntz timestamp_ntz
+        ) USING iceberg
+        PARTITIONED BY (v_int, v_long, v_float, v_double, v_varchar, v_bool, v_date, v_timestamp,  v_ts_ntz)
+        TBLPROPERTIES ('format-version'='2');",
+            table_name
+        ),
+    ];
+
     let test_fixture = TestFixture {
         spark,
         minio,
         poetry,
-        table_name: "t2".to_string(),
+        table_name,
         csv_file: "partition_data.csv".to_string(),
-        table_root: "demo/s1/t2".to_string(),
+        table_root,
+        init_sqls,
     };
 
     test_fixture.run().await

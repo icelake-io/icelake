@@ -1,6 +1,7 @@
 //! to_arrow module provices the convert functions from iceberg in-memory
 //! schema to arrow schema.
 
+use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::sync::Arc;
 
@@ -30,13 +31,12 @@ impl TryFrom<types::Field> for ArrowField {
     type Error = Error;
 
     fn try_from(value: types::Field) -> Result<Self, Self::Error> {
-        Ok(ArrowField::new_dict(
-            value.name,
-            value.field_type.try_into()?,
-            !value.required,
-            value.id as i64,
-            false,
-        ))
+        let mut metadata = HashMap::new();
+        metadata.insert("column_id".to_string(), value.id.to_string());
+        Ok(
+            ArrowField::new(value.name, value.field_type.try_into()?, !value.required)
+                .with_metadata(metadata),
+        )
     }
 }
 

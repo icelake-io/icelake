@@ -1,4 +1,4 @@
-use crate::utils::run_command;
+use crate::utils::{run_command, run_command_quiet};
 use std::ffi::OsStr;
 use std::process::Command;
 
@@ -14,9 +14,10 @@ impl Poetry {
 
         let mut cmd = Command::new(POETRY_CMD);
 
-        cmd.arg("update").current_dir(proj_dir.as_str());
+        cmd.args(["update", "--quiet"])
+            .current_dir(proj_dir.as_str());
 
-        run_command(cmd, "poetry update");
+        run_command_quiet(cmd, "poetry update");
 
         Self { proj_dir }
     }

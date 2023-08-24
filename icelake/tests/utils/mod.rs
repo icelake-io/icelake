@@ -23,6 +23,7 @@ static INIT: Once = Once::new();
 pub fn set_up() {
     INIT.call_once(env_logger::init);
 }
+
 pub fn run_command(mut cmd: Command, desc: impl ToString) {
     let desc = desc.to_string();
     log::info!("Starting to {}, command: {:?}", &desc, cmd);
@@ -31,6 +32,18 @@ pub fn run_command(mut cmd: Command, desc: impl ToString) {
         log::info!("{} succeed!", desc)
     } else {
         panic!("{} failed: {:?}", desc, exit);
+    }
+}
+
+/// Same function as `run_command`, but will not panic if run fail.
+pub fn run_command_quiet(mut cmd: Command, desc: impl ToString) {
+    let desc = desc.to_string();
+    log::info!("Starting to {}, command: {:?}", &desc, cmd);
+    let exit = cmd.status().unwrap();
+    if exit.success() {
+        log::info!("{} succeed!", desc)
+    } else {
+        log::info!("{} failed: {:?}", desc, exit);
     }
 }
 
@@ -74,6 +87,8 @@ pub struct TestFixture<'a> {
     pub table_name: String,
     pub csv_file: String,
     pub table_root: String,
+
+    pub init_sqls: Vec<String>,
 }
 
 impl TestFixture<'_> {
@@ -85,7 +100,7 @@ impl TestFixture<'_> {
         ];
         let args: Vec<String> = args
             .into_iter()
-            .chain(self.init_spark_table_sqls().into_iter())
+            .chain(self.init_sqls.clone().into_iter())
             .collect();
         self.poetry.run_file(
             "init.py",
@@ -177,31 +192,5 @@ impl TestFixture<'_> {
         self.init_table_with_spark();
         self.write_data_with_icelake().await;
         self.check_table_with_spark()
-    }
-
-    pub fn init_spark_table_sqls(&self) -> Vec<String> {
-        vec![
-            "CREATE SCHEMA IF NOT EXISTS s1".to_string(),
-            format!("DROP TABLE IF EXISTS s1.{}", self.table_name),
-            format!(
-                "
-        CREATE TABLE s1.{}
-        (
-          id long,
-          v_int int,
-          v_long long,
-          v_float float,
-          v_double double,
-          v_varchar string,
-          v_bool boolean,
-          v_date date,
-          v_timestamp timestamp,
-          v_decimal decimal(36, 10),
-          v_ts_ntz timestamp_ntz
-        ) USING iceberg
-        TBLPROPERTIES ('format-version'='2');",
-                self.table_name
-            ),
-        ]
     }
 }
