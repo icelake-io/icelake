@@ -10,9 +10,14 @@ use crate::types::BoxedTransformFunction;
 use crate::types::PartitionSpec;
 use crate::types::{create_transform_function, DataFile, TableMetadata};
 use crate::types::{struct_to_anyvalue_array_with_type, Any, AnyValue};
+use crate::Error;
+use crate::ErrorKind;
+use arrow::array::ArrayRef;
 use arrow::array::{Array, BooleanArray, StructArray};
 use arrow::compute::filter_record_batch;
+use arrow::datatypes::DataType;
 use arrow::datatypes::Field;
+use arrow::datatypes::Fields;
 use arrow::datatypes::SchemaRef as ArrowSchemaRef;
 use arrow::record_batch::RecordBatch;
 use arrow::row::{OwnedRow, RowConverter, SortField};
@@ -173,10 +178,10 @@ pub struct PartitionedWriter {
     table_location: String,
     location_generator: Arc<DataFileLocationGenerator>,
     /// Paritition fields used to compute:
-    /// - usize: source column index of batch record
+    /// - Vec<usize>: index vector of the source column
     /// - String: partition field name
     /// - BoxedTransformFunction: transform function
-    partition_fields: Vec<(usize, String, BoxedTransformFunction)>,
+    partition_fields: Vec<(Vec<usize>, String, BoxedTransformFunction)>,
     /// Partition value type
     partition_type: Any,
     table_config: TableConfigRef,
@@ -192,6 +197,47 @@ struct PartitionGroup {
 }
 
 impl PartitionedWriter {
+    /// Fetch the column index vector of the column id (We store it in Field of arrow as dict id).
+    /// e.g.
+    /// struct<struct<x:1,y:2>,z:3>
+    /// for source column id 2,
+    /// you will get the source column index vector [1,0]
+    fn fetch_column_index(fields: &Fields, index_vec: &mut Vec<usize>, col_id: i64) {
+        for (pos, field) in fields.iter().enumerate() {
+            let id: i64 = field
+                .metadata()
+                .get("column_id")
+                .expect("column_id must be set")
+                .parse()
+                .expect("column_id must can be parse as i64");
+            if col_id == id {
+                index_vec.push(pos);
+                return;
+            }
+            if let DataType::Struct(inner) = field.data_type() {
+                Self::fetch_column_index(inner, index_vec, col_id);
+                if !index_vec.is_empty() {
+                    index_vec.push(pos);
+                    return;
+                }
+            }
+        }
+    }
+
+    fn get_column_by_index_vec(batch: &RecordBatch, index_vec: &[usize]) -> ArrayRef {
+        let mut rev_iterator = index_vec.iter().rev();
+        let mut array = batch.column(*rev_iterator.next().unwrap()).clone();
+        for idx in rev_iterator {
+            array = array
+                .as_any()
+                .downcast_ref::<StructArray>()
+                .unwrap()
+                .column(*idx)
+                .clone();
+        }
+        array
+    }
+
     /// Create a new `PartitionedWriter`.
     pub fn new(
         schema: ArrowSchemaRef,
@@ -206,9 +252,20 @@ impl PartitionedWriter {
             .fields
             .iter()
             .map(|field| {
-                let index = schema.index_of(field.name.as_str()).unwrap();
                 let transform = create_transform_function(&field.transform)?;
-                Ok((index, field.name.clone(), transform))
+                let mut index_vec = vec![];
+                Self::fetch_column_index(
+                    schema.fields(),
+                    &mut index_vec,
+                    field.source_column_id as i64,
+                );
+                if index_vec.is_empty() {
+                    return Err(Error::new(
+                        ErrorKind::IcebergDataInvalid,
+                        format!("Can't find source column id: {}", field.source_column_id),
+                    ));
+                }
+                Ok((index_vec, field.name.clone(), transform))
             })
             .collect::<Result<Vec<_>>>()?;
         Ok(Self {
@@ -239,8 +296,9 @@ impl PartitionedWriter {
         let value_array = Arc::new(StructArray::from(
             self.partition_fields
                 .iter()
-                .map(|(index_of_batch, field_name, transform)| {
-                    let array = transform.transform(batch.column(*index_of_batch).clone())?;
+                .map(|(index_vec, field_name, transform)| {
+                    let array = Self::get_column_by_index_vec(batch, index_vec);
+                    let array = transform.transform(array)?;
                     let field = Arc::new(Field::new(
                         field_name.clone(),
                         array.data_type().clone(),
