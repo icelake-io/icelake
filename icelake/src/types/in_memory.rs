@@ -683,6 +683,11 @@ impl Transform {
     fn result_type(&self, input_type: &Any) -> Result<Any> {
         match self {
             Transform::Identity => Ok(input_type.clone()),
+            Transform::Void => Ok(Primitive::Int.into()),
+            Transform::Year => Ok(Primitive::Int.into()),
+            Transform::Month => Ok(Primitive::Int.into()),
+            Transform::Day => Ok(Primitive::Int.into()),
+            Transform::Hour => Ok(Primitive::Int.into()),
             _ => Err(Error::new(
                 ErrorKind::IcebergFeatureUnsupported,
                 format!("Transform {:?} not supported yet!", &self),

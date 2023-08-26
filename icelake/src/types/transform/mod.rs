@@ -1,7 +1,10 @@
 use super::Transform;
 use crate::Result;
 use arrow::array::ArrayRef;
+
 mod identity;
+mod temporal;
+mod void;
 
 /// TransformFunction is a trait that defines the interface of a transform function.
 pub trait TransformFunction: Send {
@@ -18,6 +21,11 @@ pub type BoxedTransformFunction = Box<dyn TransformFunction>;
 pub fn create_transform_function(transform: &Transform) -> Result<BoxedTransformFunction> {
     match transform {
         Transform::Identity => Ok(Box::new(identity::Identity {})),
+        Transform::Void => Ok(Box::new(void::Void {})),
+        Transform::Year => Ok(Box::new(temporal::Year {})),
+        Transform::Month => Ok(Box::new(temporal::Month {})),
+        Transform::Day => Ok(Box::new(temporal::Day {})),
+        Transform::Hour => Ok(Box::new(temporal::Hour {})),
         _ => Err(crate::error::Error::new(
             crate::ErrorKind::IcebergFeatureUnsupported,
             format!("Transform {:?} is not implemented", transform),
