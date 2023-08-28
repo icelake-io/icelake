@@ -16,11 +16,11 @@ use std::sync::Arc;
 
 /// 1970-01-01 is base date in iceberg.
 /// 719163 is the number of days from 0000-01-01 to 1970-01-01
-const BASE_DAY_FROM_CE: i32 = 719163;
+const EPOCH_DAY_FROM_CE: i32 = 719163;
 const DAY_PER_SECOND: f64 = 0.0000115741;
 const HOUR_PER_SECOND: f64 = 1_f64 / 3600.0;
 
-pub struct Year {}
+pub struct Year;
 
 impl TransformFunction for Year {
     fn transform(&self, input: ArrayRef) -> Result<ArrayRef> {
@@ -40,7 +40,7 @@ impl TransformFunction for Year {
     }
 }
 
-pub struct Month {}
+pub struct Month;
 
 impl TransformFunction for Month {
     fn transform(&self, input: ArrayRef) -> Result<ArrayRef> {
@@ -109,7 +109,7 @@ impl TransformFunction for Day {
                     .unwrap()
                     .unary(|v| -> i32 {
                         datatypes::Date32Type::to_naive_date(v).num_days_from_ce()
-                            - BASE_DAY_FROM_CE
+                            - EPOCH_DAY_FROM_CE
                     })
             }
             _ => unreachable!(
@@ -121,7 +121,7 @@ impl TransformFunction for Day {
     }
 }
 
-pub struct Hour {}
+pub struct Hour;
 
 impl TransformFunction for Hour {
     fn transform(&self, input: ArrayRef) -> Result<ArrayRef> {
