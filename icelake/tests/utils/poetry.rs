@@ -12,12 +12,12 @@ impl Poetry {
     pub fn new<S: ToString>(s: S) -> Self {
         let proj_dir = s.to_string();
 
-        let mut cmd = Command::new(POETRY_CMD);
-
-        cmd.args(["update", "--quiet"])
-            .current_dir(proj_dir.as_str());
-
-        run_command_quiet(cmd, "poetry update");
+        // let mut cmd = Command::new(POETRY_CMD);
+        //
+        // cmd.args(["update", "--quiet"])
+        //     .current_dir(proj_dir.as_str());
+        //
+        // run_command_quiet(cmd, "poetry update");
 
         Self { proj_dir }
     }

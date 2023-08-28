@@ -49,5 +49,9 @@ jobs:
         uses: abatilo/actions-poetry@v2
         with:
           poetry-version: "1.5.1"
+      - name: Install dependencies
+        run: |
+          cd testdata/python
+          poetry update --quiet
       - name: Test
         run: cargo test --all-targets --all-features

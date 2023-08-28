@@ -2,6 +2,10 @@
 
 set -ex
 
+#HTTP_PROXY=socks5://192.168.110.27:7890
+#HTTPS_PROXY=socks5://192.168.110.27:7890
+#  --conf spark.driver.extraJavaOptions="-Dhttps.proxyHost=192.168.110.27 -Dhttps.proxyPort=7890" \
+
 ICEBERG_VERSION=1.3.1
 SPARK_VERSION=3.4.1
 
