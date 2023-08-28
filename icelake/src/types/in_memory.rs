@@ -2201,8 +2201,6 @@ mod test {
             record.into()
         };
 
-        println!("{:#?}", value);
-        println!("{:#?}", expect_value);
         assert_eq!(value, expect_value);
     }
 
