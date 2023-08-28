@@ -128,7 +128,7 @@ impl TestFixture<'_> {
                 "http://localhost:{}",
                 self.minio.get_host_port_ipv4(MINIO_DATA_PORT)
             )
-                .as_str(),
+            .as_str(),
         );
         builder.access_key_id("admin");
         builder.secret_access_key("password");
