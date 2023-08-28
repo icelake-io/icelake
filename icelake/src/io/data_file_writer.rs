@@ -211,7 +211,7 @@ impl DataFileWriter {
             split_offsets: Some(meta_data
                 .row_groups
                 .iter()
-                .filter_map(|group| group.columns.get(0).map(|c| c.file_offset))
+                .filter_map(|group| group.file_offset)
                 .collect()),
             nan_value_counts: None,
             lower_bounds: None,

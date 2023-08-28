@@ -1,8 +1,11 @@
 use testcontainers::{Container, GenericImage};
 
 mod poetry;
+
 pub use poetry::*;
+
 mod containers;
+
 pub use containers::*;
 
 use arrow::csv::ReaderBuilder;
@@ -32,18 +35,6 @@ pub fn run_command(mut cmd: Command, desc: impl ToString) {
         log::info!("{} succeed!", desc)
     } else {
         panic!("{} failed: {:?}", desc, exit);
-    }
-}
-
-/// Same function as `run_command`, but will not panic if run fail.
-pub fn run_command_quiet(mut cmd: Command, desc: impl ToString) {
-    let desc = desc.to_string();
-    log::info!("Starting to {}, command: {:?}", &desc, cmd);
-    let exit = cmd.status().unwrap();
-    if exit.success() {
-        log::info!("{} succeed!", desc)
-    } else {
-        log::info!("{} failed: {:?}", desc, exit);
     }
 }
 
