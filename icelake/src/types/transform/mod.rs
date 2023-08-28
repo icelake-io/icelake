@@ -4,7 +4,7 @@ use arrow::array::ArrayRef;
 mod identity;
 
 /// TransformFunction is a trait that defines the interface of a transform function.
-pub trait TransformFunction {
+pub trait TransformFunction: Send {
     /// transform will take an input array and transform it into a new array.
     /// The implementation of this function will need to check and downcast the input to specific
     /// type.
