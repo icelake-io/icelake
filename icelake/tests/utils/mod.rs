@@ -98,10 +98,7 @@ impl TestFixture<'_> {
             self.spark_connect_url(),
             "--sql".to_string(),
         ];
-        let args: Vec<String> = args
-            .into_iter()
-            .chain(self.init_sqls.clone().into_iter())
-            .collect();
+        let args: Vec<String> = args.into_iter().chain(self.init_sqls.clone()).collect();
         self.poetry.run_file(
             "init.py",
             args,
