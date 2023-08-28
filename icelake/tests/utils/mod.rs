@@ -77,6 +77,7 @@ pub struct TestFixture<'a> {
 
     pub table_name: String,
     pub csv_file: String,
+    pub partition_csv_file: Option<String>,
     pub table_root: String,
 
     pub init_sqls: Vec<String>,
@@ -107,6 +108,22 @@ impl TestFixture<'_> {
                 self.csv_file_path().as_str(),
                 "-q",
                 format!("SELECT * FROM s1.{} ORDER BY id ASC", self.table_name).as_str(),
+            ],
+            format!("Check {} with spark", self.table_name.as_str()),
+        )
+    }
+
+    pub fn check_table_partition_with_spark(&self) {
+        self.poetry.run_file(
+            "check.py",
+            [
+                "-s",
+                &self.spark_connect_url(),
+                "-f",
+                self.partition_csv_file_path().as_str(),
+                "--partition",
+                "-q",
+                format!("SELECT * FROM s1.{}.partitions", self.table_name).as_str(),
             ],
             format!("Check {} with spark", self.table_name.as_str()),
         )
@@ -176,9 +193,20 @@ impl TestFixture<'_> {
         )
     }
 
+    pub fn partition_csv_file_path(&self) -> String {
+        format!(
+            "{}/../testdata/csv/{}",
+            env!("CARGO_MANIFEST_DIR"),
+            self.partition_csv_file.as_ref().unwrap()
+        )
+    }
+
     pub async fn run(mut self) {
         self.init_table_with_spark();
         self.write_data_with_icelake().await;
-        self.check_table_with_spark()
+        self.check_table_with_spark();
+        if self.partition_csv_file.is_some() {
+            self.check_table_partition_with_spark();
+        }
     }
 }
