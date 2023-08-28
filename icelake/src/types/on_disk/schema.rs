@@ -70,7 +70,6 @@ mod tests {
         assert_eq!(expected_schema, schema);
 
         let serialized_json_schema = serialize_schema(&expected_schema).unwrap();
-        println!("{serialized_json_schema}");
 
         assert_eq!(
             expected_schema,

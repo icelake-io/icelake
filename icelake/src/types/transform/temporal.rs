@@ -131,32 +131,22 @@ impl TransformFunction for Hour {
                     .as_any()
                     .downcast_ref::<TimestampSecondArray>()
                     .unwrap()
-                    .unary(|v| -> i32 {
-                        println!("second: {}", v);
-                        (v as f64 * HOUR_PER_SECOND) as i32
-                    }),
+                    .unary(|v| -> i32 { (v as f64 * HOUR_PER_SECOND) as i32 }),
                 datatypes::TimeUnit::Millisecond => input
                     .as_any()
                     .downcast_ref::<TimestampMillisecondArray>()
                     .unwrap()
-                    .unary(|v| -> i32 {
-                        println!("mill: {}", v);
-                        (v as f64 * HOUR_PER_SECOND / 1000.0) as i32
-                    }),
+                    .unary(|v| -> i32 { (v as f64 * HOUR_PER_SECOND / 1000.0) as i32 }),
                 datatypes::TimeUnit::Microsecond => input
                     .as_any()
                     .downcast_ref::<TimestampMicrosecondArray>()
                     .unwrap()
-                    .unary(|v| -> i32 {
-                        println!("micro: {}", v);
-                        (v as f64 * HOUR_PER_SECOND / 1000.0 / 1000.0) as i32
-                    }),
+                    .unary(|v| -> i32 { (v as f64 * HOUR_PER_SECOND / 1000.0 / 1000.0) as i32 }),
                 datatypes::TimeUnit::Nanosecond => input
                     .as_any()
                     .downcast_ref::<TimestampNanosecondArray>()
                     .unwrap()
                     .unary(|v| -> i32 {
-                        println!("nano: {}", v);
                         (v as f64 * HOUR_PER_SECOND / 1000.0 / 1000.0 / 1000.0) as i32
                     }),
             },
