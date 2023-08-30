@@ -1,16 +1,13 @@
 use super::TransformFunction;
 use crate::{Error, Result};
-use arrow::array::{
+use arrow_arith::arity::binary;
+use arrow_arith::temporal::{month_dyn, year_dyn};
+use arrow_array::{
     Array, TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray,
     TimestampSecondArray,
 };
-use arrow::compute::binary;
-use arrow::datatypes;
-use arrow::datatypes::DataType;
-use arrow::{
-    array::{ArrayRef, Date32Array, Int32Array},
-    compute::{month_dyn, year_dyn},
-};
+use arrow_array::{ArrayRef, Date32Array, Int32Array};
+use arrow_schema::{DataType, TimeUnit};
 use chrono::Datelike;
 use std::sync::Arc;
 
@@ -79,22 +76,22 @@ impl TransformFunction for Day {
     fn transform(&self, input: ArrayRef) -> Result<ArrayRef> {
         let res: Int32Array = match input.data_type() {
             DataType::Timestamp(unit, _) => match unit {
-                datatypes::TimeUnit::Second => input
+                TimeUnit::Second => input
                     .as_any()
                     .downcast_ref::<TimestampSecondArray>()
                     .unwrap()
                     .unary(|v| -> i32 { (v as f64 * DAY_PER_SECOND) as i32 }),
-                datatypes::TimeUnit::Millisecond => input
+                TimeUnit::Millisecond => input
                     .as_any()
                     .downcast_ref::<TimestampMillisecondArray>()
                     .unwrap()
                     .unary(|v| -> i32 { (v as f64 / 1000.0 * DAY_PER_SECOND) as i32 }),
-                datatypes::TimeUnit::Microsecond => input
+                TimeUnit::Microsecond => input
                     .as_any()
                     .downcast_ref::<TimestampMicrosecondArray>()
                     .unwrap()
                     .unary(|v| -> i32 { (v as f64 / 1000.0 / 1000.0 * DAY_PER_SECOND) as i32 }),
-                datatypes::TimeUnit::Nanosecond => input
+                TimeUnit::Nanosecond => input
                     .as_any()
                     .downcast_ref::<TimestampNanosecondArray>()
                     .unwrap()
@@ -108,7 +105,7 @@ impl TransformFunction for Day {
                     .downcast_ref::<Date32Array>()
                     .unwrap()
                     .unary(|v| -> i32 {
-                        datatypes::Date32Type::to_naive_date(v).num_days_from_ce()
+                        arrow_array::types::Date32Type::to_naive_date(v).num_days_from_ce()
                             - EPOCH_DAY_FROM_CE
                     })
             }
@@ -127,22 +124,22 @@ impl TransformFunction for Hour {
     fn transform(&self, input: ArrayRef) -> Result<ArrayRef> {
         let res: Int32Array = match input.data_type() {
             DataType::Timestamp(unit, _) => match unit {
-                datatypes::TimeUnit::Second => input
+                TimeUnit::Second => input
                     .as_any()
                     .downcast_ref::<TimestampSecondArray>()
                     .unwrap()
                     .unary(|v| -> i32 { (v as f64 * HOUR_PER_SECOND) as i32 }),
-                datatypes::TimeUnit::Millisecond => input
+                TimeUnit::Millisecond => input
                     .as_any()
                     .downcast_ref::<TimestampMillisecondArray>()
                     .unwrap()
                     .unary(|v| -> i32 { (v as f64 * HOUR_PER_SECOND / 1000.0) as i32 }),
-                datatypes::TimeUnit::Microsecond => input
+                TimeUnit::Microsecond => input
                     .as_any()
                     .downcast_ref::<TimestampMicrosecondArray>()
                     .unwrap()
                     .unary(|v| -> i32 { (v as f64 * HOUR_PER_SECOND / 1000.0 / 1000.0) as i32 }),
-                datatypes::TimeUnit::Nanosecond => input
+                TimeUnit::Nanosecond => input
                     .as_any()
                     .downcast_ref::<TimestampNanosecondArray>()
                     .unwrap()

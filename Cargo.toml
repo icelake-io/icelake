@@ -14,7 +14,13 @@ members = [
 anyhow = "1"
 async-trait = "0.1"
 apache-avro = { version = "0.15", features = ["derive"] }
-arrow = { version = ">=46" }
+arrow-array = { version = ">=46" }
+arrow-schema = { version = ">=46" }
+arrow-select = { version = ">=46"}
+arrow-row = { version = ">=46"}
+arrow-buffer = { version = ">=46"}
+arrow-arith= { version = ">=46"}
+arrow-csv= { version = ">=46"}
 bytes = "1"
 opendal = ">=0.37, <0.40"
 uuid = { version = "1", features = ["v4"] }

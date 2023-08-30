@@ -1,6 +1,8 @@
 use crate::Result;
 use crate::{types::PrimitiveValue, Error, ErrorKind};
-use arrow::datatypes::i256;
+use arrow_buffer::i256;
+use arrow_schema::DataType;
+use arrow_schema::{IntervalUnit, TimeUnit};
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
 
 /// Help to convert arrow primitive value to iceberg primitive value.
@@ -8,14 +10,14 @@ use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
 pub trait ToPrimitiveValue {
     /// In arrow, the data of the primitive value is represented by a `Native` type, it distinguishes by `DataType`.
     /// That's why we need to pass a extra `data_type`.
-    fn to_primitive(self, data_type: &arrow::datatypes::DataType) -> Result<PrimitiveValue>;
+    fn to_primitive(self, data_type: &DataType) -> Result<PrimitiveValue>;
 }
 
 impl ToPrimitiveValue for i8 {
-    fn to_primitive(self, data_type: &arrow::datatypes::DataType) -> Result<PrimitiveValue> {
+    fn to_primitive(self, data_type: &DataType) -> Result<PrimitiveValue> {
         match data_type {
             // TODO: Is that right?
-            arrow::datatypes::DataType::Int8 => Ok(PrimitiveValue::Int(self.into())),
+            DataType::Int8 => Ok(PrimitiveValue::Int(self.into())),
             _ => Err(Error::new(
                 ErrorKind::DataTypeUnsupported,
                 format!("Cannot convert i8 to {:?}", data_type),
@@ -25,9 +27,9 @@ impl ToPrimitiveValue for i8 {
 }
 
 impl ToPrimitiveValue for i16 {
-    fn to_primitive(self, data_type: &arrow::datatypes::DataType) -> Result<PrimitiveValue> {
+    fn to_primitive(self, data_type: &DataType) -> Result<PrimitiveValue> {
         match data_type {
-            arrow::datatypes::DataType::Int16 => Ok(PrimitiveValue::Int(self.into())),
+            DataType::Int16 => Ok(PrimitiveValue::Int(self.into())),
             _ => Err(Error::new(
                 ErrorKind::DataTypeUnsupported,
                 format!("Cannot convert i16 to {:?}", data_type),
@@ -37,10 +39,10 @@ impl ToPrimitiveValue for i16 {
 }
 
 impl ToPrimitiveValue for i32 {
-    fn to_primitive(self, data_type: &arrow::datatypes::DataType) -> Result<PrimitiveValue> {
+    fn to_primitive(self, data_type: &DataType) -> Result<PrimitiveValue> {
         match data_type {
-            arrow::datatypes::DataType::Int32 => Ok(PrimitiveValue::Int(self)),
-            arrow::datatypes::DataType::Date32 => Ok(PrimitiveValue::Date(
+            DataType::Int32 => Ok(PrimitiveValue::Int(self)),
+            DataType::Date32 => Ok(PrimitiveValue::Date(
                 NaiveDate::from_num_days_from_ce_opt(self).ok_or_else(|| {
                     Error::new(
                         ErrorKind::DataTypeUnsupported,
@@ -48,8 +50,8 @@ impl ToPrimitiveValue for i32 {
                     )
                 })?,
             )),
-            arrow::datatypes::DataType::Time32(unit) => match unit {
-                arrow::datatypes::TimeUnit::Second => Ok(PrimitiveValue::Time(
+            DataType::Time32(unit) => match unit {
+                TimeUnit::Second => Ok(PrimitiveValue::Time(
                     NaiveTime::from_hms_milli_opt(0, 0, self as u32, 0).ok_or_else(|| {
                         Error::new(
                             ErrorKind::DataTypeUnsupported,
@@ -60,7 +62,7 @@ impl ToPrimitiveValue for i32 {
                         )
                     })?,
                 )),
-                arrow::datatypes::TimeUnit::Millisecond => Ok(PrimitiveValue::Time(
+                TimeUnit::Millisecond => Ok(PrimitiveValue::Time(
                     NaiveTime::from_hms_milli_opt(0, 0, 0, self as u32).ok_or_else(|| {
                         Error::new(
                             ErrorKind::DataTypeUnsupported,
@@ -71,7 +73,7 @@ impl ToPrimitiveValue for i32 {
                         )
                     })?,
                 )),
-                arrow::datatypes::TimeUnit::Microsecond => Ok(PrimitiveValue::Time(
+                TimeUnit::Microsecond => Ok(PrimitiveValue::Time(
                     NaiveTime::from_hms_micro_opt(0, 0, 0, self as u32).ok_or_else(|| {
                         Error::new(
                             ErrorKind::DataTypeUnsupported,
@@ -82,7 +84,7 @@ impl ToPrimitiveValue for i32 {
                         )
                     })?,
                 )),
-                arrow::datatypes::TimeUnit::Nanosecond => Ok(PrimitiveValue::Time(
+                TimeUnit::Nanosecond => Ok(PrimitiveValue::Time(
                     NaiveTime::from_hms_nano_opt(0, 0, 0, self as u32).ok_or_else(|| {
                         Error::new(
                             ErrorKind::DataTypeUnsupported,
@@ -94,7 +96,7 @@ impl ToPrimitiveValue for i32 {
                     })?,
                 )),
             },
-            arrow::datatypes::DataType::Interval(arrow::datatypes::IntervalUnit::YearMonth) => {
+            DataType::Interval(IntervalUnit::YearMonth) => {
                 todo!()
             }
             _ => Err(Error::new(
@@ -106,12 +108,12 @@ impl ToPrimitiveValue for i32 {
 }
 
 impl ToPrimitiveValue for i64 {
-    fn to_primitive(self, data_type: &arrow::datatypes::DataType) -> Result<PrimitiveValue> {
+    fn to_primitive(self, data_type: &DataType) -> Result<PrimitiveValue> {
         match data_type {
-            arrow::datatypes::DataType::Int64 => Ok(PrimitiveValue::Long(self)),
-            arrow::datatypes::DataType::Timestamp(unit, with_tz) => {
+            DataType::Int64 => Ok(PrimitiveValue::Long(self)),
+            DataType::Timestamp(unit, with_tz) => {
                 let dt = match unit {
-                    arrow::datatypes::TimeUnit::Second => {
+                    TimeUnit::Second => {
                         NaiveDateTime::from_timestamp_opt(self, 0).ok_or_else(|| {
                             Error::new(
                                 ErrorKind::DataTypeUnsupported,
@@ -122,8 +124,8 @@ impl ToPrimitiveValue for i64 {
                             )
                         })?
                     }
-                    arrow::datatypes::TimeUnit::Millisecond => {
-                        NaiveDateTime::from_timestamp_millis(self).ok_or_else(|| {
+                    TimeUnit::Millisecond => NaiveDateTime::from_timestamp_millis(self)
+                        .ok_or_else(|| {
                             Error::new(
                                 ErrorKind::DataTypeUnsupported,
                                 format!(
@@ -131,10 +133,9 @@ impl ToPrimitiveValue for i64 {
                                     data_type
                                 ),
                             )
-                        })?
-                    }
-                    arrow::datatypes::TimeUnit::Microsecond => {
-                        NaiveDateTime::from_timestamp_micros(self).ok_or_else(|| {
+                        })?,
+                    TimeUnit::Microsecond => NaiveDateTime::from_timestamp_micros(self)
+                        .ok_or_else(|| {
                             Error::new(
                                 ErrorKind::DataTypeUnsupported,
                                 format!(
@@ -142,9 +143,8 @@ impl ToPrimitiveValue for i64 {
                                     data_type
                                 ),
                             )
-                        })?
-                    }
-                    arrow::datatypes::TimeUnit::Nanosecond => NaiveDateTime::from_timestamp_opt(
+                        })?,
+                    TimeUnit::Nanosecond => NaiveDateTime::from_timestamp_opt(
                         0,
                         self.try_into().map_err(|_| {
                             Error::new(
@@ -174,14 +174,14 @@ impl ToPrimitiveValue for i64 {
                     )))
                 }
             }
-            arrow::datatypes::DataType::Date64 => todo!(),
-            arrow::datatypes::DataType::Duration(_) => {
+            DataType::Date64 => todo!(),
+            DataType::Duration(_) => {
                 todo!()
             }
-            arrow::datatypes::DataType::Interval(arrow::datatypes::IntervalUnit::DayTime) => {
+            DataType::Interval(IntervalUnit::DayTime) => {
                 todo!()
             }
-            arrow::datatypes::DataType::Time64(_) => todo!(),
+            DataType::Time64(_) => todo!(),
             _ => Err(Error::new(
                 ErrorKind::DataTypeUnsupported,
                 format!("Cannot convert i64 to {:?}", data_type),
@@ -191,10 +191,10 @@ impl ToPrimitiveValue for i64 {
 }
 
 impl ToPrimitiveValue for i128 {
-    fn to_primitive(self, data_type: &arrow::datatypes::DataType) -> Result<PrimitiveValue> {
+    fn to_primitive(self, data_type: &DataType) -> Result<PrimitiveValue> {
         match data_type {
-            arrow::datatypes::DataType::Decimal128(_, _) => todo!(),
-            arrow::datatypes::DataType::Interval(arrow::datatypes::IntervalUnit::MonthDayNano) => {
+            DataType::Decimal128(_, _) => todo!(),
+            DataType::Interval(IntervalUnit::MonthDayNano) => {
                 todo!()
             }
             _ => Err(Error::new(
@@ -206,9 +206,9 @@ impl ToPrimitiveValue for i128 {
 }
 
 impl ToPrimitiveValue for i256 {
-    fn to_primitive(self, data_type: &arrow::datatypes::DataType) -> Result<PrimitiveValue> {
+    fn to_primitive(self, data_type: &DataType) -> Result<PrimitiveValue> {
         match data_type {
-            arrow::datatypes::DataType::Decimal256(_, _) => todo!(),
+            DataType::Decimal256(_, _) => todo!(),
             _ => Err(Error::new(
                 ErrorKind::DataTypeUnsupported,
                 format!("Cannot convert i256 to {:?}", data_type),
@@ -218,9 +218,9 @@ impl ToPrimitiveValue for i256 {
 }
 
 impl ToPrimitiveValue for f32 {
-    fn to_primitive(self, data_type: &arrow::datatypes::DataType) -> Result<PrimitiveValue> {
+    fn to_primitive(self, data_type: &DataType) -> Result<PrimitiveValue> {
         match data_type {
-            arrow::datatypes::DataType::Float32 => Ok(PrimitiveValue::Float(self.into())),
+            DataType::Float32 => Ok(PrimitiveValue::Float(self.into())),
             _ => Err(Error::new(
                 ErrorKind::DataTypeUnsupported,
                 format!("Cannot convert f32 to {:?}", data_type),
@@ -230,9 +230,9 @@ impl ToPrimitiveValue for f32 {
 }
 
 impl ToPrimitiveValue for f64 {
-    fn to_primitive(self, data_type: &arrow::datatypes::DataType) -> Result<PrimitiveValue> {
+    fn to_primitive(self, data_type: &DataType) -> Result<PrimitiveValue> {
         match data_type {
-            arrow::datatypes::DataType::Float64 => Ok(PrimitiveValue::Double(self.into())),
+            DataType::Float64 => Ok(PrimitiveValue::Double(self.into())),
             _ => Err(Error::new(
                 ErrorKind::DataTypeUnsupported,
                 format!("Cannot convert f64 to {:?}", data_type),
@@ -242,9 +242,9 @@ impl ToPrimitiveValue for f64 {
 }
 
 impl ToPrimitiveValue for u8 {
-    fn to_primitive(self, data_type: &arrow::datatypes::DataType) -> Result<PrimitiveValue> {
+    fn to_primitive(self, data_type: &DataType) -> Result<PrimitiveValue> {
         match data_type {
-            arrow::datatypes::DataType::UInt8 => todo!(),
+            DataType::UInt8 => todo!(),
             _ => Err(Error::new(
                 ErrorKind::DataTypeUnsupported,
                 format!("Cannot convert u8 to {:?}", data_type),
@@ -254,9 +254,9 @@ impl ToPrimitiveValue for u8 {
 }
 
 impl ToPrimitiveValue for u16 {
-    fn to_primitive(self, data_type: &arrow::datatypes::DataType) -> Result<PrimitiveValue> {
+    fn to_primitive(self, data_type: &DataType) -> Result<PrimitiveValue> {
         match data_type {
-            arrow::datatypes::DataType::UInt16 => todo!(),
+            DataType::UInt16 => todo!(),
             _ => Err(Error::new(
                 ErrorKind::DataTypeUnsupported,
                 format!("Cannot convert u16 to {:?}", data_type),
@@ -266,9 +266,9 @@ impl ToPrimitiveValue for u16 {
 }
 
 impl ToPrimitiveValue for u32 {
-    fn to_primitive(self, data_type: &arrow::datatypes::DataType) -> Result<PrimitiveValue> {
+    fn to_primitive(self, data_type: &DataType) -> Result<PrimitiveValue> {
         match data_type {
-            arrow::datatypes::DataType::UInt32 => todo!(),
+            DataType::UInt32 => todo!(),
             _ => Err(Error::new(
                 ErrorKind::DataTypeUnsupported,
                 format!("Cannot convert u32 to {:?}", data_type),
@@ -278,9 +278,9 @@ impl ToPrimitiveValue for u32 {
 }
 
 impl ToPrimitiveValue for u64 {
-    fn to_primitive(self, data_type: &arrow::datatypes::DataType) -> Result<PrimitiveValue> {
+    fn to_primitive(self, data_type: &DataType) -> Result<PrimitiveValue> {
         match data_type {
-            arrow::datatypes::DataType::UInt64 => todo!(),
+            DataType::UInt64 => todo!(),
             _ => Err(Error::new(
                 ErrorKind::DataTypeUnsupported,
                 format!("Cannot convert u64 to {:?}", data_type),

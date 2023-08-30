@@ -7,8 +7,8 @@ use crate::{
     types::{DataFile, StructValue},
     Result,
 };
-use arrow::datatypes::SchemaRef;
-use arrow::record_batch::RecordBatch;
+use arrow_array::RecordBatch;
+use arrow_schema::SchemaRef;
 use opendal::Operator;
 use parquet::file::properties::{WriterProperties, WriterVersion};
 use parquet::format::FileMetaData;
@@ -226,8 +226,8 @@ impl DataFileWriter {
 mod test {
     use std::{env, fs, sync::Arc};
 
-    use arrow::array::{ArrayRef, Int64Array};
-    use arrow::record_batch::RecordBatch;
+    use arrow_array::RecordBatch;
+    use arrow_array::{ArrayRef, Int64Array};
     use bytes::Bytes;
     use opendal::{services::Memory, Operator};
 

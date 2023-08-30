@@ -8,9 +8,9 @@ mod containers;
 
 pub use containers::*;
 
-use arrow::csv::ReaderBuilder;
-use arrow::datatypes::{DataType, Field, Schema, TimeUnit};
-use arrow::record_batch::RecordBatch;
+use arrow_array::RecordBatch;
+use arrow_csv::ReaderBuilder;
+use arrow_schema::{DataType, Field, Schema, TimeUnit};
 use icelake::transaction::Transaction;
 use icelake::Table;
 use opendal::services::S3;

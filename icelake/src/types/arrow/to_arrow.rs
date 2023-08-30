@@ -8,10 +8,10 @@ use std::sync::Arc;
 use crate::error::Error;
 use crate::types;
 use crate::types::Any;
-use arrow::datatypes::DataType as ArrowDataType;
-use arrow::datatypes::Field as ArrowField;
-use arrow::datatypes::Schema as ArrowSchema;
-use arrow::datatypes::TimeUnit;
+use arrow_schema::DataType as ArrowDataType;
+use arrow_schema::Field as ArrowField;
+use arrow_schema::Schema as ArrowSchema;
+use arrow_schema::TimeUnit;
 
 impl TryFrom<types::Schema> for ArrowSchema {
     type Error = Error;
