@@ -2,6 +2,7 @@ use super::Transform;
 use crate::Result;
 use arrow_array::ArrayRef;
 
+mod bucket;
 mod identity;
 mod temporal;
 mod void;
@@ -26,6 +27,7 @@ pub fn create_transform_function(transform: &Transform) -> Result<BoxedTransform
         Transform::Month => Ok(Box::new(temporal::Month {})),
         Transform::Day => Ok(Box::new(temporal::Day {})),
         Transform::Hour => Ok(Box::new(temporal::Hour {})),
+        Transform::Bucket(n) => Ok(Box::new(bucket::Bucket::new(*n))),
         _ => Err(crate::error::Error::new(
             crate::ErrorKind::IcebergFeatureUnsupported,
             format!("Transform {:?} is not implemented", transform),
