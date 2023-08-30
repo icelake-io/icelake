@@ -1,9 +1,7 @@
 use crate::types::TransformFunction;
 use crate::Result;
-use arrow::{
-    array::{new_null_array, ArrayRef},
-    datatypes::DataType,
-};
+use arrow_array::{new_null_array, ArrayRef};
+use arrow_schema::DataType;
 
 pub struct Void {}
 

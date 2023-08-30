@@ -1,6 +1,6 @@
 use super::Transform;
 use crate::Result;
-use arrow::array::ArrayRef;
+use arrow_array::ArrayRef;
 
 mod identity;
 mod temporal;

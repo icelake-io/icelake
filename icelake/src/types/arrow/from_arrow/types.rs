@@ -2,8 +2,8 @@ use crate::types;
 use crate::types::Any;
 use crate::types::Field;
 use crate::Error;
-use arrow::datatypes::DataType as ArrowDataType;
-use arrow::datatypes::TimeUnit;
+use arrow_schema::DataType as ArrowDataType;
+use arrow_schema::TimeUnit;
 
 impl TryFrom<ArrowDataType> for Any {
     type Error = Error;
@@ -70,7 +70,7 @@ impl TryFrom<ArrowDataType> for Any {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arrow::datatypes::Field as ArrowField;
+    use arrow_schema::Field as ArrowField;
     #[test]
     fn test_simple_try_into_any() {
         let arrow_struct = ArrowDataType::Struct(

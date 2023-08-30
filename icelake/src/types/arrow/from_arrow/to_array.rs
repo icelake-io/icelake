@@ -2,16 +2,15 @@ use super::to_primitive::ToPrimitiveValue;
 use crate::types::PrimitiveValue;
 use crate::types::{Any, AnyValue, StructValueBuilder};
 use crate::{Error, Result};
-use arrow::array::{
+use arrow_array::types::ArrowPrimitiveType;
+use arrow_array::types::GenericStringType;
+use arrow_array::{
     Array, Date32Array, Date64Array, Float32Array, Float64Array, GenericByteArray, Int16Array,
     Int32Array, Int64Array, Int8Array, OffsetSizeTrait, UInt16Array, UInt32Array, UInt64Array,
     UInt8Array,
 };
-use arrow::datatypes::GenericStringType;
-use arrow::{
-    array::{BooleanArray, PrimitiveArray, StructArray},
-    datatypes::ArrowPrimitiveType,
-};
+use arrow_array::{BooleanArray, PrimitiveArray, StructArray};
+use arrow_schema::{DataType, TimeUnit};
 use std::iter::Iterator;
 
 /// This trait is used to convert arrow array into anyvalue array. Most of the arrow arrays
@@ -121,142 +120,142 @@ pub fn to_anyvalue_array_with_type(
 ) -> Result<Vec<Option<AnyValue>>> {
     let data_type = array.data_type();
     match data_type {
-        arrow::datatypes::DataType::Boolean => array
+        DataType::Boolean => array
             .as_any()
             .downcast_ref::<BooleanArray>()
             .unwrap()
             .to_anyvalue_array(),
-        arrow::datatypes::DataType::Struct(_) => {
+        DataType::Struct(_) => {
             let array = array.as_any().downcast_ref::<StructArray>().unwrap();
             struct_to_anyvalue_array_with_type(array, target_type)
         }
-        arrow::datatypes::DataType::Int8 => array
+        DataType::Int8 => array
             .as_any()
             .downcast_ref::<Int8Array>()
             .unwrap()
             .to_anyvalue_array(),
-        arrow::datatypes::DataType::Int16 => array
+        DataType::Int16 => array
             .as_any()
             .downcast_ref::<Int16Array>()
             .unwrap()
             .to_anyvalue_array(),
-        arrow::datatypes::DataType::Int32 => array
+        DataType::Int32 => array
             .as_any()
             .downcast_ref::<Int32Array>()
             .unwrap()
             .to_anyvalue_array(),
-        arrow::datatypes::DataType::Int64 => array
+        DataType::Int64 => array
             .as_any()
             .downcast_ref::<Int64Array>()
             .unwrap()
             .to_anyvalue_array(),
-        arrow::datatypes::DataType::UInt8 => array
+        DataType::UInt8 => array
             .as_any()
             .downcast_ref::<UInt8Array>()
             .unwrap()
             .to_anyvalue_array(),
-        arrow::datatypes::DataType::UInt16 => array
+        DataType::UInt16 => array
             .as_any()
             .downcast_ref::<UInt16Array>()
             .unwrap()
             .to_anyvalue_array(),
-        arrow::datatypes::DataType::UInt32 => array
+        DataType::UInt32 => array
             .as_any()
             .downcast_ref::<UInt32Array>()
             .unwrap()
             .to_anyvalue_array(),
-        arrow::datatypes::DataType::UInt64 => array
+        DataType::UInt64 => array
             .as_any()
             .downcast_ref::<UInt64Array>()
             .unwrap()
             .to_anyvalue_array(),
-        arrow::datatypes::DataType::Float32 => array
+        DataType::Float32 => array
             .as_any()
             .downcast_ref::<Float32Array>()
             .unwrap()
             .to_anyvalue_array(),
-        arrow::datatypes::DataType::Float64 => array
+        DataType::Float64 => array
             .as_any()
             .downcast_ref::<Float64Array>()
             .unwrap()
             .to_anyvalue_array(),
-        arrow::datatypes::DataType::Date32 => array
+        DataType::Date32 => array
             .as_any()
             .downcast_ref::<Date32Array>()
             .unwrap()
             .to_anyvalue_array(),
-        arrow::datatypes::DataType::Date64 => array
+        DataType::Date64 => array
             .as_any()
             .downcast_ref::<Date64Array>()
             .unwrap()
             .to_anyvalue_array(),
-        arrow::datatypes::DataType::Float16 => todo!(),
-        arrow::datatypes::DataType::Null => todo!(),
-        arrow::datatypes::DataType::Timestamp(unit, _) => match unit {
-            arrow::datatypes::TimeUnit::Second => array
+        DataType::Float16 => todo!(),
+        DataType::Null => todo!(),
+        DataType::Timestamp(unit, _) => match unit {
+            TimeUnit::Second => array
                 .as_any()
-                .downcast_ref::<arrow::array::TimestampSecondArray>()
+                .downcast_ref::<arrow_array::TimestampSecondArray>()
                 .unwrap()
                 .to_anyvalue_array(),
-            arrow::datatypes::TimeUnit::Millisecond => array
+            TimeUnit::Millisecond => array
                 .as_any()
-                .downcast_ref::<arrow::array::TimestampMillisecondArray>()
+                .downcast_ref::<arrow_array::TimestampMillisecondArray>()
                 .unwrap()
                 .to_anyvalue_array(),
-            arrow::datatypes::TimeUnit::Microsecond => array
+            TimeUnit::Microsecond => array
                 .as_any()
-                .downcast_ref::<arrow::array::TimestampMicrosecondArray>()
+                .downcast_ref::<arrow_array::TimestampMicrosecondArray>()
                 .unwrap()
                 .to_anyvalue_array(),
-            arrow::datatypes::TimeUnit::Nanosecond => array
+            TimeUnit::Nanosecond => array
                 .as_any()
-                .downcast_ref::<arrow::array::TimestampNanosecondArray>()
+                .downcast_ref::<arrow_array::TimestampNanosecondArray>()
                 .unwrap()
                 .to_anyvalue_array(),
         },
-        arrow::datatypes::DataType::Time32(unit) => match unit {
-            arrow::datatypes::TimeUnit::Second => array
+        DataType::Time32(unit) => match unit {
+            TimeUnit::Second => array
                 .as_any()
-                .downcast_ref::<arrow::array::Time32SecondArray>()
+                .downcast_ref::<arrow_array::Time32SecondArray>()
                 .unwrap()
                 .to_anyvalue_array(),
-            arrow::datatypes::TimeUnit::Millisecond => array
+            TimeUnit::Millisecond => array
                 .as_any()
-                .downcast_ref::<arrow::array::Time32MillisecondArray>()
+                .downcast_ref::<arrow_array::Time32MillisecondArray>()
                 .unwrap()
                 .to_anyvalue_array(),
-            arrow::datatypes::TimeUnit::Microsecond => Err(Error::new(
+            TimeUnit::Microsecond => Err(Error::new(
                 crate::ErrorKind::DataTypeUnsupported,
                 "Time32Microsecond is not supported",
             )),
-            arrow::datatypes::TimeUnit::Nanosecond => Err(Error::new(
+            TimeUnit::Nanosecond => Err(Error::new(
                 crate::ErrorKind::DataTypeUnsupported,
                 "Time32Nanosecond is not supported",
             )),
         },
-        arrow::datatypes::DataType::Time64(_) => todo!(),
-        arrow::datatypes::DataType::Duration(_) => todo!(),
-        arrow::datatypes::DataType::Interval(_) => todo!(),
-        arrow::datatypes::DataType::FixedSizeBinary(_) => todo!(),
-        arrow::datatypes::DataType::List(_) => todo!(),
-        arrow::datatypes::DataType::FixedSizeList(_, _) => todo!(),
-        arrow::datatypes::DataType::LargeList(_) => todo!(),
-        arrow::datatypes::DataType::Union(_, _) => todo!(),
-        arrow::datatypes::DataType::Dictionary(_, _) => todo!(),
-        arrow::datatypes::DataType::Decimal128(_, _) => todo!(),
-        arrow::datatypes::DataType::Decimal256(_, _) => todo!(),
-        arrow::datatypes::DataType::Map(_, _) => todo!(),
-        arrow::datatypes::DataType::RunEndEncoded(_, _) => todo!(),
-        arrow::datatypes::DataType::Binary => todo!(),
-        arrow::datatypes::DataType::LargeBinary => todo!(),
-        arrow::datatypes::DataType::Utf8 => array
+        DataType::Time64(_) => todo!(),
+        DataType::Duration(_) => todo!(),
+        DataType::Interval(_) => todo!(),
+        DataType::FixedSizeBinary(_) => todo!(),
+        DataType::List(_) => todo!(),
+        DataType::FixedSizeList(_, _) => todo!(),
+        DataType::LargeList(_) => todo!(),
+        DataType::Union(_, _) => todo!(),
+        DataType::Dictionary(_, _) => todo!(),
+        DataType::Decimal128(_, _) => todo!(),
+        DataType::Decimal256(_, _) => todo!(),
+        DataType::Map(_, _) => todo!(),
+        DataType::RunEndEncoded(_, _) => todo!(),
+        DataType::Binary => todo!(),
+        DataType::LargeBinary => todo!(),
+        DataType::Utf8 => array
             .as_any()
-            .downcast_ref::<arrow::array::StringArray>()
+            .downcast_ref::<arrow_array::StringArray>()
             .unwrap()
             .to_anyvalue_array(),
-        arrow::datatypes::DataType::LargeUtf8 => array
+        DataType::LargeUtf8 => array
             .as_any()
-            .downcast_ref::<arrow::array::LargeStringArray>()
+            .downcast_ref::<arrow_array::LargeStringArray>()
             .unwrap()
             .to_anyvalue_array(),
     }
@@ -269,13 +268,13 @@ mod tests {
     use crate::types::Primitive;
     use crate::types::Struct;
     use crate::types::{arrow::from_arrow::to_array::ToArray, AnyValue, PrimitiveValue};
-    use arrow::datatypes::DataType as ArrowDataType;
-    use arrow::datatypes::Field as ArrowField;
-    use arrow::datatypes::Fields as ArrowFields;
+    use arrow_schema::DataType as ArrowDataType;
+    use arrow_schema::Field as ArrowField;
+    use arrow_schema::Fields as ArrowFields;
     use std::sync::Arc;
     #[test]
     fn test_from_bool_array() {
-        let array = arrow::array::BooleanArray::from(vec![Some(true), None, Some(false)]);
+        let array = arrow_array::BooleanArray::from(vec![Some(true), None, Some(false)]);
         let expect: Vec<Option<AnyValue>> = vec![
             Some(PrimitiveValue::Boolean(true).into()),
             None,
@@ -286,7 +285,7 @@ mod tests {
 
     #[test]
     fn test_from_primitive_array() {
-        let array = arrow::array::Int32Array::from(vec![Some(1), None, Some(3)]);
+        let array = arrow_array::Int32Array::from(vec![Some(1), None, Some(3)]);
         let expect: Vec<Option<AnyValue>> = vec![
             Some(PrimitiveValue::Int(1).into()),
             None,

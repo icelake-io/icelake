@@ -1,6 +1,6 @@
 use crate::types::TransformFunction;
 use crate::Result;
-use arrow::array::ArrayRef;
+use arrow_array::ArrayRef;
 pub struct Identity {}
 
 impl TransformFunction for Identity {
