@@ -3,7 +3,7 @@ use crate::{types::PrimitiveValue, Error, ErrorKind};
 use arrow_buffer::i256;
 use arrow_schema::DataType;
 use arrow_schema::{IntervalUnit, TimeUnit};
-use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
+use chrono::{NaiveDate, NaiveDateTime, NaiveTime, Utc, TimeZone};
 
 /// Help to convert arrow primitive value to iceberg primitive value.
 /// We implement this trait in the `ArrowPrimitiveType::Naive` type.
@@ -169,8 +169,8 @@ impl ToPrimitiveValue for i64 {
                 if with_tz.is_some() {
                     Ok(PrimitiveValue::Timestamp(dt))
                 } else {
-                    Ok(PrimitiveValue::Timestampz(DateTime::<Utc>::from_utc(
-                        dt, Utc,
+                    Ok(PrimitiveValue::Timestampz(Utc.from_utc_datetime(
+                        &dt
                     )))
                 }
             }
