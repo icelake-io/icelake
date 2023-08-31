@@ -5,21 +5,20 @@ mod poetry;
 pub use poetry::*;
 
 mod containers;
+mod test_generator;
 
 pub use containers::*;
 
-use arrow_array::RecordBatch;
-use arrow_csv::ReaderBuilder;
-use arrow_schema::{DataType, Field, Schema, TimeUnit};
 use icelake::transaction::Transaction;
 use icelake::Table;
 use opendal::services::S3;
 use opendal::Operator;
 use std::fs::File;
 use std::process::Command;
-use std::sync::Arc;
 
 use std::sync::Once;
+
+use self::test_generator::TestCase;
 
 static INIT: Once = Once::new();
 
@@ -38,98 +37,71 @@ pub fn run_command(mut cmd: Command, desc: impl ToString) {
     }
 }
 
-fn read_records_to_arrow(filename: &str) -> Vec<RecordBatch> {
-    let schema = Schema::new(vec![
-        Field::new("id", DataType::Int64, false),
-        Field::new("v_int", DataType::Int32, true),
-        Field::new("v_long", DataType::Int64, true),
-        Field::new("v_float", DataType::Float32, true),
-        Field::new("v_double", DataType::Float64, true),
-        Field::new("v_varchar", DataType::Utf8, true),
-        Field::new("v_bool", DataType::Boolean, true),
-        Field::new("v_date", DataType::Date32, true),
-        Field::new(
-            "v_timestamp",
-            DataType::Timestamp(TimeUnit::Microsecond, Some("+04:00".into())),
-            true,
-        ),
-        Field::new("v_decimal", DataType::Decimal128(36, 10), true),
-        Field::new(
-            "v_ts_ntz",
-            DataType::Timestamp(TimeUnit::Microsecond, None),
-            true,
-        ),
-    ]);
-
-    let csv_reader = ReaderBuilder::new(Arc::new(schema))
-        .has_header(false)
-        .build(File::open(filename).unwrap())
-        .unwrap();
-
-    csv_reader.map(|r| r.unwrap()).collect::<Vec<RecordBatch>>()
-}
-
 pub struct TestFixture<'a> {
-    pub spark: Container<'a, GenericImage>,
-    pub minio: Container<'a, GenericImage>,
+    spark: Container<'a, GenericImage>,
+    minio: Container<'a, GenericImage>,
 
-    pub poetry: Poetry,
+    poetry: Poetry,
 
-    pub table_name: String,
-    pub csv_file: String,
-    pub partition_csv_file: Option<String>,
-    pub table_root: String,
-
-    pub init_sqls: Vec<String>,
+    test_case: TestCase,
 }
 
-impl TestFixture<'_> {
-    pub fn init_table_with_spark(&self) {
+impl<'a> TestFixture<'a> {
+    pub fn new(
+        spark: Container<'a, GenericImage>,
+        minio: Container<'a, GenericImage>,
+        poetry: Poetry,
+        toml_file: String,
+    ) -> Self {
+        let toml_file_path = format!(
+            "{}/../testdata/toml/{}",
+            env!("CARGO_MANIFEST_DIR"),
+            toml_file
+        );
+        let test_case = TestCase::parse(File::open(toml_file_path).unwrap());
+        Self {
+            spark,
+            minio,
+            poetry,
+            test_case,
+        }
+    }
+
+    fn init_table_with_spark(&self) {
         let args = vec![
             "-s".to_string(),
             self.spark_connect_url(),
             "--sql".to_string(),
         ];
-        let args: Vec<String> = args.into_iter().chain(self.init_sqls.clone()).collect();
+        let args: Vec<String> = args
+            .into_iter()
+            .chain(self.test_case.init_sqls.clone())
+            .collect();
         self.poetry.run_file(
             "init.py",
             args,
-            format!("Init {} with spark", self.table_name.as_str()),
+            format!("Init {} with spark", self.test_case.table_name),
         )
     }
 
-    pub fn check_table_with_spark(&self) {
-        self.poetry.run_file(
-            "check.py",
-            [
-                "-s",
-                &self.spark_connect_url(),
-                "-f",
-                self.csv_file_path().as_str(),
-                "-q",
-                format!("SELECT * FROM s1.{} ORDER BY id ASC", self.table_name).as_str(),
-            ],
-            format!("Check {} with spark", self.table_name.as_str()),
-        )
+    fn check_table_with_spark(&self) {
+        for check_sqls in &self.test_case.query_sql {
+            self.poetry.run_file(
+                "check.py",
+                [
+                    "-s",
+                    &self.spark_connect_url(),
+                    "-q1",
+                    check_sqls[0].as_str(),
+                    "-q2",
+                    check_sqls[1].as_str(),
+                ],
+                format!("Check {}", check_sqls[0].as_str()),
+            )
+        }
     }
 
-    pub fn check_table_partition_with_spark(&self) {
-        self.poetry.run_file(
-            "check.py",
-            [
-                "-s",
-                &self.spark_connect_url(),
-                "-f",
-                self.partition_csv_file_path().as_str(),
-                "--partition",
-                "-q",
-                format!("SELECT * FROM s1.{}.partitions", self.table_name).as_str(),
-            ],
-            format!("Check {} with spark", self.table_name.as_str()),
-        )
-    }
-
-    pub fn spark_connect_url(&self) -> String {
+    fn spark_connect_url(&self) -> String {
         format!(
             "sc://localhost:{}",
             self.spark.get_host_port_ipv4(SPARK_CONNECT_SERVER_PORT)
@@ -138,7 +110,7 @@ impl TestFixture<'_> {
 
     pub async fn create_icelake_table(&self) -> Table {
         let mut builder = S3::default();
-        builder.root(self.table_root.as_str());
+        builder.root(self.test_case.table_root.as_str());
         builder.bucket("icebergdata");
         builder.endpoint(
             format!(
@@ -162,11 +134,11 @@ impl TestFixture<'_> {
             table.current_table_metadata().location
         );
 
-        let records = read_records_to_arrow(self.csv_file_path().as_str());
+        let records = &self.test_case.write_date;
 
         let mut task_writer = table.task_writer().await.unwrap();
 
-        for record_batch in &records {
+        for record_batch in records {
             log::info!(
                 "Insert record batch with {} records using icelake.",
                 record_batch.num_rows()
@@ -185,28 +157,9 @@ impl TestFixture<'_> {
         }
     }
 
-    pub fn csv_file_path(&self) -> String {
-        format!(
-            "{}/../testdata/csv/{}",
-            env!("CARGO_MANIFEST_DIR"),
-            self.csv_file
-        )
-    }
-
-    pub fn partition_csv_file_path(&self) -> String {
-        format!(
-            "{}/../testdata/csv/{}",
-            env!("CARGO_MANIFEST_DIR"),
-            self.partition_csv_file.as_ref().unwrap()
-        )
-    }
-
     pub async fn run(mut self) {
         self.init_table_with_spark();
         self.write_data_with_icelake().await;
         self.check_table_with_spark();
-        if self.partition_csv_file.is_some() {
-            self.check_table_partition_with_spark();
-        }
     }
 }

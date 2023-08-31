@@ -37,6 +37,8 @@ ordered-float = { workspace = true }
 apache-avro = { workspace = true }
 bitvec = "1.0.1"
 serde_bytes = "0.11.12"
+toml = "0.7.6"
+csv = "1.2.2"
 
 
 [dev-dependencies]
