@@ -21,6 +21,17 @@ const METADATA_FILE_EXTENSION: &str = ".metadata.json";
 const VERSION_HINT_FILENAME: &str = "version-hint.text";
 const VERSIONED_TABLE_METADATA_FILE_PATTERN: &str = r"v([0-9]+).metadata.json";
 
+/// Namespace of tables
+pub struct Namespace {
+    levels: Vec<String>,
+}
+
+/// Full qualified name of table.
+pub struct TableIdentifier {
+    namespace: Namespace,
+    name: String,
+}
+
 /// Table is the main entry point for the IceLake.
 pub struct Table {
     op: Operator,
