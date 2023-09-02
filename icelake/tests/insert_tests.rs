@@ -79,3 +79,11 @@ async fn test_insert_partition_hash() {
         .run()
         .await
 }
+
+#[tokio::test]
+async fn test_insert_partition_truncate() {
+    let cli = Cli::default();
+    create_test_fixture(&cli, "partition_truncate_test.toml")
+        .run()
+        .await
+}

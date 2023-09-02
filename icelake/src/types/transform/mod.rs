@@ -5,6 +5,7 @@ use arrow_array::ArrayRef;
 mod bucket;
 mod identity;
 mod temporal;
+mod truncate;
 mod void;
 
 /// TransformFunction is a trait that defines the interface of a transform function.
@@ -28,9 +29,6 @@ pub fn create_transform_function(transform: &Transform) -> Result<BoxedTransform
         Transform::Day => Ok(Box::new(temporal::Day {})),
         Transform::Hour => Ok(Box::new(temporal::Hour {})),
         Transform::Bucket(n) => Ok(Box::new(bucket::Bucket::new(*n))),
-        _ => Err(crate::error::Error::new(
-            crate::ErrorKind::IcebergFeatureUnsupported,
-            format!("Transform {:?} is not implemented", transform),
-        )),
+        Transform::Truncate(w) => Ok(Box::new(truncate::Truncate::new(*w))),
     }
 }

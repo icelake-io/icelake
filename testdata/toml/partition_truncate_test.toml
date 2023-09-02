@@ -1,0 +1,34 @@
+schema_name = 's1'
+table_name = 't1'
+
+create_table_sql = '''
+        CREATE TABLE s1.t1
+        (
+            id long,
+            v_int int,
+            v_long long,
+            v_float float,
+            v_double double,
+            v_varchar string,
+            v_bool boolean,
+            v_date date,
+            v_timestamp timestamp,
+            v_decimal decimal(36, 10),
+            v_ts_ntz timestamp_ntz
+        ) USING iceberg
+        PARTITIONED BY (truncate(10,v_int), truncate(30,v_long), truncate(5,v_varchar))
+        TBLPROPERTIES ('format-version'='2');
+        '''
+
+table_schema = ['long','int','long','float','double','string','boolean','date','timestamp with +04:00','decimal','timestamp']
+
+data = '''
+1,1,1000,1.1,1.11,1-1-1234,true,2022-11-01,2022-11-01 11:03:02.123456+04:00,389.11111,2022-11-01 11:03:02.123456
+2,2,2000,2.2,2.22,2-2-2345,false,2022-11-02,2022-11-02 11:03:02.123456+04:00,389.2222,2022-11-02 11:03:02.123456
+3,3,3000,3.3,3.33,3-3-5324,true,2022-11-03,2022-11-03 11:03:02.123456+04:00,389.3333,2022-11-03 11:03:02.123456
+4,4,4000,4.4,4.44,4-4-2344,false,2022-11-04,2022-11-04 11:04:02.123456+04:00,389.4444,2022-11-04 11:04:02.123456
+5,5,5000,5.5,5.55,5-5-2342,true,2022-11-05,2022-11-05 11:05:02.123456+04:00,389.5555,2022-11-05 11:05:02.123456
+'''
+
+query = [ 'select * from s1.t1;', 'select partition from s1.t1.partitions;' ]
+
