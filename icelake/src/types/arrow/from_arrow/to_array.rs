@@ -5,9 +5,9 @@ use crate::{Error, Result};
 use arrow_array::types::ArrowPrimitiveType;
 use arrow_array::types::GenericStringType;
 use arrow_array::{
-    Array, Date32Array, Date64Array, Float32Array, Float64Array, GenericByteArray, Int16Array,
-    Int32Array, Int64Array, Int8Array, OffsetSizeTrait, UInt16Array, UInt32Array, UInt64Array,
-    UInt8Array,
+    Array, Date32Array, Date64Array, Decimal128Array, Float32Array, Float64Array, GenericByteArray,
+    Int16Array, Int32Array, Int64Array, Int8Array, OffsetSizeTrait, UInt16Array, UInt32Array,
+    UInt64Array, UInt8Array,
 };
 use arrow_array::{BooleanArray, PrimitiveArray, StructArray};
 use arrow_schema::{DataType, TimeUnit};
@@ -179,6 +179,11 @@ pub fn to_anyvalue_array_with_type(
             .downcast_ref::<Float64Array>()
             .unwrap()
             .to_anyvalue_array(),
+        DataType::Decimal128(_, _) => array
+            .as_any()
+            .downcast_ref::<Decimal128Array>()
+            .unwrap()
+            .to_anyvalue_array(),
         DataType::Date32 => array
             .as_any()
             .downcast_ref::<Date32Array>()
@@ -242,7 +247,6 @@ pub fn to_anyvalue_array_with_type(
         DataType::LargeList(_) => todo!(),
         DataType::Union(_, _) => todo!(),
         DataType::Dictionary(_, _) => todo!(),
-        DataType::Decimal128(_, _) => todo!(),
         DataType::Decimal256(_, _) => todo!(),
         DataType::Map(_, _) => todo!(),
         DataType::RunEndEncoded(_, _) => todo!(),

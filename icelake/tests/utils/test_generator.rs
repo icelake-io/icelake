@@ -170,16 +170,3 @@ impl TestCase {
         )
     }
 }
-
-// #[cfg(test)]
-// mod test {
-//     #[test]
-//     fn test() {
-//         let file_name = format!("{}/../testdata/toml/test.toml", env!("CARGO_MANIFEST_DIR"),);
-//         let file = std::fs::File::open(file_name).unwrap();
-//         let test_case = super::TestCase::parse(file);
-//         println!("{:#?}", test_case);
-//         //
-//         todo!();
-//     }
-// }

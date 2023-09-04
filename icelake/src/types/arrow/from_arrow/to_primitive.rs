@@ -1,9 +1,9 @@
 use crate::Result;
 use crate::{types::PrimitiveValue, Error, ErrorKind};
-use arrow_buffer::i256;
 use arrow_schema::DataType;
-use arrow_schema::{IntervalUnit, TimeUnit};
+use arrow_schema::TimeUnit;
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
+use rust_decimal::Decimal;
 
 /// Help to convert arrow primitive value to iceberg primitive value.
 /// We implement this trait in the `ArrowPrimitiveType::Naive` type.
@@ -96,9 +96,6 @@ impl ToPrimitiveValue for i32 {
                     })?,
                 )),
             },
-            DataType::Interval(IntervalUnit::YearMonth) => {
-                todo!()
-            }
             _ => Err(Error::new(
                 ErrorKind::DataTypeUnsupported,
                 format!("Cannot convert i32 to {:?}", data_type),
@@ -172,14 +169,6 @@ impl ToPrimitiveValue for i64 {
                     Ok(PrimitiveValue::Timestampz(Utc.from_utc_datetime(&dt)))
                 }
             }
-            DataType::Date64 => todo!(),
-            DataType::Duration(_) => {
-                todo!()
-            }
-            DataType::Interval(IntervalUnit::DayTime) => {
-                todo!()
-            }
-            DataType::Time64(_) => todo!(),
             _ => Err(Error::new(
                 ErrorKind::DataTypeUnsupported,
                 format!("Cannot convert i64 to {:?}", data_type),
@@ -191,25 +180,12 @@ impl ToPrimitiveValue for i64 {
 impl ToPrimitiveValue for i128 {
     fn to_primitive(self, data_type: &DataType) -> Result<PrimitiveValue> {
         match data_type {
-            DataType::Decimal128(_, _) => todo!(),
-            DataType::Interval(IntervalUnit::MonthDayNano) => {
-                todo!()
-            }
+            DataType::Decimal128(_, scale) => Ok(PrimitiveValue::Decimal(
+                Decimal::from_i128_with_scale(self, *scale as u32),
+            )),
             _ => Err(Error::new(
                 ErrorKind::DataTypeUnsupported,
                 format!("Cannot convert i128 to {:?}", data_type),
-            )),
-        }
-    }
-}
-
-impl ToPrimitiveValue for i256 {
-    fn to_primitive(self, data_type: &DataType) -> Result<PrimitiveValue> {
-        match data_type {
-            DataType::Decimal256(_, _) => todo!(),
-            _ => Err(Error::new(
-                ErrorKind::DataTypeUnsupported,
-                format!("Cannot convert i256 to {:?}", data_type),
             )),
         }
     }
@@ -241,48 +217,35 @@ impl ToPrimitiveValue for f64 {
 
 impl ToPrimitiveValue for u8 {
     fn to_primitive(self, data_type: &DataType) -> Result<PrimitiveValue> {
-        match data_type {
-            DataType::UInt8 => todo!(),
-            _ => Err(Error::new(
-                ErrorKind::DataTypeUnsupported,
-                format!("Cannot convert u8 to {:?}", data_type),
-            )),
-        }
+        Err(Error::new(
+            ErrorKind::DataTypeUnsupported,
+            format!("Cannot convert u8 to {:?}", data_type),
+        ))
     }
 }
 
 impl ToPrimitiveValue for u16 {
     fn to_primitive(self, data_type: &DataType) -> Result<PrimitiveValue> {
-        match data_type {
-            DataType::UInt16 => todo!(),
-            _ => Err(Error::new(
-                ErrorKind::DataTypeUnsupported,
-                format!("Cannot convert u16 to {:?}", data_type),
-            )),
-        }
+        Err(Error::new(
+            ErrorKind::DataTypeUnsupported,
+            format!("Cannot convert u16 to {:?}", data_type),
+        ))
     }
 }
-
 impl ToPrimitiveValue for u32 {
     fn to_primitive(self, data_type: &DataType) -> Result<PrimitiveValue> {
-        match data_type {
-            DataType::UInt32 => todo!(),
-            _ => Err(Error::new(
-                ErrorKind::DataTypeUnsupported,
-                format!("Cannot convert u32 to {:?}", data_type),
-            )),
-        }
+        Err(Error::new(
+            ErrorKind::DataTypeUnsupported,
+            format!("Cannot convert u32 to {:?}", data_type),
+        ))
     }
 }
 
 impl ToPrimitiveValue for u64 {
     fn to_primitive(self, data_type: &DataType) -> Result<PrimitiveValue> {
-        match data_type {
-            DataType::UInt64 => todo!(),
-            _ => Err(Error::new(
-                ErrorKind::DataTypeUnsupported,
-                format!("Cannot convert u64 to {:?}", data_type),
-            )),
-        }
+        Err(Error::new(
+            ErrorKind::DataTypeUnsupported,
+            format!("Cannot convert u64 to {:?}", data_type),
+        ))
     }
 }

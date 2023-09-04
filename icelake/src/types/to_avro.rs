@@ -4,8 +4,8 @@ use crate::error::Result;
 use crate::types::in_memory::{Any, Field, Primitive, Schema};
 use crate::{Error, ErrorKind};
 use apache_avro::schema::{
-    Name, RecordField as AvroRecordField, RecordFieldOrder, RecordSchema as AvroRecordSchema,
-    UnionSchema,
+    DecimalSchema, Name, RecordField as AvroRecordField, RecordFieldOrder,
+    RecordSchema as AvroRecordSchema, UnionSchema,
 };
 use apache_avro::Schema as AvroSchema;
 use serde_json::{Number, Value as JsonValue};
@@ -114,6 +114,11 @@ impl<'a, 'b> TryFrom<AnyWithFieldId<'a, 'b>> for AvroSchema {
                 Primitive::Long => AvroSchema::Long,
                 Primitive::Float => AvroSchema::Float,
                 Primitive::Double => AvroSchema::Double,
+                Primitive::Decimal { precision, scale } => AvroSchema::Decimal(DecimalSchema {
+                    precision: *precision as usize,
+                    scale: *scale as usize,
+                    inner: Box::new(AvroSchema::Bytes),
+                }),
                 Primitive::Date => AvroSchema::Date,
                 Primitive::Time => AvroSchema::TimeMicros,
                 Primitive::Timestamp => AvroSchema::TimestampMicros,
