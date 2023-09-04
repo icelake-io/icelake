@@ -688,10 +688,8 @@ impl Transform {
             Transform::Month => Ok(Primitive::Int.into()),
             Transform::Day => Ok(Primitive::Int.into()),
             Transform::Hour => Ok(Primitive::Int.into()),
-            _ => Err(Error::new(
-                ErrorKind::IcebergFeatureUnsupported,
-                format!("Transform {:?} not supported yet!", &self),
-            )),
+            Transform::Bucket(_) => Ok(Primitive::Int.into()),
+            Transform::Truncate(_) => Ok(input_type.clone()),
         }
     }
 }
