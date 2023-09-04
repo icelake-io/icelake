@@ -5,6 +5,8 @@ use arrow_array::{
 };
 use arrow_schema::DataType;
 
+use crate::Error;
+
 use super::TransformFunction;
 
 pub struct Truncate {
@@ -38,13 +40,15 @@ impl TransformFunction for Truncate {
                     .unary(|v| v - (((v % width) + width) % width));
                 Ok(Arc::new(res))
             }
-            DataType::Decimal128(_, _) => {
+            DataType::Decimal128(precision, scale) => {
                 let width = self.width as i128;
                 let res: Decimal128Array = input
                     .as_any()
                     .downcast_ref::<Decimal128Array>()
                     .unwrap()
-                    .unary(|v| v - (((v % width) + width) % width));
+                    .unary(|v| v - (((v % width) + width) % width))
+                    .with_precision_and_scale(*precision, *scale)
+                    .map_err(|err| Error::new(crate::ErrorKind::ArrowError, format!("{}", err)))?;
                 Ok(Arc::new(res))
             }
             DataType::Utf8 => {
