@@ -9,6 +9,7 @@ use opendal::services::Fs;
 use opendal::Operator;
 use regex::Regex;
 use url::Url;
+
 use uuid::Uuid;
 
 use crate::config::{TableConfig, TableConfigRef};
@@ -22,14 +23,49 @@ const VERSION_HINT_FILENAME: &str = "version-hint.text";
 const VERSIONED_TABLE_METADATA_FILE_PATTERN: &str = r"v([0-9]+).metadata.json";
 
 /// Namespace of tables
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct Namespace {
-    levels: Vec<String>,
+    /// Levels in namespace.
+    pub levels: Vec<String>,
+}
+
+impl Namespace {
+    /// Creates namespace
+    pub fn new(levels: impl IntoIterator<Item = impl ToString>) -> Self {
+        Self {
+            levels: levels.into_iter().map(|s| s.to_string()).collect(),
+        }
+    }
 }
 
 /// Full qualified name of table.
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct TableIdentifier {
-    namespace: Namespace,
-    name: String,
+    /// Namespace
+    pub namespace: Namespace,
+    /// Table name
+    pub name: String,
+}
+
+impl TableIdentifier {
+    /// Creates a full qualified table identifier from a list of names.
+    pub fn new(names: impl IntoIterator<Item = impl ToString>) -> Result<Self> {
+        let mut names: Vec<String> = names.into_iter().map(|s| s.to_string()).collect();
+        if names.is_empty() {
+            return Err(Error::new(
+                ErrorKind::IcebergDataInvalid,
+                "Table identifier can't be empty!",
+            ));
+        }
+
+        let table_name = names.pop().unwrap();
+        let ns = Namespace { levels: names };
+
+        Ok(Self {
+            namespace: ns,
+            name: table_name,
+        })
+    }
 }
 
 /// Table is the main entry point for the IceLake.

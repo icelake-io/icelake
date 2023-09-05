@@ -5,8 +5,18 @@ use testcontainers::{GenericImage, RunnableImage};
 
 pub const MINIO_DATA_PORT: u16 = 9000u16;
 pub const MINIO_CONSOLE_PORT: u16 = 9001u16;
+pub const MINIO_ACCESS_KEY: &str = "admin";
+pub const MINIO_SECRET_KEY: &str = "password";
 
 pub const SPARK_CONNECT_SERVER_PORT: u16 = 15002u16;
+
+pub const PG_DB: &str = "postgres";
+pub const PG_USERNAME: &str = "postgres";
+pub const PG_PASSWORD: &str = "123456";
+pub const PG_PORT: u16 = 5432;
+
+pub const REST_CATALOG_WAREHOUSE: &str = "s3://icebergdata/demo";
+pub const REST_CATALOG_PORT: u16 = 8181;
 
 pub fn spark_image(minio_ip: &IpAddr) -> RunnableImage<GenericImage> {
     RunnableImage::from(
@@ -22,8 +32,8 @@ pub fn spark_image(minio_ip: &IpAddr) -> RunnableImage<GenericImage> {
         .with_exposed_port(SPARK_CONNECT_SERVER_PORT)
         .with_entrypoint("/spark-script/spark-connect-server.sh")
         .with_wait_for(WaitFor::StdOutMessage { message: "SparkConnectServer: Spark Connect server started".to_string()})
-        .with_wait_for(WaitFor::Duration { length: Duration::from_secs(5)}))
-        .with_user("root")
+        .with_wait_for(WaitFor::Duration { length: Duration::from_secs(2)}))
+    .with_user("root")
 }
 
 pub fn minio_image() -> RunnableImage<GenericImage> {
