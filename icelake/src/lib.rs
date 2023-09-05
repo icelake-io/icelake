@@ -6,7 +6,7 @@
 #![allow(dead_code)]
 
 mod table;
-pub use table::Table;
+pub use table::*;
 mod error;
 pub use error::Error;
 pub use error::ErrorKind;

@@ -468,19 +468,32 @@ pub async fn list_namespaces(
 /// Return all table identifiers under this namespace
 pub async fn list_tables(
     configuration: &configuration::Configuration,
-    prefix: &str,
+    prefix: Option<&str>,
     namespace: &str,
 ) -> Result<crate::models::ListTablesResponse, Error<ListTablesError>> {
     let local_var_configuration = configuration;
 
     let local_var_client = &local_var_configuration.client;
 
-    let local_var_uri_str = format!(
-        "{}/v1/{prefix}/namespaces/{namespace}/tables",
-        local_var_configuration.base_path,
-        prefix = crate::apis::urlencode(prefix),
-        namespace = crate::apis::urlencode(namespace)
-    );
+    let local_var_uri_str = match prefix {
+        Some(p) => {
+            format!(
+                "{}/v1/{prefix}/namespaces/{namespace}/tables",
+                local_var_configuration.base_path,
+                prefix = crate::apis::urlencode(p),
+                namespace = crate::apis::urlencode(namespace)
+            )
+        }
+        None => {
+            format!(
+                "{}/v1/namespaces/{namespace}/tables",
+                local_var_configuration.base_path,
+                namespace = crate::apis::urlencode(namespace)
+            )
+        }
+    };
+
+    println!("{local_var_uri_str}");
     let mut local_var_req_builder =
         local_var_client.request(reqwest::Method::GET, local_var_uri_str.as_str());
 

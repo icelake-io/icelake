@@ -5,9 +5,11 @@ mod poetry;
 pub use poetry::*;
 
 mod containers;
+mod docker;
 mod test_generator;
 
 pub use containers::*;
+pub use docker::*;
 
 use icelake::transaction::Transaction;
 use icelake::Table;
@@ -34,6 +36,18 @@ pub fn run_command(mut cmd: Command, desc: impl ToString) {
         log::info!("{} succeed!", desc)
     } else {
         panic!("{} failed: {:?}", desc, exit);
+    }
+}
+
+pub fn get_cmd_output(mut cmd: Command, desc: impl ToString) -> String {
+    let desc = desc.to_string();
+    log::info!("Starting to {}, command: {:?}", &desc, cmd);
+    let output = cmd.output().unwrap();
+    if output.status.success() {
+        log::info!("{} succeed!", desc);
+        String::from_utf8(output.stdout).unwrap()
+    } else {
+        panic!("{} failed: {:?}", desc, output.status);
     }
 }
 

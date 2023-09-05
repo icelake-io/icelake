@@ -44,3 +44,5 @@ futures = { version = "0.3", features = ["executor"] }
 testcontainers = { git = "https://github.com/liurenjie1024/testcontainers-rs.git", rev = "24fd08c05aa72ca7542198056c8c592a1899fd39" }
 iceberg-rest-api = { path = "./rest_api" }
 murmur3 = "0.5.2"
+reqwest = "0.11"
+urlencoding = "2"

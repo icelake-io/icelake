@@ -1,7 +1,7 @@
-use crate::utils::{mc_image, minio_image, set_up, spark_image, Poetry, TestFixture};
 use testcontainers::clients::Cli;
 
 mod utils;
+pub use utils::*;
 
 fn create_test_fixture<'a>(cli: &'a Cli, toml_file: &str) -> TestFixture<'a> {
     set_up();
