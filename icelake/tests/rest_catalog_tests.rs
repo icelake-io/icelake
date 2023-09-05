@@ -5,26 +5,21 @@ use icelake::{
     Namespace, TableIdentifier,
 };
 
-use utils::{DockerCompose, Poetry};
-
-use crate::utils::set_up;
-
 mod utils;
-use utils::REST_CATALOG_PORT;
-use utils::SPARK_CONNECT_SERVER_PORT;
+pub use utils::*;
 
-struct TestFixture {
+struct TestFixture2 {
     docker_compose: DockerCompose,
     poetry: Poetry,
 }
 
-fn create_test_fixture(project_name: &str) -> TestFixture {
+fn create_test_fixture(project_name: &str) -> TestFixture2 {
     set_up();
 
     let docker_compose = DockerCompose::new(project_name, "iceberg-rest");
     let poetry = Poetry::new(format!("{}/../testdata/python", env!("CARGO_MANIFEST_DIR")));
 
-    TestFixture {
+    TestFixture2 {
         docker_compose,
         poetry,
     }

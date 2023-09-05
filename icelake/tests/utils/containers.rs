@@ -10,11 +10,6 @@ pub const MINIO_SECRET_KEY: &str = "password";
 
 pub const SPARK_CONNECT_SERVER_PORT: u16 = 15002u16;
 
-pub const PG_DB: &str = "postgres";
-pub const PG_USERNAME: &str = "postgres";
-pub const PG_PASSWORD: &str = "123456";
-pub const PG_PORT: u16 = 5432;
-
 pub const REST_CATALOG_WAREHOUSE: &str = "s3://icebergdata/demo";
 pub const REST_CATALOG_PORT: u16 = 8181;
 
