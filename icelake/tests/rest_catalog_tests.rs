@@ -45,7 +45,10 @@ impl TestFixture2 {
 
 #[tokio::test]
 async fn test_list_tables() {
-    let test_fixture = create_test_fixture("test2");
+    let test_fixture = create_test_fixture(&normalize_test_name(format!(
+        "{}_test_list_ables",
+        module_path!()
+    )));
 
     test_fixture.docker_compose.run();
 
@@ -96,7 +99,10 @@ async fn test_list_tables() {
 
 #[tokio::test]
 async fn test_load_table() {
-    let test_fixture = create_test_fixture("test3");
+    let test_fixture = create_test_fixture(&normalize_test_name(format!(
+        "{}_test_load_table",
+        module_path!()
+    )));
 
     test_fixture.docker_compose.run();
 
@@ -112,7 +118,7 @@ async fn test_load_table() {
             "--sql",
             "CREATE SCHEMA IF NOT EXISTS s1",
             "DROP TABLE IF EXISTS s1.t1",
-            "CREATE TABLE s1.t1 (id long, name string, dist double) Using iceberg TBLPROPERTIES ('format-version'='2')",
+            "CREATE TABLE s1.t1 (id long not null, name string, dist double) Using iceberg TBLPROPERTIES ('format-version'='2')",
         ],
         "Init spark tables",
     );
@@ -128,16 +134,16 @@ async fn test_load_table() {
     assert_eq!(TableFormatVersion::V2, current_metadata.format_version);
 
     let expected_schema = Schema::new(
-        1,
+        0,
         None,
         Struct::new(vec![
             Arc::new(Field::required(1, "id", Any::Primitive(Primitive::Long))),
-            Arc::new(Field::required(
+            Arc::new(Field::optional(
                 2,
                 "name",
                 Any::Primitive(Primitive::String),
             )),
-            Arc::new(Field::required(
+            Arc::new(Field::optional(
                 3,
                 "dist",
                 Any::Primitive(Primitive::Double),

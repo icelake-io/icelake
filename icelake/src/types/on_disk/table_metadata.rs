@@ -23,9 +23,11 @@ pub fn serialize_table_meta(table_meta: types::TableMetadata) -> Result<String> 
     Ok(serde_json::to_string(&v)?)
 }
 
+/// Model used in rest catalog
+
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-struct TableMetadata {
+pub(crate) struct TableMetadata {
     format_version: i32,
     table_uuid: String,
     location: String,

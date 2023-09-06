@@ -26,5 +26,6 @@ pub use snapshot::parse_snapshot;
 mod table_metadata;
 pub use table_metadata::parse_table_metadata;
 pub use table_metadata::serialize_table_meta;
+pub(crate) use table_metadata::TableMetadata as TableMetadataSerDe;
 
 mod types;

@@ -5,11 +5,11 @@ use std::sync::Arc;
 
 use crate::error::Result;
 use futures::StreamExt;
-use iceberg_rest_api::models::table_metadata;
 use opendal::layers::LoggingLayer;
 use opendal::services::Fs;
 use opendal::Operator;
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 use url::Url;
 
 use uuid::Uuid;
@@ -25,7 +25,7 @@ const VERSION_HINT_FILENAME: &str = "version-hint.text";
 const VERSIONED_TABLE_METADATA_FILE_PATTERN: &str = r"v([0-9]+).metadata.json";
 
 /// Namespace of tables
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Namespace {
     /// Levels in namespace.
     pub levels: Vec<String>,
@@ -47,7 +47,7 @@ impl Display for Namespace {
 }
 
 /// Full qualified name of table.
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct TableIdentifier {
     /// Namespace
     pub namespace: Namespace,
@@ -125,7 +125,12 @@ impl Table {
     /// Currently this api is used to construct table from rest catalog. Don't used it in other places.
     /// We will remove it after refactoring.
     pub(crate) fn read_only_table(table_metadata: TableMetadata, metadata_location: &str) -> Self {
-        let mut table = Self::new(Operator::new(Fs::default()).unwrap().finish());
+        let op = {
+            let mut fs = Fs::default();
+            fs.root("/tmp");
+            Operator::new(fs).unwrap().finish()
+        };
+        let mut table = Self::new(op);
         table.current_version = table_metadata.last_updated_ms;
         table.current_location = Some(metadata_location.to_string());
         table

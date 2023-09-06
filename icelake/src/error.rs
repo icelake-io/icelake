@@ -237,16 +237,6 @@ impl From<reqwest::Error> for Error {
     }
 }
 
-impl<T: std::fmt::Debug + Send + Sync + 'static> From<iceberg_rest_api::apis::Error<T>> for Error {
-    fn from(value: iceberg_rest_api::apis::Error<T>) -> Self {
-        Self::new(
-            ErrorKind::Unexpected,
-            "Failed to request from catalog server",
-        )
-        .set_source(value)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use anyhow::anyhow;
