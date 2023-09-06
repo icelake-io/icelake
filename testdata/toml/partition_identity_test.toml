@@ -16,7 +16,7 @@ create_table_sql = '''
             v_decimal decimal(36, 10),
             v_ts_ntz timestamp_ntz
         ) USING iceberg
-        PARTITIONED BY (v_int,v_long,v_float,v_double,v_varchar,v_bool,v_date,v_timestamp,v_ts_ntz)
+        PARTITIONED BY (v_int,v_long,v_float,v_double,v_varchar,v_bool,v_date,v_timestamp,v_decimal,v_ts_ntz)
         TBLPROPERTIES ('format-version'='2');
         '''
 

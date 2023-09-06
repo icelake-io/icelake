@@ -218,7 +218,9 @@ impl Serialize for PrimitiveValue {
             PrimitiveValue::Long(value) => serializer.serialize_i64(*value),
             PrimitiveValue::Float(value) => serializer.serialize_f32(value.0),
             PrimitiveValue::Double(value) => serializer.serialize_f64(value.0),
-            PrimitiveValue::Decimal(value) => serializer.serialize_str(&value.to_string()),
+            PrimitiveValue::Decimal(value) => {
+                serializer.serialize_bytes(&value.mantissa().to_be_bytes())
+            }
             PrimitiveValue::Date(value) => serializer.serialize_i32(value.num_days_from_ce()),
             PrimitiveValue::Time(value) => serializer
                 .serialize_i64(NaiveDateTime::new(NaiveDate::default(), *value).timestamp_micros()),

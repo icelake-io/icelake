@@ -2,8 +2,8 @@ use std::cmp::min;
 use std::collections::HashMap;
 use std::str::FromStr;
 
-use apache_avro::Reader;
 use apache_avro::{from_value, Schema as AvroSchema};
+use apache_avro::{to_value, Reader};
 use opendal::Operator;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
@@ -399,7 +399,8 @@ impl ManifestWriter {
             }
 
             // TODO: Add partition summary
-            avro_writer.append_ser(ManifestEntry::try_from(entry)?)?;
+            let value = to_value(ManifestEntry::try_from(entry)?)?.resolve(&avro_schema)?;
+            avro_writer.append(value)?;
         }
 
         let length = avro_writer.flush()?;

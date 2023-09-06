@@ -1,4 +1,5 @@
 use apache_avro::from_value;
+use apache_avro::to_value;
 use apache_avro::Reader;
 use apache_avro::Schema as AvroSchema;
 use apache_avro::Writer as AvroWriter;
@@ -208,7 +209,8 @@ impl ManifestListWriter {
 
         for entry in manifest_list.entries {
             let entry = ManifestListEntry::from(entry);
-            avro_writer.append_ser(entry)?;
+            let value = to_value(entry)?.resolve(&avro_schema)?;
+            avro_writer.append(value)?;
         }
 
         let connect = avro_writer.into_inner()?;
