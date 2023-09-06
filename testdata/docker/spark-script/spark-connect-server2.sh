@@ -28,7 +28,6 @@ echo "$PACKAGES"
   --master local[3] \
   --conf spark.driver.bindAddress=0.0.0.0 \
   --conf spark.sql.catalog.demo=org.apache.iceberg.spark.SparkCatalog \
-  --conf spark.driver.extraJavaOptions="-Dhttps.proxyHost=192.168.110.27 -Dhttps.proxyPort=7890" \
   --conf spark.sql.catalog.demo.catalog-impl=org.apache.iceberg.rest.RESTCatalog \
   --conf spark.sql.catalog.demo.io-impl=org.apache.iceberg.aws.s3.S3FileIO \
   --conf spark.sql.catalog.demo.uri=http://rest:8181 \
