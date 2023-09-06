@@ -581,7 +581,7 @@ pub async fn load_namespace_metadata(
 /// Load a table from the catalog.  The response contains both configuration and table metadata. The configuration, if non-empty is used as additional configuration for the table that overrides catalog configuration. For example, this configuration may change the FileIO implementation to be used for the table.  The response also contains the table's full metadata, matching the table metadata JSON file.  The catalog configuration may contain credentials that should be used for subsequent requests for the table. The configuration key \"token\" is used to pass an access token to be used as a bearer token for table requests. Otherwise, a token may be passed using a RFC 8693 token type as a configuration key. For example, \"urn:ietf:params:oauth:token-type:jwt=<JWT-token>\".
 pub async fn load_table(
     configuration: &configuration::Configuration,
-    prefix: &str,
+    prefix: Option<&str>,
     namespace: &str,
     table: &str,
     snapshots: Option<&str>,
@@ -590,13 +590,25 @@ pub async fn load_table(
 
     let local_var_client = &local_var_configuration.client;
 
-    let local_var_uri_str = format!(
-        "{}/v1/{prefix}/namespaces/{namespace}/tables/{table}",
-        local_var_configuration.base_path,
-        prefix = crate::apis::urlencode(prefix),
-        namespace = crate::apis::urlencode(namespace),
-        table = crate::apis::urlencode(table)
-    );
+    let local_var_uri_str = match prefix {
+        Some(p) => {
+            format!(
+                "{}/v1/{prefix}/namespaces/{namespace}/tables/{table}",
+                local_var_configuration.base_path,
+                prefix = crate::apis::urlencode(p),
+                namespace = crate::apis::urlencode(namespace),
+                table = crate::apis::urlencode(table)
+            )
+        }
+        None => {
+            format!(
+                "{}/v1/namespaces/{namespace}/tables/{table}",
+                local_var_configuration.base_path,
+                namespace = crate::apis::urlencode(namespace),
+                table = crate::apis::urlencode(table)
+            )
+        }
+    };
     let mut local_var_req_builder =
         local_var_client.request(reqwest::Method::GET, local_var_uri_str.as_str());
 

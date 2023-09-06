@@ -51,6 +51,10 @@ pub fn get_cmd_output(mut cmd: Command, desc: impl ToString) -> String {
     }
 }
 
+pub fn normalize_test_name(s: impl ToString) -> String {
+    s.to_string().replace("::", "__")
+}
+
 pub struct TestFixture<'a> {
     spark: Container<'a, GenericImage>,
     minio: Container<'a, GenericImage>,

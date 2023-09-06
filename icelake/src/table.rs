@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt::Display;
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 
@@ -8,6 +9,7 @@ use opendal::layers::LoggingLayer;
 use opendal::services::Fs;
 use opendal::Operator;
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 use url::Url;
 
 use uuid::Uuid;
@@ -23,7 +25,7 @@ const VERSION_HINT_FILENAME: &str = "version-hint.text";
 const VERSIONED_TABLE_METADATA_FILE_PATTERN: &str = r"v([0-9]+).metadata.json";
 
 /// Namespace of tables
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Namespace {
     /// Levels in namespace.
     pub levels: Vec<String>,
@@ -38,8 +40,14 @@ impl Namespace {
     }
 }
 
+impl Display for Namespace {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.levels.join("."))
+    }
+}
+
 /// Full qualified name of table.
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct TableIdentifier {
     /// Namespace
     pub namespace: Namespace,
@@ -65,6 +73,12 @@ impl TableIdentifier {
             namespace: ns,
             name: table_name,
         })
+    }
+}
+
+impl Display for TableIdentifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}.{}", self.namespace, self.name)
     }
 }
 
@@ -106,6 +120,24 @@ impl Table {
             current_table_version: 0,
             table_config: config,
         }
+    }
+
+    /// Currently this api is used to construct table from rest catalog. Don't used it in other places.
+    /// We will remove it after refactoring.
+    pub(crate) fn read_only_table(table_metadata: TableMetadata, metadata_location: &str) -> Self {
+        let op = {
+            let mut fs = Fs::default();
+            fs.root("/tmp");
+            Operator::new(fs).unwrap().finish()
+        };
+        let mut table = Self::new(op);
+        table.current_version = table_metadata.last_updated_ms;
+        table.current_location = Some(metadata_location.to_string());
+        table
+            .table_metadata
+            .insert(table_metadata.last_updated_ms, table_metadata);
+
+        table
     }
 
     /// Load metadata and manifest from storage.
