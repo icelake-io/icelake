@@ -6,7 +6,8 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use iceberg_rest_api::{
     apis::{
-        catalog_api_api::list_tables, configuration::Configuration,
+        catalog_api_api::{list_tables, load_table},
+        configuration::Configuration,
         configuration_api_api::get_config,
     },
     models::TableIdentifier as RestTableIdentifier,
@@ -15,7 +16,7 @@ use reqwest::ClientBuilder;
 
 use crate::{
     table::{Namespace, TableIdentifier},
-    types::{PartitionSpec, Schema},
+    types::{PartitionSpec, Schema, TableMetadata},
     Error, ErrorKind, Table,
 };
 
@@ -101,11 +102,27 @@ impl Catalog for RestCatalog {
     }
 
     /// Load table.
-    async fn load_table(&self, _table_name: &TableIdentifier) -> Result<Table> {
-        Err(Error::new(
-            ErrorKind::IcebergFeatureUnsupported,
-            "Load table in rest client is not implemented yet!",
-        ))
+    async fn load_table(&self, table_name: &TableIdentifier) -> Result<Table> {
+        let resp = load_table(
+            &self.rest_client,
+            None,
+            &table_name.namespace.encode_in_url()?,
+            &table_name.name,
+            None,
+        )
+        .await?;
+
+        let metadata_location = resp.metadata_location.ok_or_else(|| {
+            Error::new(
+                ErrorKind::IcebergFeatureUnsupported,
+                "Loading uncommitted table is not supported!",
+            )
+        })?;
+
+        log::info!("Table metadata location of {table_name} is {metadata_location}");
+
+        let table_metadata = TableMetadata::try_from(&*resp.metadata)?;
+        Ok(Table::read_only_table(table_metadata, &metadata_location))
     }
 
     /// Invalidate table.
@@ -233,6 +250,23 @@ impl Namespace {
         }
 
         Ok(self.levels.join("\u{1F}").to_string())
+    }
+}
+
+pub(super) mod _serde {
+    use crate::error::Error;
+    use crate::error::Result;
+    use crate::types::parse_table_metadata;
+    use crate::types::TableMetadata;
+
+    impl TryFrom<&iceberg_rest_api::models::TableMetadata> for TableMetadata {
+        type Error = Error;
+
+        fn try_from(rest: &iceberg_rest_api::models::TableMetadata) -> Result<Self> {
+            let json_str = serde_json::to_string(rest)?;
+            log::debug!("Table metadata json from rest catalog: {json_str}");
+            parse_table_metadata(json_str.as_bytes())
+        }
     }
 }
 

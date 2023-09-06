@@ -1,9 +1,11 @@
 use std::collections::HashMap;
+use std::fmt::Display;
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 
 use crate::error::Result;
 use futures::StreamExt;
+use iceberg_rest_api::models::table_metadata;
 use opendal::layers::LoggingLayer;
 use opendal::services::Fs;
 use opendal::Operator;
@@ -38,6 +40,12 @@ impl Namespace {
     }
 }
 
+impl Display for Namespace {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.levels.join("."))
+    }
+}
+
 /// Full qualified name of table.
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub struct TableIdentifier {
@@ -65,6 +73,12 @@ impl TableIdentifier {
             namespace: ns,
             name: table_name,
         })
+    }
+}
+
+impl Display for TableIdentifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}.{}", self.namespace, self.name)
     }
 }
 
@@ -106,6 +120,19 @@ impl Table {
             current_table_version: 0,
             table_config: config,
         }
+    }
+
+    /// Currently this api is used to construct table from rest catalog. Don't used it in other places.
+    /// We will remove it after refactoring.
+    pub(crate) fn read_only_table(table_metadata: TableMetadata, metadata_location: &str) -> Self {
+        let mut table = Self::new(Operator::new(Fs::default()).unwrap().finish());
+        table.current_version = table_metadata.last_updated_ms;
+        table.current_location = Some(metadata_location.to_string());
+        table
+            .table_metadata
+            .insert(table_metadata.last_updated_ms, table_metadata);
+
+        table
     }
 
     /// Load metadata and manifest from storage.
