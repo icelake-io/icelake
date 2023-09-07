@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use icelake::{
-    catalog::{Catalog, RestCatalog},
+    catalog::{CatalogRef, RestCatalog},
     types::{Any, Field, Primitive, Schema, Struct, TableFormatVersion},
     Namespace, TableIdentifier,
 };
@@ -27,7 +27,7 @@ fn create_test_fixture(project_name: &str) -> TestFixture2 {
 }
 
 impl TestFixture2 {
-    async fn get_rest_catalog(&self) -> RestCatalog {
+    async fn get_rest_catalog(&self) -> CatalogRef {
         let config: HashMap<String, String> = HashMap::from([(
             "uri",
             format!(
@@ -39,7 +39,7 @@ impl TestFixture2 {
         .map(|(k, v)| (k.to_string(), v.to_string()))
         .collect();
 
-        RestCatalog::new("test", config).await.unwrap()
+        Arc::new(RestCatalog::new("test", config).await.unwrap())
     }
 }
 
@@ -77,11 +77,13 @@ async fn test_list_tables() {
     let catalog = test_fixture.get_rest_catalog().await;
 
     let mut table_ids = catalog
+        .clone()
         .list_tables(&Namespace::new(vec!["s1"]))
         .await
         .unwrap();
 
     let s2_table_ids = catalog
+        .clone()
         .list_tables(&Namespace::new(vec!["s2"]))
         .await
         .unwrap();

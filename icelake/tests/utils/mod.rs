@@ -1,3 +1,4 @@
+use icelake::catalog::{Catalog, FileSystemCatalog, OperatorArgs};
 use testcontainers::{Container, GenericImage};
 
 mod poetry;
@@ -12,13 +13,12 @@ pub use containers::*;
 pub use docker::*;
 
 use icelake::transaction::Transaction;
-use icelake::Table;
-use opendal::services::S3;
-use opendal::Operator;
+use icelake::{Table, TableIdentifier};
+
 use std::fs::File;
 use std::process::Command;
 
-use std::sync::Once;
+use std::sync::{Arc, Once};
 
 use self::test_generator::TestCase;
 
@@ -127,22 +127,24 @@ impl<'a> TestFixture<'a> {
     }
 
     pub async fn create_icelake_table(&self) -> Table {
-        let mut builder = S3::default();
-        builder.root(self.test_case.table_root.as_str());
-        builder.bucket("icebergdata");
-        builder.endpoint(
-            format!(
+        let op_args = OperatorArgs::S3 {
+            root: "".to_string(),
+            bucket: "icebergdata".to_string(),
+            endpoint: Some(format!(
                 "http://localhost:{}",
                 self.minio.get_host_port_ipv4(MINIO_DATA_PORT)
-            )
-            .as_str(),
-        );
-        builder.access_key_id("admin");
-        builder.secret_access_key("password");
-        builder.region("us-east-1");
+            )),
+            region: Some("us-east-1".to_string()),
+            access_key: Some("admin".to_string()),
+            access_secret: Some("password".to_string()),
+        };
 
-        let op = Operator::new(builder).unwrap().finish();
-        Table::open_with_op(op).await.unwrap()
+        let catalog = Arc::new(FileSystemCatalog::open(op_args).await.unwrap());
+
+        catalog
+            .load_table(&TableIdentifier::new(self.test_case.table_name.split('.')).unwrap())
+            .await
+            .unwrap()
     }
 
     pub async fn write_data_with_icelake(&mut self) {
