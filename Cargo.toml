@@ -5,7 +5,7 @@ license = "Apache-2.0"
 
 [workspace]
 members = ["icelake"]
-
+resolver = "2"
 
 [workspace.dependencies]
 anyhow = "1"
@@ -35,14 +35,13 @@ log = "0.4.0"
 env_logger = "0.10.0"
 csv = "1"
 url = "2"
-regex = "1"
+regex = "1.9"
 clap = { version = "4", features = ["derive"] }
 ordered-float = "3.7.0"
 confique = "0.2"
 libtest-mimic = "0.6"
 futures = { version = "0.3", features = ["executor"] }
 testcontainers = { git = "https://github.com/liurenjie1024/testcontainers-rs.git", rev = "24fd08c05aa72ca7542198056c8c592a1899fd39" }
-iceberg-rest-api = { path = "./rest_api" }
 murmur3 = "0.5.2"
 reqwest = { version = "0.11", features = ["json"] }
 urlencoding = "2"
