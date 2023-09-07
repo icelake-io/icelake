@@ -42,6 +42,7 @@ csv = "1.2.2"
 murmur3 = { workspace = true }
 reqwest = { workspace = true }
 urlencoding = { workspace = true }
+enum-display = { workspace = true }
 
 
 [dev-dependencies]

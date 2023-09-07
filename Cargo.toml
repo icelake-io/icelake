@@ -45,3 +45,4 @@ testcontainers = { git = "https://github.com/liurenjie1024/testcontainers-rs.git
 murmur3 = "0.5.2"
 reqwest = { version = "0.11", features = ["json"] }
 urlencoding = "2"
+enum-display = "0.1"

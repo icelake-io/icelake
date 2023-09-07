@@ -9,13 +9,13 @@ use serde::de::DeserializeOwned;
 use urlencoding::encode;
 
 use crate::{
-    catalog::rest::_models::CatalogConfig,
+    catalog::rest::_models::{CatalogConfig, CommitTableResponse},
     table::{Namespace, TableIdentifier},
     types::{PartitionSpec, Schema, TableMetadata},
     Error, ErrorKind, Table,
 };
 
-use self::_models::{ListTablesResponse, LoadTableResult};
+use self::_models::{CommitTableRequest, ListTablesResponse, LoadTableResult};
 
 use super::{Catalog, UpdateTable};
 use crate::error::Result;
@@ -153,10 +153,33 @@ impl Catalog for RestCatalog {
     }
 
     /// Update table.
-    async fn update_table(&self, _udpate_table: &UpdateTable) -> Result<Table> {
-        Err(Error::new(
-            ErrorKind::IcebergFeatureUnsupported,
-            "Update table in rest client is not implemented yet!",
+    async fn update_table(&self, udpate_table: &UpdateTable) -> Result<Table> {
+        let request = self
+            .rest_client
+            .post(self.endpoints.table(&udpate_table.table_name)?)
+            .json(&CommitTableRequest::try_from(udpate_table)?)
+            .build()?;
+
+        let response = self
+            .execute_request::<CommitTableResponse>(request, |status| match status {
+                StatusCode::NOT_FOUND => Some(Error::new(
+                    ErrorKind::IcebergDataInvalid,
+                    format!("Table {} not found!", udpate_table.table_name),
+                )),
+                _ => None,
+            })
+            .await?;
+
+        log::info!(
+            "Table metadata location of {} is {}",
+            udpate_table.table_name,
+            response.metadata_location
+        );
+
+        let table_metadata = TableMetadata::try_from(response.metadata)?;
+        Ok(Table::read_only_table(
+            table_metadata,
+            &response.metadata_location,
         ))
     }
 }
@@ -321,9 +344,15 @@ impl Namespace {
 mod _models {
     use std::collections::HashMap;
 
+    use crate::{error::Result, types::SchemaSerDe, ErrorKind};
     use serde::{Deserialize, Serialize};
 
-    use crate::{table, types::TableMetadataSerDe};
+    use crate::{
+        catalog::{self, MetadataUpdate, UpdateRquirement},
+        table,
+        types::{SnapshotSerDe, TableMetadataSerDe},
+        Error,
+    };
 
     #[derive(Clone, Debug, Serialize, Deserialize)]
     pub(super) struct TableIdentifier {
@@ -335,6 +364,15 @@ mod _models {
         fn from(value: TableIdentifier) -> Self {
             Self {
                 namespace: table::Namespace::new(value.namespace),
+                name: value.name,
+            }
+        }
+    }
+
+    impl From<table::TableIdentifier> for TableIdentifier {
+        fn from(value: table::TableIdentifier) -> Self {
+            Self {
+                namespace: value.namespace.levels,
                 name: value.name,
             }
         }
@@ -361,11 +399,209 @@ mod _models {
         #[serde(rename = "config", skip_serializing_if = "Option::is_none")]
         pub(super) config: Option<::std::collections::HashMap<String, String>>,
     }
+
+    #[derive(Serialize, Deserialize)]
+    pub(super) struct CommitTableRequest {
+        pub(super) identifier: TableIdentifier,
+        pub(super) requirements: Vec<TableRequirement>,
+        pub(super) updates: Vec<TableUpdate>,
+    }
+
+    impl TryFrom<&catalog::UpdateTable> for CommitTableRequest {
+        type Error = Error;
+
+        fn try_from(value: &catalog::UpdateTable) -> Result<Self> {
+            let requirements = value
+                .requirements
+                .iter()
+                .map(TableRequirement::from)
+                .collect::<Vec<_>>();
+            let updates = value
+                .updates
+                .iter()
+                .map(TableUpdate::try_from)
+                .collect::<Result<Vec<_>>>()?;
+
+            Ok(Self {
+                identifier: value.table_name.clone().into(),
+                requirements,
+                updates,
+            })
+        }
+    }
+
+    #[derive(Serialize, Deserialize)]
+    #[serde(rename_all = "kebab-case")]
+    pub(super) struct TableRequirement {
+        #[serde(rename = "type")]
+        pub(super) typ: String,
+        pub(super) r#ref: Option<String>,
+        pub(super) uuid: Option<String>,
+        pub(super) snapshot_id: Option<i64>,
+        pub(super) last_assigned_field_id: Option<i32>,
+        pub(super) current_schema_id: Option<i32>,
+        pub(super) last_assigned_partition_id: Option<i32>,
+        pub(super) default_spec_id: Option<i32>,
+        pub(super) default_sort_order_id: Option<i32>,
+    }
+
+    impl From<&UpdateRquirement> for TableRequirement {
+        fn from(value: &UpdateRquirement) -> Self {
+            match value {
+                UpdateRquirement::AssertTableDoesNotExist => Self {
+                    typ: "assert-create".to_string(),
+                    r#ref: None,
+                    uuid: None,
+                    snapshot_id: None,
+                    last_assigned_field_id: None,
+                    current_schema_id: None,
+                    last_assigned_partition_id: None,
+                    default_spec_id: None,
+                    default_sort_order_id: None,
+                },
+                UpdateRquirement::AssertTableUUID(uuid) => Self {
+                    typ: "assert-table-uuid".to_string(),
+                    r#ref: None,
+                    uuid: Some(uuid.to_string()),
+                    snapshot_id: None,
+                    last_assigned_field_id: None,
+                    current_schema_id: None,
+                    last_assigned_partition_id: None,
+                    default_spec_id: None,
+                    default_sort_order_id: None,
+                },
+                UpdateRquirement::AssertRefSnapshotID { name, snapshot_id } => Self {
+                    typ: "assert-ref-snapshot-id".to_string(),
+                    r#ref: Some(name.clone()),
+                    uuid: None,
+                    snapshot_id: Some(*snapshot_id),
+                    last_assigned_field_id: None,
+                    current_schema_id: None,
+                    last_assigned_partition_id: None,
+                    default_spec_id: None,
+                    default_sort_order_id: None,
+                },
+                UpdateRquirement::AssertLastAssignedFieldId {
+                    last_assigned_field_id,
+                } => Self {
+                    typ: "assert-last-assigned-field-id".to_string(),
+                    r#ref: None,
+                    uuid: None,
+                    snapshot_id: None,
+                    last_assigned_field_id: Some(*last_assigned_field_id),
+                    current_schema_id: None,
+                    last_assigned_partition_id: None,
+                    default_spec_id: None,
+                    default_sort_order_id: None,
+                },
+                UpdateRquirement::AssertCurrentSchemaID { schema_id } => Self {
+                    typ: "assert-current-schema-id".to_string(),
+                    r#ref: None,
+                    uuid: None,
+                    snapshot_id: None,
+                    last_assigned_field_id: None,
+                    current_schema_id: Some(*schema_id),
+                    last_assigned_partition_id: None,
+                    default_spec_id: None,
+                    default_sort_order_id: None,
+                },
+                UpdateRquirement::AssertLastAssignedPartitionId {
+                    last_assigned_partition_id,
+                } => Self {
+                    typ: "assert-last-assigned-partition-id".to_string(),
+                    r#ref: None,
+                    uuid: None,
+                    snapshot_id: None,
+                    last_assigned_field_id: None,
+                    current_schema_id: None,
+                    last_assigned_partition_id: Some(*last_assigned_partition_id),
+                    default_spec_id: None,
+                    default_sort_order_id: None,
+                },
+                UpdateRquirement::AssertDefaultSpecID { spec_id } => Self {
+                    typ: "assert-default-spec-id".to_string(),
+                    r#ref: None,
+                    uuid: None,
+                    snapshot_id: None,
+                    last_assigned_field_id: None,
+                    current_schema_id: None,
+                    last_assigned_partition_id: None,
+                    default_spec_id: Some(*spec_id),
+                    default_sort_order_id: None,
+                },
+                UpdateRquirement::AssertDefaultSortOrderID { sort_order_id } => Self {
+                    typ: "assert-default-sort-order-id".to_string(),
+                    r#ref: None,
+                    uuid: None,
+                    snapshot_id: None,
+                    last_assigned_field_id: None,
+                    current_schema_id: None,
+                    last_assigned_partition_id: None,
+                    default_spec_id: None,
+                    default_sort_order_id: Some(*sort_order_id),
+                },
+            }
+        }
+    }
+
+    #[derive(Serialize, Deserialize)]
+    #[serde(tag = "action")]
+    pub(super) enum TableUpdate {
+        #[serde(rename = "upgrade-format-version")]
+        UpgradeFormatVersion {
+            #[serde(rename = "format-version")]
+            format_version: i32,
+        },
+        #[serde(rename = "add-snapshot")]
+        AddSnapshot { snapshot: SnapshotSerDe },
+        #[serde(rename = "add-schema")]
+        AddSchema {
+            schema: SchemaSerDe,
+            #[serde(rename = "last-column-id")]
+            last_column_id: Option<i32>,
+        },
+    }
+
+    impl TryFrom<&MetadataUpdate> for TableUpdate {
+        type Error = Error;
+
+        fn try_from(value: &MetadataUpdate) -> Result<Self> {
+            match value {
+                MetadataUpdate::UpgradeFormatVersion(format_version) => {
+                    Ok(Self::UpgradeFormatVersion {
+                        format_version: *format_version,
+                    })
+                }
+                MetadataUpdate::AddSnapshot { snapshot } => Ok(Self::AddSnapshot {
+                    snapshot: snapshot.clone().try_into()?,
+                }),
+                MetadataUpdate::AddSchema {
+                    schema,
+                    last_column_id,
+                } => Ok(Self::AddSchema {
+                    schema: schema.try_into()?,
+                    last_column_id: Some(*last_column_id),
+                }),
+                update => Err(Error::new(
+                    ErrorKind::IcebergFeatureUnsupported,
+                    format!("Update table with this metadata {update} is not supported yet!"),
+                )),
+            }
+        }
+    }
+
+    #[derive(Serialize, Deserialize)]
+    pub(super) struct CommitTableResponse {
+        pub(super) metadata_location: String,
+        pub(super) metadata: TableMetadataSerDe,
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::table::Namespace;
+
+    use super::_models::TableUpdate;
 
     #[test]
     fn test_namespace_encode() {
@@ -374,5 +610,13 @@ mod tests {
         };
 
         assert_eq!("a%1Fb", ns.encode_in_url().unwrap());
+    }
+
+    #[test]
+    fn test_serialize_table_update() {
+        let table_update = TableUpdate::UpgradeFormatVersion { format_version: 1 };
+        let json_str = serde_json::to_string(&table_update).unwrap();
+
+        println!("{}", json_str);
     }
 }

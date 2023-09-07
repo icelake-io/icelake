@@ -3,6 +3,7 @@
 use std::collections::{HashMap, HashSet};
 
 use async_trait::async_trait;
+use enum_display::EnumDisplay;
 use uuid::Uuid;
 
 use crate::error::Result;
@@ -101,6 +102,7 @@ pub enum UpdateRquirement {
 }
 
 /// Metadata updates.
+#[derive(Debug, Clone, EnumDisplay)]
 pub enum MetadataUpdate {
     /// Assign uuid.
     AssignUuid(Uuid),

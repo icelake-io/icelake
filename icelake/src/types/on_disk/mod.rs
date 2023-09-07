@@ -14,6 +14,7 @@ pub use partition_spec::parse_partition_spec;
 
 mod schema;
 pub use schema::parse_schema;
+pub(crate) use schema::Schema as SchemaSerDe;
 
 mod sort_order;
 pub use sort_order::parse_sort_order;
@@ -22,6 +23,7 @@ mod transform;
 
 mod snapshot;
 pub use snapshot::parse_snapshot;
+pub(crate) use snapshot::Snapshot as SnapshotSerDe;
 
 mod table_metadata;
 pub use table_metadata::parse_table_metadata;
