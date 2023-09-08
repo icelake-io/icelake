@@ -16,9 +16,9 @@ pub const OP_ARGS_ENDPOINT: &str = "endpoint";
 /// s3 region
 pub const OP_ARGS_REGION: &str = "region";
 /// s3 access key
-pub const OP_ARGS_ACCESS_KEY: &str = "access_key";
+pub const OP_ARGS_ACCESS_KEY: &str = "access_key_id";
 /// s3 access secret
-pub const OP_ARGS_ACCESS_SECRET: &str = "access_secret";
+pub const OP_ARGS_ACCESS_SECRET: &str = "secret_access_key";
 
 /// Args for creating opendal operator
 #[derive(Debug, Clone)]
