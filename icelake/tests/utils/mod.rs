@@ -1,5 +1,5 @@
 use icelake::catalog::{
-    Catalog, FileSystemCatalog, OperatorArgs, OP_ARGS_ACCESS_KEY, OP_ARGS_ACCESS_SECRET,
+    Catalog, OperatorArgs, StorageCatalog, OP_ARGS_ACCESS_KEY, OP_ARGS_ACCESS_SECRET,
     OP_ARGS_BUCKET, OP_ARGS_ENDPOINT, OP_ARGS_REGION, OP_ARGS_ROOT,
 };
 use opendal::Scheme;
@@ -146,7 +146,7 @@ impl<'a> TestFixture<'a> {
             .with_arg(OP_ARGS_ACCESS_SECRET, "password")
             .build();
 
-        let catalog = Arc::new(FileSystemCatalog::open(op_args).await.unwrap());
+        let catalog = Arc::new(StorageCatalog::open(op_args).await.unwrap());
 
         catalog
             .load_table(&self.test_case.table_name)

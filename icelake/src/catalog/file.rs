@@ -20,7 +20,7 @@ use super::{Catalog, OperatorArgs, UpdateTable};
 use crate::error::Result;
 
 /// File system catalog.
-pub struct FileSystemCatalog {
+pub struct StorageCatalog {
     name: String,
     root_uri: String,
     op_args: OperatorArgs,
@@ -28,7 +28,7 @@ pub struct FileSystemCatalog {
 }
 
 #[async_trait]
-impl Catalog for FileSystemCatalog {
+impl Catalog for StorageCatalog {
     fn name(&self) -> &str {
         &self.name
     }
@@ -133,7 +133,7 @@ impl Catalog for FileSystemCatalog {
     }
 }
 
-impl FileSystemCatalog {
+impl StorageCatalog {
     /// Load table from path.
     pub async fn load_table(path: &str) -> Result<Table> {
         if let Some((warehouse_path, table_name)) = path.rsplit_once('/') {
@@ -151,7 +151,7 @@ impl FileSystemCatalog {
         let op_args = Table::create_operator_args(warehouse_path)?;
         let op = Operator::try_from(&op_args)?;
 
-        let fs_catalog = Arc::new(FileSystemCatalog {
+        let fs_catalog = Arc::new(StorageCatalog {
             name: "fs catalog".to_string(),
             root_uri: warehouse_path.to_string(),
             op_args,
@@ -164,10 +164,10 @@ impl FileSystemCatalog {
     }
 
     /// Create filesystem catalog from operator args.
-    pub async fn open(op_args: OperatorArgs) -> Result<FileSystemCatalog> {
+    pub async fn open(op_args: OperatorArgs) -> Result<StorageCatalog> {
         let op = Operator::try_from(&op_args)?;
 
-        Ok(FileSystemCatalog {
+        Ok(StorageCatalog {
             name: "fs catalog".to_string(),
             root_uri: op_args.url()?,
             op_args,
