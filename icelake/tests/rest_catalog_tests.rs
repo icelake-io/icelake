@@ -28,13 +28,18 @@ fn create_test_fixture(project_name: &str) -> TestFixture2 {
 
 impl TestFixture2 {
     async fn get_rest_catalog(&self) -> CatalogRef {
-        let config: HashMap<String, String> = HashMap::from([(
-            "uri",
-            format!(
-                "http://{}:{REST_CATALOG_PORT}",
-                self.docker_compose.get_container_ip("rest")
+        let config: HashMap<String, String> = HashMap::from([
+            (
+                "uri",
+                format!(
+                    "http://{}:{REST_CATALOG_PORT}",
+                    self.docker_compose.get_container_ip("rest")
+                ),
             ),
-        )])
+            ("table.io.root", "demo".to_string()),
+            ("table.io.bucket", "icebergdata".to_string()),
+            ("table.io.region", "us-east-1".to_string()),
+        ])
         .iter()
         .map(|(k, v)| (k.to_string(), v.to_string()))
         .collect();

@@ -3,9 +3,9 @@ use std::fmt::Display;
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 
-use crate::catalog::{CatalogRef, OperatorArgs};
+use crate::catalog::{CatalogRef, OperatorArgs, OP_ARGS_BUCKET, OP_ARGS_ROOT};
 use crate::error::Result;
-use opendal::Operator;
+use opendal::{Operator, Scheme};
 use serde::{Deserialize, Serialize};
 use url::Url;
 
@@ -220,33 +220,32 @@ impl Table {
     pub(crate) fn create_operator_args(path: &str) -> Result<OperatorArgs> {
         if path.starts_with('/') {
             // Local file path such as: /tmp
-            return Ok(OperatorArgs::Fs {
-                root: path.to_string(),
-            });
+            return Ok(OperatorArgs::builder(Scheme::Fs)
+                .with_arg(OP_ARGS_ROOT, path)
+                .build());
         }
 
         let url = Url::parse(path)?;
 
         let op = match url.scheme() {
-            "file" => OperatorArgs::Fs {
-                root: path.to_string(),
-            },
-            "s3" | "s3a" => OperatorArgs::S3 {
-                root: url.path().to_string(),
-                bucket: url
-                    .host_str()
-                    .ok_or_else(|| {
-                        Error::new(
-                            ErrorKind::IcebergDataInvalid,
-                            format!("Invalid s3 url: {path}"),
-                        )
-                    })?
-                    .to_string(),
-                endpoint: None,
-                region: None,
-                access_key: None,
-                access_secret: None,
-            },
+            "file" => OperatorArgs::builder(Scheme::Fs)
+                .with_arg(OP_ARGS_ROOT, url.path().to_string())
+                .build(),
+            "s3" | "s3a" => OperatorArgs::builder(Scheme::S3)
+                .with_arg(OP_ARGS_ROOT, url.path().to_string())
+                .with_arg(
+                    OP_ARGS_BUCKET,
+                    url.host_str()
+                        .ok_or_else(|| {
+                            Error::new(
+                                ErrorKind::IcebergDataInvalid,
+                                format!("Invalid s3 url: {path}"),
+                            )
+                        })?
+                        .to_string(),
+                )
+                .build(),
+
             _ => {
                 return Err(Error::new(
                     ErrorKind::IcebergFeatureUnsupported,

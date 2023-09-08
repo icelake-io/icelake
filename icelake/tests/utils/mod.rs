@@ -1,4 +1,8 @@
-use icelake::catalog::{Catalog, FileSystemCatalog, OperatorArgs};
+use icelake::catalog::{
+    Catalog, FileSystemCatalog, OperatorArgs, OP_ARGS_ACCESS_KEY, OP_ARGS_ACCESS_SECRET,
+    OP_ARGS_BUCKET, OP_ARGS_ENDPOINT, OP_ARGS_REGION, OP_ARGS_ROOT,
+};
+use opendal::Scheme;
 use testcontainers::{Container, GenericImage};
 
 mod poetry;
@@ -127,17 +131,20 @@ impl<'a> TestFixture<'a> {
     }
 
     pub async fn create_icelake_table(&self) -> Table {
-        let op_args = OperatorArgs::S3 {
-            root: self.test_case.warehouse_root.clone(),
-            bucket: "icebergdata".to_string(),
-            endpoint: Some(format!(
-                "http://localhost:{}",
-                self.minio.get_host_port_ipv4(MINIO_DATA_PORT)
-            )),
-            region: Some("us-east-1".to_string()),
-            access_key: Some("admin".to_string()),
-            access_secret: Some("password".to_string()),
-        };
+        let op_args = OperatorArgs::builder(Scheme::S3)
+            .with_arg(OP_ARGS_ROOT, self.test_case.warehouse_root.clone())
+            .with_arg(OP_ARGS_BUCKET, "icebergdata")
+            .with_arg(
+                OP_ARGS_ENDPOINT,
+                format!(
+                    "http://localhost:{}",
+                    self.minio.get_host_port_ipv4(MINIO_DATA_PORT)
+                ),
+            )
+            .with_arg(OP_ARGS_REGION, "us-east-1")
+            .with_arg(OP_ARGS_ACCESS_KEY, "admin")
+            .with_arg(OP_ARGS_ACCESS_SECRET, "password")
+            .build();
 
         let catalog = Arc::new(FileSystemCatalog::open(op_args).await.unwrap());
 

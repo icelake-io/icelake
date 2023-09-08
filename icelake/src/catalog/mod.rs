@@ -4,9 +4,8 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use async_trait::async_trait;
+
 use enum_display::EnumDisplay;
-use opendal::services::S3;
-use opendal::Operator;
 use uuid::Uuid;
 
 use crate::error::Result;
@@ -22,6 +21,8 @@ pub use rest::*;
 mod file;
 use crate::error::{Error, ErrorKind};
 pub use file::*;
+mod io;
+pub use io::*;
 
 /// Reference to catalog.
 pub type CatalogRef = Arc<dyn Catalog>;
@@ -317,106 +318,5 @@ impl UpdateTableBuilder {
     /// Build.
     pub fn build(self) -> UpdateTable {
         self.0
-    }
-}
-
-/// Args for creating opendal operator
-pub enum OperatorArgs {
-    /// Creating s3 operator    
-    S3 {
-        /// Root path
-        root: String,
-        /// Bucket
-        bucket: String,
-        /// Endpoint
-        endpoint: Option<String>,
-        /// Region
-        region: Option<String>,
-        /// Access key
-        access_key: Option<String>,
-        /// Access secret
-        access_secret: Option<String>,
-    },
-    /// Creating local file operator
-    Fs {
-        /// root
-        root: String,
-    },
-}
-
-impl TryFrom<&OperatorArgs> for Operator {
-    type Error = Error;
-
-    fn try_from(args: &OperatorArgs) -> Result<Self> {
-        match args {
-            OperatorArgs::S3 {
-                root,
-                bucket,
-                endpoint,
-                region,
-                access_key,
-                access_secret,
-            } => {
-                let mut s3 = S3::default();
-                s3.root(root).bucket(bucket);
-
-                if let Some(region) = region {
-                    s3.region(region);
-                }
-
-                if let Some(endpoint) = endpoint {
-                    s3.endpoint(endpoint);
-                }
-
-                if let Some(access_key) = access_key {
-                    s3.access_key_id(access_key);
-                }
-
-                if let Some(access_secret) = access_secret {
-                    s3.secret_access_key(access_secret);
-                }
-
-                Ok(Operator::new(s3)?.finish())
-            }
-            OperatorArgs::Fs { root } => {
-                let mut fs = opendal::services::Fs::default();
-                fs.root(root);
-                Ok(Operator::new(fs)?.finish())
-            }
-        }
-    }
-}
-
-impl OperatorArgs {
-    /// Creates a subdir of current operator args.
-    pub fn sub_dir(&self, sub_dir: &str) -> Self {
-        match self {
-            OperatorArgs::S3 {
-                root,
-                bucket,
-                endpoint,
-                region,
-                access_key,
-                access_secret,
-            } => OperatorArgs::S3 {
-                root: format!("{root}/{sub_dir}"),
-                bucket: bucket.clone(),
-                endpoint: endpoint.clone(),
-                region: region.clone(),
-                access_key: access_key.clone(),
-                access_secret: access_secret.clone(),
-            },
-            OperatorArgs::Fs { root } => OperatorArgs::Fs {
-                root: format!("{root}/{sub_dir}"),
-            },
-        }
-    }
-
-    /// Returns root path of current operator args.
-    pub fn root(&self) -> String {
-        match self {
-            OperatorArgs::S3 { root, bucket, .. } => format!("s3://{bucket}/{root}"),
-            OperatorArgs::Fs { root } => format!("file://{root}"),
-        }
     }
 }

@@ -169,7 +169,7 @@ impl FileSystemCatalog {
 
         Ok(FileSystemCatalog {
             name: "fs catalog".to_string(),
-            root_uri: op_args.root(),
+            root_uri: op_args.url()?,
             op_args,
             op,
         })
@@ -346,7 +346,7 @@ impl FileSystemCatalog {
     }
 
     fn table_operator(&self, table_path: &str) -> Result<Operator> {
-        Operator::try_from(&self.op_args.sub_dir(table_path))
+        Operator::try_from(&self.op_args.sub_dir(table_path)?)
     }
 }
 

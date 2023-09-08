@@ -10,7 +10,10 @@ use serde::de::DeserializeOwned;
 use urlencoding::encode;
 
 use crate::{
-    catalog::rest::_models::{CatalogConfig, CommitTableResponse},
+    catalog::{
+        rest::_models::{CatalogConfig, CommitTableResponse},
+        OperatorArgs,
+    },
     table::{Namespace, TableIdentifier},
     types::TableMetadata,
     Error, ErrorKind, Table,
@@ -28,6 +31,10 @@ const PATH_V1: &str = "v1";
 pub struct RestCatalogConfig {
     uri: String,
     warehouse: Option<String>,
+
+    // Configs for reading/wrinting table io. For example the regions, secrets, etc for s3.
+    // This should be return by catalog server, but currently it's not implemented, so we pass it for now.
+    table_io_config: HashMap<String, String>,
 }
 
 /// Rest catalog implementation
@@ -91,7 +98,12 @@ impl Catalog for RestCatalog {
         log::info!("Table metadata location of {table_name} is {metadata_location}");
 
         let table_metadata = TableMetadata::try_from(resp.metadata)?;
-        let table_op = Operator::try_from(&Table::create_operator_args(&table_metadata.location)?)?;
+
+        let table_op = Operator::try_from(
+            &OperatorArgs::builder_from_path(&table_metadata.location)?
+                .with_args(self.config.table_io_config.iter())
+                .build(),
+        )?;
 
         Ok(
             Table::builder_from_catalog(table_op, self.clone(), table_metadata, table_name.clone())
@@ -236,6 +248,16 @@ impl TryFrom<&HashMap<String, String>> for RestCatalogConfig {
         if let Some(warehouse) = value.get("warehouse") {
             config.warehouse = Some(warehouse.clone());
         }
+
+        config
+            .table_io_config
+            .extend(value.iter().filter_map(|(k, v)| {
+                if k.starts_with("table.io.") {
+                    Some((k.replace("table.io.", ""), v.clone()))
+                } else {
+                    None
+                }
+            }));
 
         Ok(config)
     }
