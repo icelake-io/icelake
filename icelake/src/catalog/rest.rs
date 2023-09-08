@@ -1,17 +1,21 @@
 //! Rest catalog implementation.
 //!
 
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
+use opendal::Operator;
 use reqwest::{Client, ClientBuilder, Request, StatusCode};
 use serde::de::DeserializeOwned;
 use urlencoding::encode;
 
 use crate::{
-    catalog::rest::_models::{CatalogConfig, CommitTableResponse},
+    catalog::{
+        rest::_models::{CatalogConfig, CommitTableResponse},
+        OperatorArgs,
+    },
     table::{Namespace, TableIdentifier},
-    types::{PartitionSpec, Schema, TableMetadata},
+    types::TableMetadata,
     Error, ErrorKind, Table,
 };
 
@@ -27,6 +31,10 @@ const PATH_V1: &str = "v1";
 pub struct RestCatalogConfig {
     uri: String,
     warehouse: Option<String>,
+
+    // Configs for reading/wrinting table io. For example the regions, secrets, etc for s3.
+    // This should be return by catalog server, but currently it's not implemented, so we pass it for now.
+    table_io_config: HashMap<String, String>,
 }
 
 /// Rest catalog implementation
@@ -46,7 +54,7 @@ impl Catalog for RestCatalog {
     }
 
     /// List tables under namespace.
-    async fn list_tables(&self, ns: &Namespace) -> Result<Vec<TableIdentifier>> {
+    async fn list_tables(self: Arc<Self>, ns: &Namespace) -> Result<Vec<TableIdentifier>> {
         let request = self.rest_client.get(self.endpoints.tables(ns)?).build()?;
         Ok(self
             .execute_request::<ListTablesResponse>(request, |status| match status {
@@ -63,47 +71,8 @@ impl Catalog for RestCatalog {
             .collect())
     }
 
-    /// Creates a table.
-    async fn create_table(
-        &self,
-        _table_name: &TableIdentifier,
-        _schema: &Schema,
-        _spec: &PartitionSpec,
-        _location: &str,
-        _props: HashMap<String, String>,
-    ) -> Result<Table> {
-        Err(Error::new(
-            ErrorKind::IcebergFeatureUnsupported,
-            "Creating table in rest client is not implemented yet!",
-        ))
-    }
-
-    /// Check table exists.
-    async fn table_exists(&self, _table_name: &TableIdentifier) -> Result<bool> {
-        Err(Error::new(
-            ErrorKind::IcebergFeatureUnsupported,
-            "Table exists in rest client is not implemented yet!",
-        ))
-    }
-
-    /// Drop table.
-    async fn drop_table(&self, _table_name: &TableIdentifier, _purge: bool) -> Result<()> {
-        Err(Error::new(
-            ErrorKind::IcebergFeatureUnsupported,
-            "Drop table in rest client is not implemented yet!",
-        ))
-    }
-
-    /// Rename table.
-    async fn rename_table(&self, _from: &TableIdentifier, _to: &TableIdentifier) -> Result<()> {
-        Err(Error::new(
-            ErrorKind::IcebergFeatureUnsupported,
-            "Rename table in rest client is not implemented yet!",
-        ))
-    }
-
     /// Load table.
-    async fn load_table(&self, table_name: &TableIdentifier) -> Result<Table> {
+    async fn load_table(self: Arc<Self>, table_name: &TableIdentifier) -> Result<Table> {
         let resp = self
             .execute_request::<LoadTableResult>(
                 self.rest_client
@@ -129,42 +98,32 @@ impl Catalog for RestCatalog {
         log::info!("Table metadata location of {table_name} is {metadata_location}");
 
         let table_metadata = TableMetadata::try_from(resp.metadata)?;
-        Ok(Table::read_only_table(table_metadata, &metadata_location))
-    }
 
-    /// Invalidate table.
-    async fn invalidate_table(&self, _table_name: &TableIdentifier) -> Result<()> {
-        Err(Error::new(
-            ErrorKind::IcebergFeatureUnsupported,
-            "Invalidate table in rest client is not implemented yet!",
-        ))
-    }
+        let table_op = Operator::try_from(
+            &OperatorArgs::builder_from_path(&table_metadata.location)?
+                .with_args(self.config.table_io_config.iter())
+                .build(),
+        )?;
 
-    /// Register a table using metadata file location.
-    async fn register_table(
-        &self,
-        _table_name: &TableIdentifier,
-        _metadata_file_location: &str,
-    ) -> Result<Table> {
-        Err(Error::new(
-            ErrorKind::IcebergFeatureUnsupported,
-            "Register table in rest client is not implemented yet!",
-        ))
+        Ok(
+            Table::builder_from_catalog(table_op, self.clone(), table_metadata, table_name.clone())
+                .build()?,
+        )
     }
 
     /// Update table.
-    async fn update_table(&self, udpate_table: &UpdateTable) -> Result<Table> {
+    async fn update_table(self: Arc<Self>, update_table: &UpdateTable) -> Result<Table> {
         let request = self
             .rest_client
-            .post(self.endpoints.table(&udpate_table.table_name)?)
-            .json(&CommitTableRequest::try_from(udpate_table)?)
+            .post(self.endpoints.table(&update_table.table_name)?)
+            .json(&CommitTableRequest::try_from(update_table)?)
             .build()?;
 
         let response = self
             .execute_request::<CommitTableResponse>(request, |status| match status {
                 StatusCode::NOT_FOUND => Some(Error::new(
                     ErrorKind::IcebergDataInvalid,
-                    format!("Table {} not found!", udpate_table.table_name),
+                    format!("Table {} not found!", update_table.table_name),
                 )),
                 _ => None,
             })
@@ -172,15 +131,21 @@ impl Catalog for RestCatalog {
 
         log::info!(
             "Table metadata location of {} is {}",
-            udpate_table.table_name,
+            update_table.table_name,
             response.metadata_location
         );
 
         let table_metadata = TableMetadata::try_from(response.metadata)?;
-        Ok(Table::read_only_table(
+
+        let table_op = Operator::try_from(&Table::create_operator_args(&table_metadata.location)?)?;
+
+        Ok(Table::builder_from_catalog(
+            table_op,
+            self.clone(),
             table_metadata,
-            &response.metadata_location,
-        ))
+            update_table.table_name.clone(),
+        )
+        .build()?)
     }
 }
 
@@ -283,6 +248,16 @@ impl TryFrom<&HashMap<String, String>> for RestCatalogConfig {
         if let Some(warehouse) = value.get("warehouse") {
             config.warehouse = Some(warehouse.clone());
         }
+
+        config
+            .table_io_config
+            .extend(value.iter().filter_map(|(k, v)| {
+                if k.starts_with("table.io.") {
+                    Some((k.replace("table.io.", ""), v.clone()))
+                } else {
+                    None
+                }
+            }));
 
         Ok(config)
     }

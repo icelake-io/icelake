@@ -43,6 +43,7 @@ murmur3 = { workspace = true }
 reqwest = { workspace = true }
 urlencoding = { workspace = true }
 enum-display = { workspace = true }
+itertools = { workspace = true }
 
 
 [dev-dependencies]

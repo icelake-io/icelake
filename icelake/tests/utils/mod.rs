@@ -1,3 +1,8 @@
+use icelake::catalog::{
+    Catalog, OperatorArgs, StorageCatalog, OP_ARGS_ACCESS_KEY, OP_ARGS_ACCESS_SECRET,
+    OP_ARGS_BUCKET, OP_ARGS_ENDPOINT, OP_ARGS_REGION, OP_ARGS_ROOT,
+};
+use opendal::Scheme;
 use testcontainers::{Container, GenericImage};
 
 mod poetry;
@@ -13,12 +18,11 @@ pub use docker::*;
 
 use icelake::transaction::Transaction;
 use icelake::Table;
-use opendal::services::S3;
-use opendal::Operator;
+
 use std::fs::File;
 use std::process::Command;
 
-use std::sync::Once;
+use std::sync::{Arc, Once};
 
 use self::test_generator::TestCase;
 
@@ -127,22 +131,27 @@ impl<'a> TestFixture<'a> {
     }
 
     pub async fn create_icelake_table(&self) -> Table {
-        let mut builder = S3::default();
-        builder.root(self.test_case.table_root.as_str());
-        builder.bucket("icebergdata");
-        builder.endpoint(
-            format!(
-                "http://localhost:{}",
-                self.minio.get_host_port_ipv4(MINIO_DATA_PORT)
+        let op_args = OperatorArgs::builder(Scheme::S3)
+            .with_arg(OP_ARGS_ROOT, self.test_case.warehouse_root.clone())
+            .with_arg(OP_ARGS_BUCKET, "icebergdata")
+            .with_arg(
+                OP_ARGS_ENDPOINT,
+                format!(
+                    "http://localhost:{}",
+                    self.minio.get_host_port_ipv4(MINIO_DATA_PORT)
+                ),
             )
-            .as_str(),
-        );
-        builder.access_key_id("admin");
-        builder.secret_access_key("password");
-        builder.region("us-east-1");
+            .with_arg(OP_ARGS_REGION, "us-east-1")
+            .with_arg(OP_ARGS_ACCESS_KEY, "admin")
+            .with_arg(OP_ARGS_ACCESS_SECRET, "password")
+            .build();
 
-        let op = Operator::new(builder).unwrap().finish();
-        Table::open_with_op(op).await.unwrap()
+        let catalog = Arc::new(StorageCatalog::open(op_args).await.unwrap());
+
+        catalog
+            .load_table(&self.test_case.table_name)
+            .await
+            .unwrap()
     }
 
     pub async fn write_data_with_icelake(&mut self) {

@@ -1,5 +1,6 @@
 //! Transaction for manipulating table.
 
+use crate::catalog::{MetadataUpdate, UpdateTable};
 use crate::error::Result;
 use crate::types::{
     DataFile, DataFileFormat, ManifestContentType, ManifestEntry, ManifestFile, ManifestList,
@@ -62,11 +63,17 @@ impl<'a> Transaction<'a> {
         };
 
         let new_snapshot = Transaction::produce_new_snapshot(commit_ctx, self.ops, table).await?;
-        let mut new_metadata = table.current_table_metadata().clone();
-        new_metadata.append_snapshot(new_snapshot)?;
+
+        let table_update = {
+            let mut builder = UpdateTable::builder(table.table_name().clone());
+            builder.add_updates(vec![MetadataUpdate::AddSnapshot {
+                snapshot: new_snapshot,
+            }]);
+            builder.build()
+        };
 
         // Save new metadata
-        table.commit(new_metadata).await?;
+        table.catalog().update_table(&table_update).await?;
 
         Ok(())
     }

@@ -3,26 +3,21 @@ use std::fmt::Display;
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 
+use crate::catalog::{CatalogRef, OperatorArgs, OP_ARGS_BUCKET, OP_ARGS_ROOT};
 use crate::error::Result;
-use futures::StreamExt;
-use opendal::layers::LoggingLayer;
-use opendal::services::Fs;
-use opendal::Operator;
-use regex::Regex;
+use opendal::{Operator, Scheme};
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-use uuid::Uuid;
-
 use crate::config::{TableConfig, TableConfigRef};
 use crate::io::task_writer::TaskWriter;
-use crate::types::{serialize_table_meta, DataFile, TableMetadata};
+use crate::types::{DataFile, TableMetadata};
 use crate::{types, Error, ErrorKind};
 
-const META_ROOT_PATH: &str = "metadata";
-const METADATA_FILE_EXTENSION: &str = ".metadata.json";
-const VERSION_HINT_FILENAME: &str = "version-hint.text";
-const VERSIONED_TABLE_METADATA_FILE_PATTERN: &str = r"v([0-9]+).metadata.json";
+pub(crate) const META_ROOT_PATH: &str = "metadata";
+pub(crate) const METADATA_FILE_EXTENSION: &str = ".metadata.json";
+pub(crate) const VERSION_HINT_FILENAME: &str = "version-hint.text";
+pub(crate) const VERSIONED_TABLE_METADATA_FILE_PATTERN: &str = r"v([0-9]+).metadata.json";
 
 /// Namespace of tables
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -85,6 +80,7 @@ impl Display for TableIdentifier {
 /// Table is the main entry point for the IceLake.
 pub struct Table {
     op: Operator,
+    table_name: TableIdentifier,
 
     table_metadata: HashMap<i64, types::TableMetadata>,
 
@@ -92,139 +88,240 @@ pub struct Table {
     ///
     /// We use table's `last-updated-ms` to represent the version.
     current_version: i64,
-    current_location: Option<String>,
+    current_location: String,
     /// It's different from `current_version` in that it's the `v[version number]` in metadata file.
     current_table_version: i64,
 
     task_id: AtomicUsize,
 
     table_config: TableConfigRef,
+
+    // Catalog res
+    catalog: CatalogRef,
+}
+
+/// Table builder
+pub struct TableBuilder {
+    op: Operator,
+    name: TableIdentifier,
+    catalog: CatalogRef,
+    metadatas: Vec<TableMetadata>,
+    current_version: Option<i64>,
+    current_table_version: Option<i64>,
+    table_config: Option<TableConfigRef>,
+}
+
+impl TableBuilder {
+    /// Add metadata
+    pub fn add_metadata(mut self, metadata: TableMetadata) -> Self {
+        self.metadatas.push(metadata);
+        self
+    }
+
+    /// Set config.
+    pub fn with_config(mut self, config: TableConfigRef) -> Self {
+        self.table_config = Some(config);
+        self
+    }
+
+    /// Set current version.
+    pub fn with_current_version(mut self, version: i64) -> Self {
+        self.current_version = Some(version);
+        self
+    }
+
+    /// Set current table version.
+    pub fn with_current_table_version(mut self, version: i64) -> Self {
+        self.current_table_version = Some(version);
+        self
+    }
+
+    /// Build table
+    pub fn build(self) -> Result<Table> {
+        let table_metadata: HashMap<i64, TableMetadata> = self
+            .metadatas
+            .into_iter()
+            .map(|v| (v.last_updated_ms, v))
+            .collect();
+
+        let current_version = match self.current_version {
+            Some(v) => v,
+            None => table_metadata
+                .values()
+                .map(|v| v.last_updated_ms)
+                .max()
+                .ok_or_else(|| {
+                    Error::new(
+                        ErrorKind::IcebergDataInvalid,
+                        "Table metadata must not be empty",
+                    )
+                })?,
+        };
+
+        let current_location = table_metadata
+            .get(&current_version)
+            .ok_or_else(|| {
+                Error::new(
+                    ErrorKind::IcebergDataInvalid,
+                    format!(
+                        "Table metadata of version {} must be exist",
+                        current_version
+                    ),
+                )
+            })?
+            .location
+            .clone();
+
+        Ok(Table {
+            op: self.op,
+            table_name: self.name,
+            table_metadata,
+            current_version,
+            current_location,
+            current_table_version: self.current_table_version.unwrap_or(0),
+            task_id: AtomicUsize::new(0),
+            table_config: self
+                .table_config
+                .unwrap_or_else(|| Arc::new(TableConfig::default())),
+            catalog: self.catalog,
+        })
+    }
 }
 
 impl Table {
-    /// Create a new table via the given operator.
-    pub fn new(op: Operator) -> Self {
-        Self::with_config(op, Arc::new(TableConfig::default()))
-    }
-
-    /// Creates a new table with operator and config.
-    pub fn with_config(op: Operator, config: TableConfigRef) -> Self {
-        Self {
+    /// Creates a table from catalog.
+    pub fn builder_from_catalog(
+        op: Operator,
+        catalog: CatalogRef,
+        metadata: TableMetadata,
+        table_name: TableIdentifier,
+    ) -> TableBuilder {
+        TableBuilder {
             op,
-
-            table_metadata: HashMap::new(),
-
-            current_version: 0,
-            current_location: None,
-            task_id: AtomicUsize::new(0),
-            current_table_version: 0,
-            table_config: config,
+            name: table_name,
+            catalog,
+            metadatas: vec![metadata],
+            current_version: None,
+            current_table_version: None,
+            table_config: None,
         }
     }
+
+    /// Returns table name.
+    pub fn table_name(&self) -> &TableIdentifier {
+        &self.table_name
+    }
+
+    /// Returns catalog that manages this table.
+    pub(crate) fn catalog(&self) -> CatalogRef {
+        self.catalog.clone()
+    }
+
+    pub(crate) fn create_operator_args(path: &str) -> Result<OperatorArgs> {
+        if path.starts_with('/') {
+            // Local file path such as: /tmp
+            return Ok(OperatorArgs::builder(Scheme::Fs)
+                .with_arg(OP_ARGS_ROOT, path)
+                .build());
+        }
+
+        let url = Url::parse(path)?;
+
+        let op = match url.scheme() {
+            "file" => OperatorArgs::builder(Scheme::Fs)
+                .with_arg(OP_ARGS_ROOT, url.path().to_string())
+                .build(),
+            "s3" | "s3a" => OperatorArgs::builder(Scheme::S3)
+                .with_arg(OP_ARGS_ROOT, url.path().to_string())
+                .with_arg(
+                    OP_ARGS_BUCKET,
+                    url.host_str()
+                        .ok_or_else(|| {
+                            Error::new(
+                                ErrorKind::IcebergDataInvalid,
+                                format!("Invalid s3 url: {path}"),
+                            )
+                        })?
+                        .to_string(),
+                )
+                .build(),
+
+            _ => {
+                return Err(Error::new(
+                    ErrorKind::IcebergFeatureUnsupported,
+                    format!("Unsupported warehouse path: {path}"),
+                ));
+            }
+        };
+
+        Ok(op)
+    }
+    /// Create a new table via the given operator.
+    // pub fn new(op: Operator) -> Self {
+    //     Self::with_config(op, Arc::new(TableConfig::default()))
+    // }
+
+    /// Creates a new table with operator and config.
+    // pub fn with_config(op: Operator, config: TableConfigRef) -> Self {
+    //     Self {
+    //         op,
+
+    //         table_metadata: HashMap::new(),
+
+    //         current_version: 0,
+    //         current_location: None,
+    //         task_id: AtomicUsize::new(0),
+    //         current_table_version: 0,
+    //         table_config: config,
+    //     }
+    // }
 
     /// Currently this api is used to construct table from rest catalog. Don't used it in other places.
     /// We will remove it after refactoring.
-    pub(crate) fn read_only_table(table_metadata: TableMetadata, metadata_location: &str) -> Self {
-        let op = {
-            let mut fs = Fs::default();
-            fs.root("/tmp");
-            Operator::new(fs).unwrap().finish()
-        };
-        let mut table = Self::new(op);
-        table.current_version = table_metadata.last_updated_ms;
-        table.current_location = Some(metadata_location.to_string());
-        table
-            .table_metadata
-            .insert(table_metadata.last_updated_ms, table_metadata);
+    // pub(crate) fn read_only_table(table_metadata: TableMetadata, metadata_location: &str) -> Self {
+    //     let op = {
+    //         let mut fs = Fs::default();
+    //         fs.root("/tmp");
+    //         Operator::new(fs).unwrap().finish()
+    //     };
+    //     let mut table = Self::new(op);
+    //     table.current_version = table_metadata.last_updated_ms;
+    //     table.current_location = Some(metadata_location.to_string());
+    //     table
+    //         .table_metadata
+    //         .insert(table_metadata.last_updated_ms, table_metadata);
 
-        table
-    }
-
-    /// Load metadata and manifest from storage.
-    async fn load(&mut self) -> Result<()> {
-        let (cur_table_version, path) = if self.is_version_hint_exist().await? {
-            let version_hint = self.read_version_hint().await?;
-            (
-                version_hint,
-                format!("metadata/v{}.metadata.json", version_hint),
-            )
-        } else {
-            let files = self.list_table_metadata_paths().await?;
-
-            let path = files.into_iter().last().ok_or(Error::new(
-                crate::ErrorKind::IcebergDataInvalid,
-                "no table metadata found",
-            ))?;
-
-            let version_hint = {
-                let re = Regex::new(VERSIONED_TABLE_METADATA_FILE_PATTERN)?;
-                if re.is_match(path.as_str()) {
-                    let (_, [version]) = re
-                        .captures_iter(path.as_str())
-                        .map(|c| c.extract())
-                        .next()
-                        .ok_or_else(|| {
-                            Error::new(
-                                crate::ErrorKind::IcebergDataInvalid,
-                                format!("Invalid metadata file name {path}"),
-                            )
-                        })?;
-                    version.parse()?
-                } else {
-                    // This is an ugly workaround to fix ut
-                    log::error!("Hadoop table metadata filename doesn't not match pattern!");
-                    0
-                }
-            };
-
-            (version_hint, path)
-        };
-
-        let metadata = self.read_table_metadata(&path).await?;
-        // TODO: check if the metadata is out of date.
-        if metadata.last_updated_ms == 0 {
-            return Err(Error::new(
-                crate::ErrorKind::IcebergDataInvalid,
-                "Timestamp when the table was last updated is invalid",
-            ));
-        }
-        self.current_version = metadata.last_updated_ms;
-        self.current_location = Some(metadata.location.clone());
-        self.table_metadata
-            .insert(metadata.last_updated_ms, metadata);
-        self.current_table_version = cur_table_version as i64;
-
-        Ok(())
-    }
+    //     table
+    // }
 
     /// Open an iceberg table by uri
-    pub async fn open(uri: &str) -> Result<Table> {
-        // Todo(xudong): inferring storage types by uri
-        let mut builder = Fs::default();
-        builder.root(uri);
+    // pub async fn open(uri: &str) -> Result<Table> {
+    //     // Todo(xudong): inferring storage types by uri
+    //     let mut builder = Fs::default();
+    //     builder.root(uri);
 
-        let op = Operator::new(builder)?
-            .layer(LoggingLayer::default())
-            .finish();
+    //     let op = Operator::new(builder)?
+    //         .layer(LoggingLayer::default())
+    //         .finish();
 
-        let mut table = Table::new(op);
-        table.load().await?;
-        Ok(table)
-    }
+    //     let mut table = Table::new(op);
+    //     table.load().await?;
+    //     Ok(table)
+    // }
 
     /// Open an iceberg table by operator
-    pub async fn open_with_op(op: Operator) -> Result<Table> {
-        let mut table = Table::new(op);
-        table.load().await?;
-        Ok(table)
-    }
+    // pub async fn open_with_op(op: Operator) -> Result<Table> {
+    //     let mut table = Table::new(op);
+    //     table.load().await?;
+    //     Ok(table)
+    // }
 
     /// Open an iceberg table with operator and config.
-    pub async fn open_with_config(op: Operator, config: TableConfigRef) -> Result<Self> {
-        let mut table = Table::with_config(op, config);
-        table.load().await?;
-        Ok(table)
-    }
+    // pub async fn open_with_config(op: Operator, config: TableConfigRef) -> Result<Self> {
+    //     let mut table = Table::with_config(op, config);
+    //     table.load().await?;
+    //     Ok(table)
+    // }
 
     /// Fetch current table metadata.
     pub fn current_table_metadata(&self) -> &types::TableMetadata {
@@ -236,6 +333,10 @@ impl Table {
         self.table_metadata
             .get(&self.current_version)
             .expect("table metadata of current version must be exist")
+    }
+
+    pub(crate) fn current_table_version(&self) -> i64 {
+        self.current_table_version
     }
 
     /// # TODO
@@ -291,10 +392,7 @@ impl Table {
 
     /// Get the relpath related to the base of table location.
     pub fn rel_path(&self, path: &str) -> Result<String> {
-        let location = self.current_location.as_ref().ok_or(Error::new(
-            crate::ErrorKind::IcebergDataInvalid,
-            "table location is empty, maybe it's not loaded?",
-        ))?;
+        let location = &self.current_location;
 
         path.strip_prefix(location)
             .ok_or(Error::new(
@@ -305,81 +403,6 @@ impl Table {
                 ),
             ))
             .map(|v| v.to_string())
-    }
-
-    /// Check if version hint file exist.
-    async fn is_version_hint_exist(&self) -> Result<bool> {
-        self.op
-            .is_exist("metadata/version-hint.text")
-            .await
-            .map_err(|e| {
-                Error::new(
-                    crate::ErrorKind::IcebergDataInvalid,
-                    format!("check if version hint exist failed: {}", e),
-                )
-            })
-    }
-
-    /// Read version hint of table.
-    async fn read_version_hint(&self) -> Result<i32> {
-        let content = self.op.read("metadata/version-hint.text").await?;
-        let version_hint = String::from_utf8(content).map_err(|err| {
-            Error::new(
-                crate::ErrorKind::IcebergDataInvalid,
-                format!("Fail to covert version_hint from utf8 to string: {}", err),
-            )
-        })?;
-
-        version_hint.parse().map_err(|e| {
-            Error::new(
-                crate::ErrorKind::IcebergDataInvalid,
-                format!("parse version hint failed: {}", e),
-            )
-        })
-    }
-
-    /// Read table metadata of the given version.
-    async fn read_table_metadata(&self, path: &str) -> Result<types::TableMetadata> {
-        let content = self.op.read(path).await?;
-
-        let metadata = types::parse_table_metadata(&content)?;
-
-        Ok(metadata)
-    }
-
-    /// List all paths of table metadata files.
-    ///
-    /// The returned paths are sorted by name.
-    ///
-    /// TODO: we can imporve this by only fetch the latest metadata.
-    async fn list_table_metadata_paths(&self) -> Result<Vec<String>> {
-        let mut lister = self.op.list("metadata/").await.map_err(|err| {
-            Error::new(
-                crate::ErrorKind::Unexpected,
-                format!("list metadata failed: {}", err),
-            )
-        })?;
-
-        let mut paths = vec![];
-
-        while let Some(entry) = lister.next().await {
-            let entry = entry.map_err(|err| {
-                Error::new(
-                    crate::ErrorKind::Unexpected,
-                    format!("list metadata entry failed: {}", err),
-                )
-            })?;
-
-            // Only push into paths if the entry is a metadata file.
-            if entry.path().ends_with(".metadata.json") {
-                paths.push(entry.path().to_string());
-            }
-        }
-
-        // Make the returned paths sorted by name.
-        paths.sort();
-
-        Ok(paths)
     }
 
     /// Return a task writer used to write data into table.
@@ -422,17 +445,6 @@ impl Table {
         )
     }
 
-    async fn rename(op: &Operator, src_path: &str, dest_path: &str) -> Result<()> {
-        let info = op.info();
-        if info.can_rename() {
-            Ok(op.rename(src_path, dest_path).await?)
-        } else {
-            op.copy(src_path, dest_path).await?;
-            op.delete(src_path).await?;
-            Ok(())
-        }
-    }
-
     /// Returns the relative path to operator.
     pub fn relative_path(op: &Operator, absolute_path: &str) -> Result<String> {
         let url = Url::parse(absolute_path)?;
@@ -469,53 +481,13 @@ impl Table {
     pub(crate) fn operator(&self) -> Operator {
         self.op.clone()
     }
-
-    pub(crate) async fn commit(&mut self, next_metadata: TableMetadata) -> Result<()> {
-        let next_version = self.current_table_version + 1;
-        let tmp_metadata_file_path =
-            Table::metadata_path(format!("{}{METADATA_FILE_EXTENSION}", Uuid::new_v4()));
-        let final_metadata_file_path = Table::metadata_file_path(next_version);
-
-        log::debug!("Writing to temporary metadata file path: {tmp_metadata_file_path}");
-        self.op
-            .write(
-                &tmp_metadata_file_path,
-                serialize_table_meta(next_metadata)?,
-            )
-            .await?;
-
-        log::debug!("Renaming temporary metadata file path [{tmp_metadata_file_path}] to final metadata file path [{final_metadata_file_path}]");
-        Table::rename(&self.op, &tmp_metadata_file_path, &final_metadata_file_path).await?;
-        self.write_metadata_version_hint(next_version).await?;
-
-        // Reload table
-        self.load().await?;
-        Ok(())
-    }
-
-    async fn write_metadata_version_hint(&self, version: i64) -> Result<()> {
-        let tmp_version_hint_path =
-            Table::metadata_path(format!("{}-version-hint.temp", Uuid::new_v4()));
-        self.op
-            .write(&tmp_version_hint_path, format!("{version}"))
-            .await?;
-
-        let final_version_hint_path = Table::metadata_path(VERSION_HINT_FILENAME);
-
-        self.op.delete(final_version_hint_path.as_str()).await?;
-        log::debug!("Renaming temporary version hint file path [{tmp_version_hint_path}] to final metadata file path [{final_version_hint_path}]");
-        Table::rename(&self.op, &tmp_version_hint_path, &final_version_hint_path).await?;
-
-        Ok(())
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use std::env;
 
-    use opendal::layers::LoggingLayer;
-    use opendal::services::Fs;
+    use crate::catalog::StorageCatalog;
 
     use super::*;
 
@@ -523,64 +495,49 @@ mod tests {
     async fn test_table_version_hint() -> Result<()> {
         let path = format!("{}/../testdata/simple_table", env!("CARGO_MANIFEST_DIR"));
 
-        let mut builder = Fs::default();
-        builder.root(&path);
+        let table = StorageCatalog::load_table(&path).await?;
 
-        let op = Operator::new(builder)?
-            .layer(LoggingLayer::default())
-            .finish();
-
-        let table = Table::new(op);
-
-        let version_hint = table.read_version_hint().await?;
+        let version_hint = table.current_table_version();
 
         assert_eq!(version_hint, 2);
 
         Ok(())
     }
 
-    #[tokio::test]
-    async fn test_table_read_table_metadata() -> Result<()> {
-        let path = format!("{}/../testdata/simple_table", env!("CARGO_MANIFEST_DIR"));
+    // #[tokio::test]
+    // async fn test_table_read_table_metadata() -> Result<()> {
+    //     let path = format!("{}/../testdata/simple_table", env!("CARGO_MANIFEST_DIR"));
 
-        let mut builder = Fs::default();
-        builder.root(&path);
+    //     let mut builder = Fs::default();
+    //     builder.root(&path);
 
-        let op = Operator::new(builder)?
-            .layer(LoggingLayer::default())
-            .finish();
+    //     let op = Operator::new(builder)?
+    //         .layer(LoggingLayer::default())
+    //         .finish();
 
-        let table = Table::new(op);
+    //     let table = Table::new(op);
 
-        let table_v1 = table
-            .read_table_metadata("metadata/v1.metadata.json")
-            .await?;
+    //     let table_v1 = table
+    //         .read_table_metadata("metadata/v1.metadata.json")
+    //         .await?;
 
-        assert_eq!(table_v1.format_version, types::TableFormatVersion::V1);
-        assert_eq!(table_v1.last_updated_ms, 1686911664577);
+    //     assert_eq!(table_v1.format_version, types::TableFormatVersion::V1);
+    //     assert_eq!(table_v1.last_updated_ms, 1686911664577);
 
-        let table_v2 = table
-            .read_table_metadata("metadata/v2.metadata.json")
-            .await?;
-        assert_eq!(table_v2.format_version, types::TableFormatVersion::V1);
-        assert_eq!(table_v2.last_updated_ms, 1686911671713);
+    //     let table_v2 = table
+    //         .read_table_metadata("metadata/v2.metadata.json")
+    //         .await?;
+    //     assert_eq!(table_v2.format_version, types::TableFormatVersion::V1);
+    //     assert_eq!(table_v2.last_updated_ms, 1686911671713);
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
     #[tokio::test]
     async fn test_table_load() -> Result<()> {
         let path = format!("{}/../testdata/simple_table", env!("CARGO_MANIFEST_DIR"));
 
-        let mut builder = Fs::default();
-        builder.root(&path);
-
-        let op = Operator::new(builder)?
-            .layer(LoggingLayer::default())
-            .finish();
-
-        let mut table = Table::new(op);
-        table.load().await?;
+        let table = StorageCatalog::load_table(&path).await?;
 
         let table_metadata = table.current_table_metadata();
         assert_eq!(table_metadata.format_version, types::TableFormatVersion::V1);
@@ -593,15 +550,7 @@ mod tests {
     async fn test_table_load_without_version_hint() -> Result<()> {
         let path = format!("{}/../testdata/no_hint_table", env!("CARGO_MANIFEST_DIR"));
 
-        let mut builder = Fs::default();
-        builder.root(&path);
-
-        let op = Operator::new(builder)?
-            .layer(LoggingLayer::default())
-            .finish();
-
-        let mut table = Table::new(op);
-        table.load().await?;
+        let table = StorageCatalog::load_table(&path).await?;
 
         let table_metadata = table.current_table_metadata();
         assert_eq!(table_metadata.format_version, types::TableFormatVersion::V1);
@@ -618,15 +567,7 @@ mod tests {
     async fn test_table_current_data_files() -> Result<()> {
         let path = format!("{}/../testdata/simple_table", env!("CARGO_MANIFEST_DIR"));
 
-        let mut builder = Fs::default();
-        builder.root(&path);
-
-        let op = Operator::new(builder)?
-            .layer(LoggingLayer::default())
-            .finish();
-
-        let mut table = Table::new(op);
-        table.load().await?;
+        let table = StorageCatalog::load_table(&path).await?;
 
         let data_files = table.current_data_files().await?;
         assert_eq!(data_files.len(), 3);
