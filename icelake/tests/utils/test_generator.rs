@@ -3,6 +3,7 @@ use std::{io::Read, sync::Arc};
 use arrow_array::RecordBatch;
 use arrow_csv::ReaderBuilder;
 use arrow_schema::{DataType, Field, Schema, TimeUnit};
+use icelake::TableIdentifier;
 use serde::Deserialize;
 
 /// TestCase include init sqls, write data and query sqls.
@@ -13,8 +14,8 @@ pub struct TestCase {
     pub init_sqls: Vec<String>,
     pub write_date: Vec<RecordBatch>,
     pub query_sql: Vec<[String; 2]>,
-    pub table_root: String,
-    pub table_name: String,
+    pub warehouse_root: String,
+    pub table_name: TableIdentifier,
 }
 
 #[derive(Deserialize, Debug)]
@@ -83,11 +84,12 @@ impl TestCase {
             init_sqls,
             write_date: write_data,
             query_sql,
-            table_root: format!(
-                "demo/{}/{}",
-                toml_content.schema_name, toml_content.table_name
-            ),
-            table_name: toml_content.table_name,
+            warehouse_root: "demo".to_string(),
+            table_name: TableIdentifier::new(vec![
+                toml_content.schema_name,
+                toml_content.table_name,
+            ])
+            .unwrap(),
         }
     }
 

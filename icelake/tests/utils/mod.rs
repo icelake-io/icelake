@@ -13,7 +13,7 @@ pub use containers::*;
 pub use docker::*;
 
 use icelake::transaction::Transaction;
-use icelake::{Table, TableIdentifier};
+use icelake::Table;
 
 use std::fs::File;
 use std::process::Command;
@@ -128,7 +128,7 @@ impl<'a> TestFixture<'a> {
 
     pub async fn create_icelake_table(&self) -> Table {
         let op_args = OperatorArgs::S3 {
-            root: "".to_string(),
+            root: self.test_case.warehouse_root.clone(),
             bucket: "icebergdata".to_string(),
             endpoint: Some(format!(
                 "http://localhost:{}",
@@ -142,7 +142,7 @@ impl<'a> TestFixture<'a> {
         let catalog = Arc::new(FileSystemCatalog::open(op_args).await.unwrap());
 
         catalog
-            .load_table(&TableIdentifier::new(self.test_case.table_name.split('.')).unwrap())
+            .load_table(&self.test_case.table_name)
             .await
             .unwrap()
     }
