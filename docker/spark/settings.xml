@@ -1,0 +1,20 @@
+<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0 https://maven.apache.org/xsd/settings-1.0.0.xsd">
+    <proxies>
+        <proxy>
+            <id>a</id>
+            <active>true</active>
+            <host>192.168.110.27</host>
+            <port>7890</port>
+            <protocol>http</protocol>
+        </proxy>
+        <proxy>
+            <id>b</id>
+            <active>true</active>
+            <host>192.168.110.27</host>
+            <port>7890</port>
+            <protocol>https</protocol>
+        </proxy>
+    </proxies>
+</settings>

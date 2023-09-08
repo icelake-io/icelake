@@ -51,7 +51,7 @@ services:
     depends_on:
       - minio
       - rest
-    image: apache/spark:3.4.1
+    image: icelake-spark:latest
     environment:
       - SPARK_HOME=/opt/spark
       - PYSPARK_PYTON=/usr/bin/python3.9
