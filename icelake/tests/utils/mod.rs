@@ -2,11 +2,9 @@ mod poetry;
 
 pub use poetry::*;
 
-mod containers;
 mod docker;
 mod test_generator;
 
-pub use containers::*;
 pub use docker::*;
 pub use test_generator::*;
 
@@ -15,6 +13,10 @@ use std::process::Command;
 use std::sync::Once;
 
 static INIT: Once = Once::new();
+
+pub const SPARK_CONNECT_SERVER_PORT: u16 = 15002;
+pub const MINIO_DATA_PORT: u16 = 9000;
+pub const REST_CATALOG_PORT: u16 = 8181;
 
 pub fn set_up() {
     INIT.call_once(env_logger::init);
