@@ -269,7 +269,7 @@ pub enum MetadataUpdate {
 impl MetadataUpdate {
     fn apply(&self, metadata: &mut TableMetadata) -> Result<()> {
         match self {
-            MetadataUpdate::AddSnapshot { snapshot } => metadata.append_snapshot(snapshot.clone()),
+            MetadataUpdate::AddSnapshot { snapshot } => metadata.add_snapshot(snapshot.clone()),
             MetadataUpdate::SetSnapshotRef {
                 ref_name,
                 snapshot_id,
