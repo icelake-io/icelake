@@ -53,6 +53,9 @@ services:
       - rest
     image: ghcr.io/icelake-io/icelake-spark:latest
     environment:
+      - AWS_ACCESS_KEY_ID=admin
+      - AWS_SECRET_ACCESS_KEY=password
+      - AWS_REGION=us-east-1
       - SPARK_HOME=/opt/spark
       - PYSPARK_PYTON=/usr/bin/python3.9
       - PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/spark/bin:/opt/spark/sbin

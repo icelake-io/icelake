@@ -77,12 +77,12 @@ impl Drop for DockerCompose {
             "--remove-orphans",
         ]);
 
-        run_command(
-            cmd,
-            format!(
-                "Stopping docker compose in {absolute_dir}, project name: {}",
-                self.project_name
-            ),
-        )
+        // run_command(
+        //     cmd,
+        //     format!(
+        //         "Stopping docker compose in {absolute_dir}, project name: {}",
+        //         self.project_name
+        //     ),
+        // )
     }
 }
