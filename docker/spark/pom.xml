@@ -16,6 +16,7 @@
         <spark.version>3.4.1</spark.version>
         <scala.version>2.12</scala.version>
         <aws.sdk.version>2.20.18</aws.sdk.version>
+        <hadoop.version>3.3.2</hadoop.version>
     </properties>
 
     <dependencies>
@@ -33,6 +34,11 @@
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>bundle</artifactId>
             <version>${aws.sdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.hadoop</groupId>
+            <artifactId>hadoop-aws</artifactId>
+            <version>${hadoop.version}</version>
         </dependency>
     </dependencies>
 </project>

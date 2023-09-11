@@ -32,7 +32,7 @@ services:
   spark:
     depends_on:
       - minio
-    image: apache/spark:3.4.1
+    image: ghcr.io/icelake-io/icelake-spark:latest
     environment:
       - SPARK_HOME=/opt/spark
       - PYSPARK_PYTON=/usr/bin/python3.9
