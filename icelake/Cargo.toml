@@ -48,7 +48,6 @@ itertools = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
-testcontainers = { workspace = true }
 confique = { workspace = true }
 csv = { workspace = true }
 env_logger = { workspace = true }

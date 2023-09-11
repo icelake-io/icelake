@@ -18,9 +18,9 @@ use crate::Table;
 
 mod rest;
 pub use rest::*;
-mod file;
+mod storage;
 use crate::error::{Error, ErrorKind};
-pub use file::*;
+pub use storage::*;
 mod io;
 pub use io::*;
 
