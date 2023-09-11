@@ -11,8 +11,8 @@ use uuid::Uuid;
 use crate::error::Result;
 use crate::table::{Namespace, TableIdentifier};
 use crate::types::{
-    PartitionField, PartitionSpec, Schema, Snapshot, SnapshotReferenceType, SortOrder,
-    TableMetadata,
+    PartitionField, PartitionSpec, Schema, Snapshot, SnapshotReference, SnapshotReferenceType,
+    SortOrder, TableMetadata,
 };
 use crate::Table;
 
@@ -239,7 +239,7 @@ pub enum MetadataUpdate {
         /// Branch name
         ref_name: String,
         /// Snapshot shot id.
-        snapshot_id: Option<i64>,
+        snapshot_id: i64,
         /// Type
         typ: SnapshotReferenceType,
         /// Number of snapshots to keep.
@@ -270,6 +270,23 @@ impl MetadataUpdate {
     fn apply(&self, metadata: &mut TableMetadata) -> Result<()> {
         match self {
             MetadataUpdate::AddSnapshot { snapshot } => metadata.append_snapshot(snapshot.clone()),
+            MetadataUpdate::SetSnapshotRef {
+                ref_name,
+                snapshot_id,
+                typ,
+                min_snapshots_to_keep,
+                max_snapshot_ages,
+                max_ref_ages,
+            } => metadata.set_snapshot_ref(
+                ref_name.as_str(),
+                SnapshotReference {
+                    snapshot_id: *snapshot_id,
+                    typ: *typ,
+                    min_snapshots_to_keep: *min_snapshots_to_keep,
+                    max_snapshot_age_ms: *max_snapshot_ages,
+                    max_ref_age_ms: *max_ref_ages,
+                },
+            ),
             other => Err(Error::new(
                 ErrorKind::IcebergFeatureUnsupported,
                 format!("update {other} is not supported"),

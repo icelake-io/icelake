@@ -137,7 +137,11 @@ impl Catalog for RestCatalog {
 
         let table_metadata = TableMetadata::try_from(response.metadata)?;
 
-        let table_op = Operator::try_from(&Table::create_operator_args(&table_metadata.location)?)?;
+        let table_op = Operator::try_from(
+            &OperatorArgs::builder_from_path(&table_metadata.location)?
+                .with_args(self.config.table_io_config.iter())
+                .build(),
+        )?;
 
         Ok(Table::builder_from_catalog(
             table_op,
@@ -535,6 +539,20 @@ mod _models {
             #[serde(rename = "last-column-id")]
             last_column_id: Option<i32>,
         },
+        #[serde(rename = "set-snapshot-ref")]
+        SetSnapshotRef {
+            #[serde(rename = "ref-name")]
+            ref_name: String,
+            r#type: String,
+            #[serde(rename = "snapshot-id")]
+            snapshot_id: i64,
+            #[serde(rename = "max-ref-age-ms")]
+            max_ref_age_ms: Option<i64>,
+            #[serde(rename = "max-snapshot-age-ms")]
+            max_snapshot_age_ms: Option<i64>,
+            #[serde(rename = "min-snapshots-to-keep")]
+            min_snapshots_to_keep: Option<i32>,
+        },
     }
 
     impl TryFrom<&MetadataUpdate> for TableUpdate {
@@ -557,6 +575,21 @@ mod _models {
                     schema: schema.try_into()?,
                     last_column_id: Some(*last_column_id),
                 }),
+                MetadataUpdate::SetSnapshotRef {
+                    ref_name,
+                    snapshot_id,
+                    typ,
+                    min_snapshots_to_keep,
+                    max_snapshot_ages,
+                    max_ref_ages,
+                } => Ok(Self::SetSnapshotRef {
+                    ref_name: ref_name.clone(),
+                    r#type: typ.to_string(),
+                    snapshot_id: *snapshot_id,
+                    max_ref_age_ms: *max_ref_ages,
+                    max_snapshot_age_ms: *max_snapshot_ages,
+                    min_snapshots_to_keep: *min_snapshots_to_keep,
+                }),
                 update => Err(Error::new(
                     ErrorKind::IcebergFeatureUnsupported,
                     format!("Update table with this metadata {update} is not supported yet!"),
@@ -567,6 +600,7 @@ mod _models {
 
     #[derive(Serialize, Deserialize)]
     pub(super) struct CommitTableResponse {
+        #[serde(rename = "metadata-location")]
         pub(super) metadata_location: String,
         pub(super) metadata: TableMetadataSerDe,
     }

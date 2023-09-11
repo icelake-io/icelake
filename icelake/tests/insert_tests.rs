@@ -126,7 +126,15 @@ impl TestFixture {
                     self.docker_compose.get_container_ip("rest")
                 ),
             ),
-            ("table.io.root", self.test_case.warehouse_root.clone()),
+            (
+                "table.io.root",
+                format!(
+                    "{}/{}/{}",
+                    self.test_case.warehouse_root.clone(),
+                    self.test_case.table_name.namespace,
+                    self.test_case.table_name.name,
+                ),
+            ),
             ("table.io.bucket", "icebergdata".to_string()),
             (
                 "table.io.endpoint",

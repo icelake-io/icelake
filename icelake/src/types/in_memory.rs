@@ -25,7 +25,7 @@ use crate::Result;
 use crate::{Error, Table};
 
 pub(crate) const UNASSIGNED_SEQ_NUM: i64 = -1;
-const MAIN_BRANCH: &str = "main";
+pub(crate) const MAIN_BRANCH: &str = "main";
 const EMPTY_SNAPSHOT_ID: i64 = -1;
 
 /// All data types are either primitives or nested types, which are maps, lists, or structs.
@@ -2054,6 +2054,38 @@ impl TableMetadata {
         } else {
             Ok(None)
         }
+    }
+
+    /// Returns snapshot reference of branch
+    pub fn snapshot_ref(&self, branch: &str) -> Option<&SnapshotReference> {
+        self.refs.get(branch)
+    }
+
+    /// Set snapshot reference for branch
+    pub fn set_snapshot_ref(&mut self, branch: &str, snap_ref: SnapshotReference) -> Result<()> {
+        self.refs
+            .entry(branch.to_string())
+            .and_modify(|s| {
+                s.snapshot_id = snap_ref.snapshot_id;
+                s.typ = snap_ref.typ;
+
+                if let Some(min_snapshots_to_keep) = snap_ref.min_snapshots_to_keep {
+                    s.min_snapshots_to_keep = Some(min_snapshots_to_keep);
+                }
+
+                if let Some(max_snapshot_age_ms) = snap_ref.max_snapshot_age_ms {
+                    s.max_snapshot_age_ms = Some(max_snapshot_age_ms);
+                }
+
+                if let Some(max_ref_age_ms) = snap_ref.max_ref_age_ms {
+                    s.max_ref_age_ms = Some(max_ref_age_ms);
+                }
+            })
+            .or_insert_with(|| {
+                SnapshotReference::new(snap_ref.snapshot_id, SnapshotReferenceType::Branch)
+            });
+
+        Ok(())
     }
 
     pub(crate) fn append_snapshot(&mut self, snapshot: Snapshot) -> Result<()> {

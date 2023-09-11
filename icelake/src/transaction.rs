@@ -5,6 +5,7 @@ use crate::error::Result;
 use crate::types::{
     DataFile, DataFileFormat, ManifestContentType, ManifestEntry, ManifestFile, ManifestList,
     ManifestListWriter, ManifestMetadata, ManifestStatus, ManifestWriter, Snapshot,
+    SnapshotReferenceType, MAIN_BRANCH,
 };
 use crate::Table;
 use opendal::Operator;
@@ -62,13 +63,26 @@ impl<'a> Transaction<'a> {
             io: table.operator(),
         };
 
+        let current_snapshot_ref = table.current_table_metadata().snapshot_ref(MAIN_BRANCH);
         let new_snapshot = Transaction::produce_new_snapshot(commit_ctx, self.ops, table).await?;
+        let new_snapshot_id = new_snapshot.snapshot_id;
 
         let table_update = {
             let mut builder = UpdateTable::builder(table.table_name().clone());
-            builder.add_updates(vec![MetadataUpdate::AddSnapshot {
-                snapshot: new_snapshot,
-            }]);
+            builder.add_updates(vec![
+                MetadataUpdate::AddSnapshot {
+                    snapshot: new_snapshot,
+                },
+                MetadataUpdate::SetSnapshotRef {
+                    snapshot_id: new_snapshot_id,
+                    ref_name: MAIN_BRANCH.to_string(),
+                    typ: SnapshotReferenceType::Branch,
+                    min_snapshots_to_keep: current_snapshot_ref
+                        .and_then(|f| f.min_snapshots_to_keep),
+                    max_snapshot_ages: current_snapshot_ref.and_then(|f| f.max_snapshot_age_ms),
+                    max_ref_ages: current_snapshot_ref.and_then(|f| f.max_ref_age_ms),
+                },
+            ]);
             builder.build()
         };
 

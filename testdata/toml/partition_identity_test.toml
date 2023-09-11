@@ -20,7 +20,19 @@ create_table_sql = '''
         TBLPROPERTIES ('format-version'='2');
         '''
 
-table_schema = ['long','int','long','float','double','string','boolean','date','timestamp with +04:00','decimal','timestamp']
+table_schema = [
+    'long',
+    'int',
+    'long',
+    'float',
+    'double',
+    'string',
+    'boolean',
+    'date',
+    'timestamp with +04:00',
+    'decimal',
+    'timestamp',
+]
 
 data = '''
 1,1,1000,1.1,1.11,1-1,true,2022-11-01,2022-11-01 11:03:02.123456+04:00,389.11111,2022-11-01 11:03:02.123456
@@ -30,4 +42,7 @@ data = '''
 5,5,5000,5.5,5.55,5-5,true,2022-11-05,2022-11-05 11:05:02.123456+04:00,389.5555,2022-11-05 11:05:02.123456
 '''
 
-query = [ 'select * from s1.t1;', 'select partition from s1.t1.partitions;' ]
+query = [
+    'select * from s1.t1 order by id desc;',
+    'select partition from s1.t1.partitions order by partition desc;',
+]
