@@ -25,7 +25,7 @@ use crate::Result;
 use crate::{Error, Table};
 
 pub(crate) const UNASSIGNED_SEQ_NUM: i64 = -1;
-const MAIN_BRANCH: &str = "main";
+pub(crate) const MAIN_BRANCH: &str = "main";
 const EMPTY_SNAPSHOT_ID: i64 = -1;
 
 /// All data types are either primitives or nested types, which are maps, lists, or structs.
@@ -2056,41 +2056,62 @@ impl TableMetadata {
         }
     }
 
-    pub(crate) fn append_snapshot(&mut self, snapshot: Snapshot) -> Result<()> {
-        self.last_updated_ms = snapshot.timestamp_ms;
-        self.last_sequence_number = snapshot.sequence_number;
-        self.current_snapshot_id = Some(snapshot.snapshot_id);
+    /// Returns snapshot reference of branch
+    pub fn snapshot_ref(&self, branch: &str) -> Option<&SnapshotReference> {
+        self.refs.get(branch)
+    }
 
+    /// Set snapshot reference for branch
+    pub fn set_snapshot_ref(&mut self, branch: &str, snap_ref: SnapshotReference) -> Result<()> {
+        let snapshot = self
+            .snapshots
+            .as_ref()
+            .and_then(|s| s.iter().find(|s| s.snapshot_id == snap_ref.snapshot_id))
+            .ok_or_else(|| {
+                Error::new(
+                    ErrorKind::IcebergDataInvalid,
+                    format!("Snapshot id {} not found!", snap_ref.snapshot_id),
+                )
+            })?;
         self.refs
-            .entry(MAIN_BRANCH.to_string())
+            .entry(branch.to_string())
             .and_modify(|s| {
-                s.snapshot_id = snapshot.snapshot_id;
-                s.typ = SnapshotReferenceType::Branch;
+                s.snapshot_id = snap_ref.snapshot_id;
+                s.typ = snap_ref.typ;
+
+                if let Some(min_snapshots_to_keep) = snap_ref.min_snapshots_to_keep {
+                    s.min_snapshots_to_keep = Some(min_snapshots_to_keep);
+                }
+
+                if let Some(max_snapshot_age_ms) = snap_ref.max_snapshot_age_ms {
+                    s.max_snapshot_age_ms = Some(max_snapshot_age_ms);
+                }
+
+                if let Some(max_ref_age_ms) = snap_ref.max_ref_age_ms {
+                    s.max_ref_age_ms = Some(max_ref_age_ms);
+                }
             })
             .or_insert_with(|| {
-                SnapshotReference::new(snapshot.snapshot_id, SnapshotReferenceType::Branch)
+                SnapshotReference::new(snap_ref.snapshot_id, SnapshotReferenceType::Branch)
             });
 
+        if branch == MAIN_BRANCH {
+            self.current_snapshot_id = Some(snap_ref.snapshot_id);
+            self.last_updated_ms = snapshot.timestamp_ms;
+            self.last_sequence_number = snapshot.sequence_number;
+            if let Some(snap_logs) = self.snapshot_log.as_mut() {
+                snap_logs.push(snapshot.log());
+            } else {
+                self.snapshot_log = Some(vec![snapshot.log()]);
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) fn add_snapshot(&mut self, snapshot: Snapshot) -> Result<()> {
         if let Some(snapshots) = &mut self.snapshots {
-            self.snapshot_log
-                .as_mut()
-                .ok_or_else(|| {
-                    Error::new(
-                        ErrorKind::IcebergDataInvalid,
-                        "Snapshot logs is empty while snapshots is not!",
-                    )
-                })?
-                .push(snapshot.log());
             snapshots.push(snapshot);
         } else {
-            if self.snapshot_log.is_some() {
-                return Err(Error::new(
-                    ErrorKind::IcebergDataInvalid,
-                    "Snapshot logs is empty while snapshots is not!",
-                ));
-            }
-
-            self.snapshot_log = Some(vec![snapshot.log()]);
             self.snapshots = Some(vec![snapshot]);
         }
 

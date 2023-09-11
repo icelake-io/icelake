@@ -23,7 +23,7 @@ pub struct Snapshot {
     sequence_number: i64,
     timestamp_ms: i64,
     manifest_list: String,
-    summary: HashMap<String, String>,
+    summary: Option<HashMap<String, String>>,
     schema_id: Option<i64>,
 }
 
@@ -37,7 +37,7 @@ impl TryFrom<Snapshot> for types::Snapshot {
             sequence_number: v.sequence_number,
             timestamp_ms: v.timestamp_ms,
             manifest_list: v.manifest_list,
-            summary: v.summary,
+            summary: v.summary.unwrap_or_default(),
             schema_id: v.schema_id,
         })
     }
@@ -53,7 +53,7 @@ impl TryFrom<types::Snapshot> for Snapshot {
             sequence_number: value.sequence_number,
             timestamp_ms: value.timestamp_ms,
             manifest_list: value.manifest_list,
-            summary: value.summary,
+            summary: Some(value.summary),
             schema_id: value.schema_id,
         })
     }

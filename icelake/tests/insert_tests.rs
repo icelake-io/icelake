@@ -1,9 +1,9 @@
-use std::{fs::File, sync::Arc};
+use std::{collections::HashMap, fs::File, sync::Arc};
 
 use icelake::{
     catalog::{
-        Catalog, OperatorArgs, StorageCatalog, OP_ARGS_ACCESS_KEY, OP_ARGS_ACCESS_SECRET,
-        OP_ARGS_BUCKET, OP_ARGS_ENDPOINT, OP_ARGS_REGION, OP_ARGS_ROOT,
+        Catalog, OperatorArgs, RestCatalog, StorageCatalog, OP_ARGS_ACCESS_KEY,
+        OP_ARGS_ACCESS_SECRET, OP_ARGS_BUCKET, OP_ARGS_ENDPOINT, OP_ARGS_REGION, OP_ARGS_ROOT,
     },
     transaction::Transaction,
     Table,
@@ -16,12 +16,18 @@ pub use utils::*;
 pub struct TestFixture {
     docker_compose: DockerCompose,
     poetry: Poetry,
+    catalog: String,
 
     test_case: TestCase,
 }
 
 impl TestFixture {
-    pub fn new(docker_compose: DockerCompose, poetry: Poetry, toml_file: String) -> Self {
+    pub fn new(
+        docker_compose: DockerCompose,
+        poetry: Poetry,
+        toml_file: String,
+        catalog: String,
+    ) -> Self {
         let toml_file_path = format!(
             "{}/../testdata/toml/{}",
             env!("CARGO_MANIFEST_DIR"),
@@ -32,6 +38,7 @@ impl TestFixture {
             docker_compose,
             poetry,
             test_case,
+            catalog,
         }
     }
 
@@ -78,6 +85,14 @@ impl TestFixture {
     }
 
     pub async fn create_icelake_table(&self) -> Table {
+        match self.catalog.as_str() {
+            "storage" => self.create_icelake_table_with_storage_catalog().await,
+            "rest" => self.create_icelake_table_with_rest_catalog().await,
+            _ => panic!("Unsupported catalog: {}", self.catalog),
+        }
+    }
+
+    async fn create_icelake_table_with_storage_catalog(&self) -> Table {
         let op_args = OperatorArgs::builder(Scheme::S3)
             .with_arg(OP_ARGS_ROOT, self.test_case.warehouse_root.clone())
             .with_arg(OP_ARGS_BUCKET, "icebergdata")
@@ -95,6 +110,49 @@ impl TestFixture {
             .build();
 
         let catalog = Arc::new(StorageCatalog::open(op_args).await.unwrap());
+
+        catalog
+            .load_table(&self.test_case.table_name)
+            .await
+            .unwrap()
+    }
+
+    async fn create_icelake_table_with_rest_catalog(&self) -> Table {
+        let config: HashMap<String, String> = HashMap::from([
+            (
+                "uri",
+                format!(
+                    "http://{}:{REST_CATALOG_PORT}",
+                    self.docker_compose.get_container_ip("rest")
+                ),
+            ),
+            (
+                "table.io.root",
+                format!(
+                    "{}/{}/{}",
+                    self.test_case.warehouse_root.clone(),
+                    self.test_case.table_name.namespace,
+                    self.test_case.table_name.name,
+                ),
+            ),
+            ("table.io.bucket", "icebergdata".to_string()),
+            (
+                "table.io.endpoint",
+                format!(
+                    "http://{}:{}",
+                    self.docker_compose.get_container_ip("minio"),
+                    MINIO_DATA_PORT
+                ),
+            ),
+            ("table.io.region", "us-east-1".to_string()),
+            ("table.io.access_key_id", "admin".to_string()),
+            ("table.io.secret_access_key", "password".to_string()),
+        ])
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+
+        let catalog = Arc::new(RestCatalog::new(&self.catalog, config).await.unwrap());
 
         catalog
             .load_table(&self.test_case.table_name)
@@ -139,92 +197,245 @@ impl TestFixture {
     }
 }
 
-fn create_test_fixture(project_name: &str, toml_file: &str) -> TestFixture {
+fn create_test_fixture(project_name: &str, toml_file: &str, catalog: &str) -> TestFixture {
     set_up();
 
-    let docker_compose = DockerCompose::new(project_name, "iceberg-fs");
+    let docker_compose = match catalog {
+        "storage" => DockerCompose::new(project_name, "iceberg-fs"),
+        "rest" => DockerCompose::new(project_name, "iceberg-rest"),
+        _ => panic!("Unrecognized catalog : {catalog}"),
+    };
     let poetry = Poetry::new(format!("{}/../testdata/python", env!("CARGO_MANIFEST_DIR")));
 
     docker_compose.run();
 
-    TestFixture::new(docker_compose, poetry, toml_file.to_string())
+    TestFixture::new(
+        docker_compose,
+        poetry,
+        toml_file.to_string(),
+        catalog.to_string(),
+    )
 }
 
 #[tokio::test]
-async fn test_insert_no_partition() {
+async fn test_insert_no_partition_with_storage_catalog() {
     create_test_fixture(
-        &normalize_test_name(format!("{}_test_insert_no_partition", module_path!())),
+        &normalize_test_name(format!(
+            "{}_test_insert_no_partition_with_storage_catalog",
+            module_path!()
+        )),
         "no_partition_test.toml",
+        "storage",
     )
     .run()
     .await
 }
 
 #[tokio::test]
-async fn test_insert_partition_identity() {
+async fn test_insert_no_partition_with_rest_catalog() {
     create_test_fixture(
-        &normalize_test_name(format!("{}_test_insert_partition_identity", module_path!())),
+        &normalize_test_name(format!(
+            "{}_test_insert_no_partition_with_rest_catalog",
+            module_path!()
+        )),
+        "no_partition_test.toml",
+        "rest",
+    )
+    .run()
+    .await
+}
+
+#[tokio::test]
+async fn test_insert_partition_identity_with_storage_catalog() {
+    create_test_fixture(
+        &normalize_test_name(format!(
+            "{}_test_insert_partition_identity_with_storage_catalog",
+            module_path!()
+        )),
         "partition_identity_test.toml",
+        "storage",
     )
     .run()
     .await
 }
 
 #[tokio::test]
-async fn test_insert_partition_year() {
+async fn test_insert_partition_identity_with_rest_catalog() {
     create_test_fixture(
-        &normalize_test_name(format!("{}_test_insert_partition_year", module_path!())),
+        &normalize_test_name(format!(
+            "{}_test_insert_partition_identity_with_rest_catalog",
+            module_path!()
+        )),
+        "partition_identity_test.toml",
+        "rest",
+    )
+    .run()
+    .await
+}
+
+#[tokio::test]
+async fn test_insert_partition_year_with_storage_catalog() {
+    create_test_fixture(
+        &normalize_test_name(format!(
+            "{}_test_insert_partition_year_with_storage_catalog",
+            module_path!()
+        )),
         "partition_year_test.toml",
+        "storage",
     )
     .run()
     .await
 }
 
 #[tokio::test]
-async fn test_insert_partition_month() {
+async fn test_insert_partition_year_with_rest_catalog() {
     create_test_fixture(
-        &normalize_test_name(format!("{}_test_insert_partition_month", module_path!())),
+        &normalize_test_name(format!(
+            "{}_test_insert_partition_year_with_rest_catalog",
+            module_path!()
+        )),
+        "partition_year_test.toml",
+        "rest",
+    )
+    .run()
+    .await
+}
+
+#[tokio::test]
+async fn test_insert_partition_month_with_storage_catalog() {
+    create_test_fixture(
+        &normalize_test_name(format!(
+            "{}_test_insert_partition_month_with_storage_catalog",
+            module_path!()
+        )),
         "partition_month_test.toml",
+        "storage",
     )
     .run()
     .await
 }
 
 #[tokio::test]
-async fn test_insert_partition_day() {
+async fn test_insert_partition_month_with_rest_catalog() {
     create_test_fixture(
-        &normalize_test_name(format!("{}_test_insert_partition_day", module_path!())),
+        &normalize_test_name(format!(
+            "{}_test_insert_partition_month_with_rest_catalog",
+            module_path!()
+        )),
+        "partition_month_test.toml",
+        "rest",
+    )
+    .run()
+    .await
+}
+
+#[tokio::test]
+async fn test_insert_partition_day_with_storage_catalog() {
+    create_test_fixture(
+        &normalize_test_name(format!(
+            "{}_test_insert_partition_day_with_storage_catalog",
+            module_path!()
+        )),
         "partition_day_test.toml",
+        "storage",
     )
     .run()
     .await
 }
 
 #[tokio::test]
-async fn test_insert_partition_hour() {
+async fn test_insert_partition_day_with_rest_catalog() {
     create_test_fixture(
-        &normalize_test_name(format!("{}_test_insert_partition_hour", module_path!())),
+        &normalize_test_name(format!(
+            "{}_test_insert_partition_day_with_rest_catalog",
+            module_path!()
+        )),
+        "partition_day_test.toml",
+        "storage",
+    )
+    .run()
+    .await
+}
+
+#[tokio::test]
+async fn test_insert_partition_hour_with_storage_catalog() {
+    create_test_fixture(
+        &normalize_test_name(format!(
+            "{}_test_insert_partition_hour_with_storage_catalog",
+            module_path!()
+        )),
         "partition_hour_test.toml",
+        "storage",
     )
     .run()
     .await
 }
 
 #[tokio::test]
-async fn test_insert_partition_hash() {
+async fn test_insert_partition_hour_with_rest_catalog() {
     create_test_fixture(
-        &normalize_test_name(format!("{}_test_insert_partition_hash", module_path!())),
+        &normalize_test_name(format!(
+            "{}_test_insert_partition_hour_with_rest_catalog",
+            module_path!()
+        )),
+        "partition_hour_test.toml",
+        "rest",
+    )
+    .run()
+    .await
+}
+
+#[tokio::test]
+async fn test_insert_partition_hash_with_storage_catalog() {
+    create_test_fixture(
+        &normalize_test_name(format!(
+            "{}_test_insert_partition_hash_with_storage_catalog",
+            module_path!()
+        )),
         "partition_hash_test.toml",
+        "storage",
     )
     .run()
     .await
 }
 
 #[tokio::test]
-async fn test_insert_partition_truncate() {
+async fn test_insert_partition_hash_with_rest_catalog() {
     create_test_fixture(
-        &normalize_test_name(format!("{}_test_insert_partition_truncate", module_path!())),
+        &normalize_test_name(format!(
+            "{}_test_insert_partition_hash_with_rest_catalog",
+            module_path!()
+        )),
+        "partition_hash_test.toml",
+        "rest",
+    )
+    .run()
+    .await
+}
+
+#[tokio::test]
+async fn test_insert_partition_truncate_with_storage_catalog() {
+    create_test_fixture(
+        &normalize_test_name(format!(
+            "{}_test_insert_partition_truncate_with_storage_catalog",
+            module_path!()
+        )),
         "partition_truncate_test.toml",
+        "storage",
+    )
+    .run()
+    .await
+}
+
+#[tokio::test]
+async fn test_insert_partition_truncate_with_rest_catalog() {
+    create_test_fixture(
+        &normalize_test_name(format!(
+            "{}_test_insert_partition_truncate_with_rest_catalog",
+            module_path!()
+        )),
+        "partition_truncate_test.toml",
+        "rest",
     )
     .run()
     .await
