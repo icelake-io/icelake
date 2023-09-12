@@ -15,6 +15,10 @@ impl DockerCompose {
         }
     }
 
+    pub fn project_name(&self) -> &str {
+        self.project_name.as_str()
+    }
+
     pub fn run(&self) {
         let mut cmd = Command::new("docker");
         let absolute_dir = format!(

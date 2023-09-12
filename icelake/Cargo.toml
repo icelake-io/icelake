@@ -52,7 +52,13 @@ confique = { workspace = true }
 csv = { workspace = true }
 env_logger = { workspace = true }
 arrow-csv = { workspace = true }
+libtest-mimic = { workspace = true }
 
 [[example]]
 name = "read_iceberg_table"
+harness = false
+
+[[test]]
+name = "insertion_test"
+path = "tests/insert_tests.rs"
 harness = false
