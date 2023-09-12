@@ -1,44 +1,67 @@
-//! This module is used create a data file writer to write data into files.
+//! This module is used to create writer to write position delete data into files.
 
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::config::TableConfigRef;
-use crate::{
-    types::{DataFile, StructValue},
-    Result,
-};
+use crate::types::{Any, DataFile, Field, Primitive, Schema, StructValue};
+use crate::{types::Struct, Result};
 use arrow_array::RecordBatch;
-use arrow_schema::SchemaRef;
 use opendal::Operator;
 use parquet::format::FileMetaData;
 
-use super::location_generator::DataFileLocationGenerator;
-use super::rolling_writer::RollingWriter;
+use super::{location_generator::DataFileLocationGenerator, rolling_writer::RollingWriter};
 
-/// A writer capable of splitting incoming data into multiple files within one spec/partition based on the target file size.
+/// A writer capable of splitting incoming delete into multiple files within one spec/partition based on the target file size.
 /// When complete, it will return a list of `DataFile`.
 ///
+///
 /// # NOTE
-/// This writer will not gurantee the writen data is within one spec/partition. It is the caller's responsibility to make sure the data is within one spec/partition.
-pub struct DataFileWriter {
+/// According to spec, The data write to position delete file should be:
+/// - Sorting by file_path allows filter pushdown by file in columnar storage formats.
+/// - Sorting by pos allows filtering rows while scanning, to avoid keeping deletes in memory.
+/// - They're belong to partition.
+///
+/// But PositionDeleteWriter will not gurantee and check above. It is the caller's responsibility to gurantee them.
+pub struct PositionDeleteWriter {
     inner_writer: RollingWriter,
     table_location: String,
 }
 
-impl DataFileWriter {
+impl PositionDeleteWriter {
     /// Create a new `DataFileWriter`.
     pub async fn try_new(
         operator: Operator,
         table_location: String,
         location_generator: Arc<DataFileLocationGenerator>,
-        arrow_schema: SchemaRef,
+        row_type: Option<Arc<Struct>>,
         table_config: TableConfigRef,
     ) -> Result<Self> {
+        let mut fields = vec![
+            Arc::new(Field::required(
+                2147483546,
+                "file_path",
+                Any::Primitive(Primitive::String),
+            )),
+            Arc::new(Field::required(
+                2147483545,
+                "pos",
+                Any::Primitive(Primitive::Long),
+            )),
+        ];
+        if let Some(row_type) = row_type {
+            fields.push(Arc::new(Field::required(
+                2147483544,
+                "row",
+                Any::Struct(row_type),
+            )));
+        }
+        let schema = Arc::new(Schema::new(1, None, Struct::new(fields)).try_into()?);
         Ok(Self {
             inner_writer: RollingWriter::try_new(
                 operator,
                 location_generator,
-                arrow_schema,
+                schema,
                 table_config,
             )
             .await?,
@@ -122,7 +145,7 @@ impl DataFileWriter {
             )
         };
         DataFile {
-            content: crate::types::DataContentType::Data,
+            content: crate::types::DataContentType::PostionDeletes,
             file_path: format!("{}/{}", table_location, current_location),
             file_format: crate::types::DataFileFormat::Parquet,
             // /// # NOTE
@@ -154,83 +177,5 @@ impl DataFileWriter {
             equality_ids: None,
             sort_order_id: None,
         }
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use std::{env, fs, sync::Arc};
-
-    use arrow_array::RecordBatch;
-    use arrow_array::{ArrayRef, Int64Array};
-    use bytes::Bytes;
-    use opendal::{services::Memory, Operator};
-
-    use anyhow::Result;
-    use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
-
-    use crate::config::TableConfig;
-    use crate::{
-        io::{data_file_writer, location_generator::DataFileLocationGenerator},
-        types::parse_table_metadata,
-    };
-
-    #[tokio::test]
-    async fn tets_data_file_writer() -> Result<()> {
-        let mut builder = Memory::default();
-        builder.root("/tmp/table");
-        let op = Operator::new(builder)?.finish();
-
-        let location_generator = {
-            let mut metadata = {
-                let path = format!(
-                    "{}/../testdata/simple_table/metadata/v1.metadata.json",
-                    env!("CARGO_MANIFEST_DIR")
-                );
-
-                let bs = fs::read(path).expect("read_file must succeed");
-
-                parse_table_metadata(&bs).expect("parse_table_metadata v1 must succeed")
-            };
-            metadata.location = "/tmp/table".to_string();
-
-            DataFileLocationGenerator::try_new(&metadata, 0, 0, None)?
-        };
-
-        let data = (0..1024 * 1024).collect::<Vec<_>>();
-        let col = Arc::new(Int64Array::from_iter_values(data)) as ArrayRef;
-        let to_write = RecordBatch::try_from_iter([("col", col.clone())]).unwrap();
-
-        let mut writer = data_file_writer::DataFileWriter::try_new(
-            op.clone(),
-            "/tmp/table".to_string(),
-            location_generator.into(),
-            to_write.schema(),
-            Arc::new(TableConfig::default()),
-        )
-        .await?;
-
-        writer.write(to_write.clone()).await?;
-        writer.write(to_write.clone()).await?;
-        writer.write(to_write.clone()).await?;
-        let data_files = writer.close().await?;
-
-        let mut row_num = 0;
-        for data_file in data_files {
-            let res = op
-                .read(data_file.file_path.strip_prefix("/tmp/table").unwrap())
-                .await?;
-            let res = Bytes::from(res);
-            let reader = ParquetRecordBatchReaderBuilder::try_new(res)
-                .unwrap()
-                .build()
-                .unwrap();
-            reader.into_iter().for_each(|batch| {
-                row_num += batch.unwrap().num_rows();
-            });
-        }
-        assert_eq!(row_num, 1024 * 1024 * 3);
-
-        Ok(())
     }
 }
