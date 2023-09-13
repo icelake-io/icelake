@@ -1,14 +1,12 @@
 //! A module provide `PositionDeleteWriter`.
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::config::TableConfigRef;
-use crate::types::{Any, DataFile, Field, Primitive, Schema, StructValue};
+use crate::types::{Any, DataFileBuilder, Field, Primitive, Schema};
 use crate::{types::Struct, Result};
 use arrow_array::RecordBatch;
 use opendal::Operator;
-use parquet::format::FileMetaData;
 
 use super::{location_generator::DataFileLocationGenerator, rolling_writer::RollingWriter};
 
@@ -76,106 +74,17 @@ impl PositionDeleteWriter {
     }
 
     /// Complte the write and return the list of `DataFile` as result.
-    pub async fn close(self) -> Result<Vec<DataFile>> {
-        let table_location = self.table_location;
+    pub async fn close(self) -> Result<Vec<DataFileBuilder>> {
         Ok(self
             .inner_writer
             .close()
             .await?
             .into_iter()
-            .map(|meta| {
-                Self::convert_meta_to_datafile(
-                    meta.meta_data,
-                    meta.written_size,
-                    &table_location,
-                    &meta.location,
-                )
+            .map(|builder| {
+                builder
+                    .with_content(crate::types::DataContentType::PostionDeletes)
+                    .with_table_location(self.table_location.clone())
             })
             .collect())
-    }
-
-    fn convert_meta_to_datafile(
-        meta_data: FileMetaData,
-        written_size: u64,
-        table_location: &str,
-        current_location: &str,
-    ) -> DataFile {
-        log::info!("{meta_data:?}");
-        let (column_sizes, value_counts, null_value_counts, distinct_counts) = {
-            // how to decide column id
-            let mut per_col_size: HashMap<i32, _> = HashMap::new();
-            let mut per_col_val_num: HashMap<i32, _> = HashMap::new();
-            let mut per_col_null_val_num: HashMap<i32, _> = HashMap::new();
-            let mut per_col_distinct_val_num: HashMap<i32, _> = HashMap::new();
-            meta_data.row_groups.iter().for_each(|group| {
-                group
-                    .columns
-                    .iter()
-                    .enumerate()
-                    .for_each(|(column_id, column_chunk)| {
-                        if let Some(column_chunk_metadata) = &column_chunk.meta_data {
-                            *per_col_size.entry(column_id as i32).or_insert(0) +=
-                                column_chunk_metadata.total_compressed_size;
-                            *per_col_val_num.entry(column_id as i32).or_insert(0) +=
-                                column_chunk_metadata.num_values;
-                            *per_col_null_val_num
-                                .entry(column_id as i32)
-                                .or_insert(0_i64) += column_chunk_metadata
-                                .statistics
-                                .as_ref()
-                                .map(|s| s.null_count)
-                                .unwrap_or(None)
-                                .unwrap_or(0);
-                            *per_col_distinct_val_num
-                                .entry(column_id as i32)
-                                .or_insert(0_i64) += column_chunk_metadata
-                                .statistics
-                                .as_ref()
-                                .map(|s| s.distinct_count)
-                                .unwrap_or(None)
-                                .unwrap_or(0);
-                        }
-                    })
-            });
-            (
-                per_col_size,
-                per_col_val_num,
-                per_col_null_val_num,
-                per_col_distinct_val_num,
-            )
-        };
-        DataFile {
-            content: crate::types::DataContentType::PostionDeletes,
-            file_path: format!("{}/{}", table_location, current_location),
-            file_format: crate::types::DataFileFormat::Parquet,
-            // /// # NOTE
-            // ///
-            // /// DataFileWriter only response to write data. Partition should place by more high level writer.
-            partition: StructValue::default(),
-            record_count: meta_data.num_rows,
-            column_sizes: Some(column_sizes),
-            value_counts: Some(value_counts),
-            null_value_counts: Some(null_value_counts),
-            distinct_counts: Some(distinct_counts),
-            key_metadata: meta_data.footer_signing_key_metadata,
-            file_size_in_bytes: written_size as i64,
-            /// # TODO
-            ///
-            /// Following fields unsupported now:
-            /// - `file_size_in_bytes` can't get from `FileMetaData` now.
-            /// - `file_offset` in `FileMetaData` always be None now.
-            /// - `nan_value_counts` can't get from `FileMetaData` now.
-            // Currently arrow parquet writer doesn't fill row group offsets, we can use first column chunk offset for it.
-            split_offsets: Some(meta_data
-                .row_groups
-                .iter()
-                .filter_map(|group| group.file_offset)
-                .collect()),
-            nan_value_counts: None,
-            lower_bounds: None,
-            upper_bounds: None,
-            equality_ids: None,
-            sort_order_id: None,
-        }
     }
 }

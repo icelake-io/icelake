@@ -9,13 +9,8 @@ use opendal::Operator;
 
 use super::location_generator::DataFileLocationGenerator;
 use super::parquet::ParquetWriter;
+use crate::types::DataFileBuilder;
 use crate::Result;
-
-pub(crate) struct FileMetaData {
-    pub(crate) meta_data: parquet::format::FileMetaData,
-    pub(crate) written_size: u64,
-    pub(crate) location: String,
-}
 
 /// A writer capable of splitting incoming data into multiple files within one spec/partition based on the target file size.
 /// When complete, it will return a list of `FileMetaData`.
@@ -31,7 +26,7 @@ pub(crate) struct RollingWriter {
     /// `current_location` used to clean up the file when no row is written to it.
     current_location: String,
 
-    result: Vec<FileMetaData>,
+    result: Vec<DataFileBuilder>,
 
     table_config: TableConfigRef,
 }
@@ -75,7 +70,7 @@ impl RollingWriter {
     }
 
     /// Complte the write and return the list of `DataFile` as result.
-    pub async fn close(mut self) -> Result<Vec<FileMetaData>> {
+    pub async fn close(mut self) -> Result<Vec<DataFileBuilder>> {
         self.close_current_writer().await?;
         Ok(self.result)
     }
@@ -99,11 +94,11 @@ impl RollingWriter {
             return Ok(());
         }
 
-        self.result.push(FileMetaData {
+        self.result.push(DataFileBuilder::new(
             meta_data,
+            self.current_location.clone(),
             written_size,
-            location: self.current_location.clone(),
-        });
+        ));
         Ok(())
     }
 
