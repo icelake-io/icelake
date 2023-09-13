@@ -1,5 +1,4 @@
-//! A writer capable of splitting incoming data into multiple files within one spec/partition based on the target file size.
-//! Thit writer is used by data_file writer or delete writer. It should not be used directly.
+//! A module provide `RollingWriter`.
 use arrow_array::RecordBatch;
 use parquet::file::properties::{WriterProperties, WriterVersion};
 use std::sync::Arc;
@@ -20,6 +19,8 @@ pub(crate) struct FileMetaData {
 
 /// A writer capable of splitting incoming data into multiple files within one spec/partition based on the target file size.
 /// When complete, it will return a list of `FileMetaData`.
+/// This writer should be used by specific content writer(`DataFileWriter` and `PositionDeleteFileWriter`), they should convert
+/// `FileMetaData` to specific `DataFile`.
 pub(crate) struct RollingWriter {
     operator: Operator,
     location_generator: Arc<DataFileLocationGenerator>,

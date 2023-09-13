@@ -1,4 +1,4 @@
-//! This module is used to create writer to write position delete data into files.
+//! A module provide `PositionDeleteWriter`.
 
 use std::collections::HashMap;
 use std::sync::Arc;

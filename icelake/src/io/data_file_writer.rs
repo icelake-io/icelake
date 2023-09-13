@@ -1,5 +1,4 @@
-//! This module is used create a data file writer to write data into files.
-
+//! A module provide `DataFileWriter`.
 use std::{collections::HashMap, sync::Arc};
 
 use crate::config::TableConfigRef;
