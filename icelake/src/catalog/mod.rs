@@ -8,6 +8,7 @@ use async_trait::async_trait;
 use enum_display::EnumDisplay;
 use uuid::Uuid;
 
+use crate::config::{TableConfig, TableConfigRef};
 use crate::error::Result;
 use crate::table::{Namespace, TableIdentifier};
 use crate::types::{
@@ -335,5 +336,139 @@ impl UpdateTableBuilder {
     /// Build.
     pub fn build(self) -> UpdateTable {
         self.0
+    }
+}
+
+/// Catalog type: rest, storage.
+pub const CATALOG_TYPE: &str = "iceberg.catalog.type";
+/// Catalog name
+pub const CATALOG_NAME: &str = "iceberg.catalog.name";
+pub(crate) const CATALOG_CONFIG_PREFIX: &str = "iceberg.catalog.";
+const TABLE_IO_PREFIX: &str = "iceberg.table.io.";
+
+/// Base catalog config.
+#[derive(Debug, Default)]
+pub struct BaseCatalogConfig {
+    /// Name of catalog.
+    pub name: String,
+    /// Table io configs.
+    pub table_io_configs: HashMap<String, String>,
+    /// Table config.
+    pub table_config: TableConfigRef,
+}
+
+/// Load catalog from configuration.
+///
+/// The following two configurations must be provides:
+///
+/// - [`CATALOG_TYPE`]: Type of catalog, must be one of `storage`, `rest`.
+/// - [`CATALOG_NAME`]: Name of catalog.
+///
+/// ## Catalog specifig configuration.
+///
+/// Catalog specific configurations are prefixed with `iceberg.catalog.<catalog name>`.
+/// For example, if catalog name is `demo`, then all catalog specific configuration keys must be prefixed with `iceberg.catalog.demo.`.:
+///
+/// ### Storage catalog
+///
+/// Currently the only required configuration is `iceberg.catalog.demo.warehouse`, which is the root path of warehouse.
+///
+/// ### Rest catalog
+///
+/// Currently the only required configuration is `iceberg.catalog.demo.uri`, which is the uri of rest catalog server.
+///
+/// ## IO Configuration
+///
+/// All configurations for table io are prefixed with `iceberg.table.io.`.
+/// For example if underlying storage is s3, then we can use the following configurations can be provided:
+///
+/// - `iceberg.table.io.region`: Region of s3.
+/// - `iceberg.table.io.endpoint`: Endpoint of s3.
+///
+/// ## Table reader/writer configuration.
+///
+/// User can control the behavior of table reader/writer by providing configurations, see [`TableConfig`] for details.
+///
+/// # Examples
+///
+/// ## Rest catalog
+///
+/// ```text
+/// iceberg.catalog.name=demo # required
+/// iceberg.catalog.type=rest # required
+///
+/// iceberg.catalog.demo.uri = http://localhost:9090 # required
+///
+/// ## Configurations for s3
+/// iceberg.table.io.region = us-east-1
+/// iceberg.table.io.endpoint = http://minio:9000
+/// iceberg.table.io.bucket = icebergdata
+/// iceberg.table.io.root = demo
+/// iceberg.table.io.access_key_id=admin
+/// iceberg.table.io.secret_access_key=password
+///
+/// ## Configurations for table reader/writer, following are optional.
+/// iceberg.table.parquet_writer.enable_bloom_filter = true
+/// ```
+///
+/// ## Storage catalog
+///
+/// ```text
+/// iceberg.catalog.name=demo # required
+/// iceberg.catalog.type=storage # required
+///
+/// iceberg.catalog.demo.warehouse = s3://icebergdata/demo # required
+///
+/// # Configuration for s3
+/// iceberg.table.io.region=us-east-1
+/// iceberg.table.io.endpoint=http://localhost:8181
+/// iceberg.table.io.bucket = icebergdata
+/// iceberg.table.io.root = demo
+/// iceberg.table.io.access_key_id = admin
+/// iceberg.table.io.secret_access_key = password
+///
+/// ## Configurations for table reader/writer, following are optional.
+/// iceberg.table.parquet_writer.enable_bloom_filter = true
+/// ```
+pub async fn load_catalog(configs: &HashMap<String, String>) -> Result<CatalogRef> {
+    let catalog_type = configs.get(CATALOG_TYPE).ok_or_else(|| {
+        Error::new(
+            ErrorKind::IcebergDataInvalid,
+            format!("{CATALOG_TYPE} is not set"),
+        )
+    })?;
+
+    let catalog_name = configs.get(CATALOG_NAME).ok_or_else(|| {
+        Error::new(
+            ErrorKind::IcebergDataInvalid,
+            format!("{CATALOG_NAME} is not set"),
+        )
+    })?;
+
+    let table_io_configs = configs
+        .iter()
+        .filter(|(k, _v)| k.starts_with(TABLE_IO_PREFIX))
+        .map(|(k, v)| (k[TABLE_IO_PREFIX.len()..].to_string(), v.to_string()))
+        .collect();
+
+    let table_config = Arc::new(TableConfig::try_from(configs)?);
+
+    let base_catalog_config = BaseCatalogConfig {
+        name: catalog_name.to_string(),
+        table_io_configs,
+        table_config,
+    };
+
+    match catalog_type.as_str() {
+        "storage" => Ok(Arc::new(
+            StorageCatalog::new(base_catalog_config, configs).await?,
+        )),
+        "rest" => Ok(Arc::new(
+            RestCatalog::new(base_catalog_config, configs).await?,
+        )),
+        _ => Err(Error::new(
+            ErrorKind::IcebergDataInvalid,
+            format!("Unsupported catalog type: {catalog_type}"),
+        )),
     }
 }

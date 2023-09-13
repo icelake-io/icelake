@@ -61,7 +61,7 @@ impl TryFrom<&'_ HashMap<String, String>> for TableConfig {
         let mut config = TableConfig::default();
 
         value
-            .get("iceberg.parquet_writer.enable_bloom_filter")
+            .get("iceberg.table.parquet_writer.enable_bloom_filter")
             .map(|v| v.parse::<bool>())
             .transpose()
             .map_err(|e| {
@@ -75,14 +75,14 @@ impl TryFrom<&'_ HashMap<String, String>> for TableConfig {
             .for_each(|v| config.parquet_writer.enable_bloom_filter = *v);
 
         value
-            .get("iceberg.parquet_writer.created_by")
+            .get("iceberg.table.parquet_writer.created_by")
             .iter()
             .for_each(|v| config.parquet_writer.created_by = Some(v.as_str().to_string()));
 
         config.parquet_writer.set_compression(
-            value.get("iceberg.parquet_writer.compression"),
+            value.get("iceberg.table.parquet_writer.compression"),
             value
-                .get("iceberg.parquet_writer.compression_level")
+                .get("iceberg.table.parquet_writer.compression_level")
                 .map(|v| v.parse::<u32>())
                 .transpose()
                 .map_err(|e| {
@@ -95,7 +95,7 @@ impl TryFrom<&'_ HashMap<String, String>> for TableConfig {
         )?;
 
         value
-            .get("iceberg.parquet_writer.max_row_group_size")
+            .get("iceberg.table.parquet_writer.max_row_group_size")
             .map(|v| v.parse::<usize>())
             .transpose()
             .map_err(|e| {
@@ -109,7 +109,7 @@ impl TryFrom<&'_ HashMap<String, String>> for TableConfig {
             .for_each(|v| config.parquet_writer.max_row_group_size = *v);
 
         value
-            .get("iceberg.parquet_writer.write_batch_size")
+            .get("iceberg.table.parquet_writer.write_batch_size")
             .map(|v| v.parse::<usize>())
             .transpose()
             .map_err(|e| {
@@ -123,7 +123,7 @@ impl TryFrom<&'_ HashMap<String, String>> for TableConfig {
             .for_each(|v| config.parquet_writer.write_batch_size = *v);
 
         value
-            .get("iceberg.parquet_writer.data_page_size")
+            .get("iceberg.table.parquet_writer.data_page_size")
             .map(|v| v.parse::<usize>())
             .transpose()
             .map_err(|e| {
@@ -137,7 +137,7 @@ impl TryFrom<&'_ HashMap<String, String>> for TableConfig {
             .for_each(|v| config.parquet_writer.data_page_size = *v);
 
         value
-            .get("iceberg.datafile.rows_per_file")
+            .get("iceberg.table.datafile.rows_per_file")
             .map(|v| v.parse::<usize>())
             .transpose()
             .map_err(|e| {
@@ -151,7 +151,7 @@ impl TryFrom<&'_ HashMap<String, String>> for TableConfig {
             .for_each(|v| config.datafile_writer.rows_per_file = *v);
 
         value
-            .get("iceberg.datafile.target_file_size_in_bytes")
+            .get("iceberg.table.datafile.target_file_size_in_bytes")
             .map(|v| v.parse::<u64>())
             .transpose()
             .map_err(|e| {
@@ -272,13 +272,13 @@ mod tests {
         };
 
         let config_map = HashMap::from([
-            ("iceberg.parquet_writer.enable_bloom_filter", "true"),
-            ("iceberg.parquet_writer.created_by", "labixiaoxin"),
-            ("iceberg.parquet_writer.compression", "gzip"),
-            ("iceberg.parquet_writer.compression_level", "8"),
-            ("iceberg.parquet_writer.max_row_group_size", "1024"),
-            ("iceberg.parquet_writer.write_batch_size", "8888"),
-            ("iceberg.parquet_writer.data_page_size", "7"),
+            ("iceberg.table.parquet_writer.enable_bloom_filter", "true"),
+            ("iceberg.table.parquet_writer.created_by", "labixiaoxin"),
+            ("iceberg.table.parquet_writer.compression", "gzip"),
+            ("iceberg.table.parquet_writer.compression_level", "8"),
+            ("iceberg.table.parquet_writer.max_row_group_size", "1024"),
+            ("iceberg.table.parquet_writer.write_batch_size", "8888"),
+            ("iceberg.table.parquet_writer.data_page_size", "7"),
         ])
         .iter()
         .map(|e| (e.0.to_string(), e.1.to_string()))

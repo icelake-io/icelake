@@ -21,7 +21,8 @@ use crate::{
 
 use self::_models::{CommitTableRequest, ListTablesResponse, LoadTableResult};
 
-use super::{Catalog, UpdateTable};
+use super::{BaseCatalogConfig, Catalog, UpdateTable};
+use crate::catalog::CATALOG_CONFIG_PREFIX;
 use crate::error::Result;
 
 const PATH_V1: &str = "v1";
@@ -31,15 +32,11 @@ const PATH_V1: &str = "v1";
 pub struct RestCatalogConfig {
     uri: String,
     warehouse: Option<String>,
-
-    // Configs for reading/wrinting table io. For example the regions, secrets, etc for s3.
-    // This should be return by catalog server, but currently it's not implemented, so we pass it for now.
-    table_io_config: HashMap<String, String>,
+    base_config: BaseCatalogConfig,
 }
 
 /// Rest catalog implementation
 pub struct RestCatalog {
-    name: String,
     config: RestCatalogConfig,
     endpoints: Endpoint,
     // rest client config
@@ -50,7 +47,7 @@ pub struct RestCatalog {
 impl Catalog for RestCatalog {
     /// Return catalog's name.
     fn name(&self) -> &str {
-        &self.name
+        &self.config.base_config.name
     }
 
     /// List tables under namespace.
@@ -101,7 +98,7 @@ impl Catalog for RestCatalog {
 
         let table_op = Operator::try_from(
             &OperatorArgs::builder_from_path(&table_metadata.location)?
-                .with_args(self.config.table_io_config.iter())
+                .with_args(self.config.base_config.table_io_configs.iter())
                 .build(),
         )?;
 
@@ -139,7 +136,7 @@ impl Catalog for RestCatalog {
 
         let table_op = Operator::try_from(
             &OperatorArgs::builder_from_path(&table_metadata.location)?
-                .with_args(self.config.table_io_config.iter())
+                .with_args(self.config.base_config.table_io_configs.iter())
                 .build(),
         )?;
 
@@ -155,13 +152,23 @@ impl Catalog for RestCatalog {
 
 impl RestCatalog {
     /// Creates rest catalog.
-    pub async fn new(name: impl AsRef<str>, config: HashMap<String, String>) -> Result<Self> {
-        let catalog_config = RestCatalog::init_config_from_server(config).await?;
+    pub async fn new(
+        base_config: BaseCatalogConfig,
+        others: &HashMap<String, String>,
+    ) -> Result<Self> {
+        let config_prefix = format!("{CATALOG_CONFIG_PREFIX}{}.", base_config.name);
+        let rest_configs = others
+            .iter()
+            .filter(|(k, _)| k.starts_with(&config_prefix))
+            .map(|(k, v)| (k[config_prefix.len()..].to_string(), v.to_string()))
+            .collect();
+        let rest_catalog_config = RestCatalogConfig::try_from((base_config, &rest_configs))?;
+        let catalog_config =
+            RestCatalog::init_config_from_server(rest_catalog_config, rest_configs).await?;
         let endpoints = Endpoint::new(catalog_config.uri.clone());
-        let rest_client = RestCatalog::create_rest_client(&catalog_config)?;
+        let rest_client = RestCatalog::create_rest_client()?;
 
         Ok(Self {
-            name: name.as_ref().to_string(),
             config: catalog_config,
             rest_client,
             endpoints,
@@ -199,15 +206,17 @@ impl RestCatalog {
         }
     }
 
-    fn create_rest_client(_config: &RestCatalogConfig) -> Result<Client> {
+    fn create_rest_client() -> Result<Client> {
         Ok(ClientBuilder::new().build()?)
     }
 
-    async fn init_config_from_server(config: HashMap<String, String>) -> Result<RestCatalogConfig> {
-        log::info!("Creating rest catalog with user config: {config:?}");
-        let rest_catalog_config = RestCatalogConfig::try_from(&config)?;
+    async fn init_config_from_server(
+        rest_catalog_config: RestCatalogConfig,
+        old_configs: HashMap<String, String>,
+    ) -> Result<RestCatalogConfig> {
+        log::info!("Creating rest catalog with user config: {old_configs:?}");
         let endpoint = Endpoint::new(rest_catalog_config.uri.clone());
-        let rest_client = RestCatalog::create_rest_client(&rest_catalog_config)?;
+        let rest_client = RestCatalog::create_rest_client()?;
 
         let resp = rest_client
             .execute(rest_client.get(endpoint.config()).build()?)
@@ -217,10 +226,13 @@ impl RestCatalog {
             StatusCode::OK => {
                 let mut server_config = resp.json::<CatalogConfig>().await?;
                 log::info!("Catalog config from rest catalog server: {server_config:?}");
-                server_config.defaults.extend(config);
+                server_config.defaults.extend(old_configs);
                 server_config.defaults.extend(server_config.overrides);
 
-                let ret = RestCatalogConfig::try_from(&server_config.defaults)?;
+                let ret = RestCatalogConfig::try_from((
+                    rest_catalog_config.base_config,
+                    &server_config.defaults,
+                ))?;
 
                 log::info!(
                     "Result rest catalog config after merging with catalog server config: {ret:?}"
@@ -232,12 +244,13 @@ impl RestCatalog {
     }
 }
 
-impl TryFrom<&HashMap<String, String>> for RestCatalogConfig {
+impl TryFrom<(BaseCatalogConfig, &HashMap<String, String>)> for RestCatalogConfig {
     type Error = Error;
 
-    fn try_from(value: &HashMap<String, String>) -> Result<RestCatalogConfig> {
+    fn try_from(value: (BaseCatalogConfig, &HashMap<String, String>)) -> Result<RestCatalogConfig> {
         let mut config = RestCatalogConfig {
             uri: value
+                .1
                 .get("uri")
                 .ok_or_else(|| {
                     Error::new(
@@ -246,22 +259,13 @@ impl TryFrom<&HashMap<String, String>> for RestCatalogConfig {
                     )
                 })?
                 .clone(),
+            base_config: value.0,
             ..Default::default()
         };
 
-        if let Some(warehouse) = value.get("warehouse") {
+        if let Some(warehouse) = value.1.get("warehouse") {
             config.warehouse = Some(warehouse.clone());
         }
-
-        config
-            .table_io_config
-            .extend(value.iter().filter_map(|(k, v)| {
-                if k.starts_with("table.io.") {
-                    Some((k.replace("table.io.", ""), v.clone()))
-                } else {
-                    None
-                }
-            }));
 
         Ok(config)
     }

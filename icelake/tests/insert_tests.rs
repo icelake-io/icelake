@@ -1,14 +1,6 @@
-use std::{collections::HashMap, fs::File, sync::Arc};
+use std::{collections::HashMap, fs::File};
 
-use icelake::{
-    catalog::{
-        Catalog, OperatorArgs, RestCatalog, StorageCatalog, OP_ARGS_ACCESS_KEY,
-        OP_ARGS_ACCESS_SECRET, OP_ARGS_BUCKET, OP_ARGS_ENDPOINT, OP_ARGS_REGION, OP_ARGS_ROOT,
-    },
-    transaction::Transaction,
-    Table,
-};
-use opendal::Scheme;
+use icelake::{catalog::load_catalog, transaction::Transaction, Table};
 
 mod utils;
 use tokio::runtime::Builder;
@@ -19,7 +11,7 @@ use libtest_mimic::{Arguments, Trial};
 pub struct TestFixture {
     docker_compose: DockerCompose,
     poetry: Poetry,
-    catalog: String,
+    catalog_configs: HashMap<String, String>,
 
     test_case: TestCase,
 }
@@ -29,7 +21,7 @@ impl TestFixture {
         docker_compose: DockerCompose,
         poetry: Poetry,
         toml_file: String,
-        catalog: String,
+        catalog_type: &str,
     ) -> Self {
         let toml_file_path = format!(
             "{}/../testdata/toml/{}",
@@ -37,11 +29,71 @@ impl TestFixture {
             toml_file
         );
         let test_case = TestCase::parse(File::open(toml_file_path).unwrap());
+
+        let catalog_configs = match catalog_type {
+            "storage" => HashMap::from([
+                ("iceberg.catalog.name", "demo".to_string()),
+                ("iceberg.catalog.type", "storage".to_string()),
+                (
+                    "iceberg.catalog.demo.warehouse",
+                    format!("s3://icebergdata/{}", &test_case.warehouse_root),
+                ),
+                ("iceberg.table.io.region", "us-east-1".to_string()),
+                (
+                    "iceberg.table.io.endpoint",
+                    format!(
+                        "http://{}:{}",
+                        docker_compose.get_container_ip("minio"),
+                        MINIO_DATA_PORT
+                    ),
+                ),
+                ("iceberg.table.io.bucket", "icebergdata".to_string()),
+                ("iceberg.table.io.root", test_case.warehouse_root.clone()),
+                ("iceberg.table.io.access_key_id", "admin".to_string()),
+                ("iceberg.table.io.secret_access_key", "password".to_string()),
+            ]),
+            "rest" => HashMap::from([
+                ("iceberg.catalog.name", "demo".to_string()),
+                ("iceberg.catalog.type", "rest".to_string()),
+                (
+                    "iceberg.catalog.demo.uri",
+                    format!(
+                        "http://{}:{REST_CATALOG_PORT}",
+                        docker_compose.get_container_ip("rest")
+                    ),
+                ),
+                ("iceberg.table.io.region", "us-east-1".to_string()),
+                (
+                    "iceberg.table.io.endpoint",
+                    format!(
+                        "http://{}:{}",
+                        docker_compose.get_container_ip("minio"),
+                        MINIO_DATA_PORT
+                    ),
+                ),
+                ("iceberg.table.io.bucket", "icebergdata".to_string()),
+                (
+                    "iceberg.table.io.root",
+                    format!(
+                        "{}/{}/{}",
+                        test_case.warehouse_root.clone(),
+                        test_case.table_name.namespace,
+                        test_case.table_name.name,
+                    ),
+                ),
+                ("iceberg.table.io.access_key_id", "admin".to_string()),
+                ("iceberg.table.io.secret_access_key", "password".to_string()),
+            ]),
+            _ => panic!("Unrecognized catalog type: {catalog_type}"),
+        };
         Self {
             docker_compose,
             poetry,
             test_case,
-            catalog,
+            catalog_configs: catalog_configs
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
         }
     }
 
@@ -88,75 +140,7 @@ impl TestFixture {
     }
 
     pub async fn create_icelake_table(&self) -> Table {
-        match self.catalog.as_str() {
-            "storage" => self.create_icelake_table_with_storage_catalog().await,
-            "rest" => self.create_icelake_table_with_rest_catalog().await,
-            _ => panic!("Unsupported catalog: {}", self.catalog),
-        }
-    }
-
-    async fn create_icelake_table_with_storage_catalog(&self) -> Table {
-        let op_args = OperatorArgs::builder(Scheme::S3)
-            .with_arg(OP_ARGS_ROOT, self.test_case.warehouse_root.clone())
-            .with_arg(OP_ARGS_BUCKET, "icebergdata")
-            .with_arg(
-                OP_ARGS_ENDPOINT,
-                format!(
-                    "http://{}:{}",
-                    self.docker_compose.get_container_ip("minio"),
-                    MINIO_DATA_PORT
-                ),
-            )
-            .with_arg(OP_ARGS_REGION, "us-east-1")
-            .with_arg(OP_ARGS_ACCESS_KEY, "admin")
-            .with_arg(OP_ARGS_ACCESS_SECRET, "password")
-            .build();
-
-        let catalog = Arc::new(StorageCatalog::open(op_args).await.unwrap());
-
-        catalog
-            .load_table(&self.test_case.table_name)
-            .await
-            .unwrap()
-    }
-
-    async fn create_icelake_table_with_rest_catalog(&self) -> Table {
-        let config: HashMap<String, String> = HashMap::from([
-            (
-                "uri",
-                format!(
-                    "http://{}:{REST_CATALOG_PORT}",
-                    self.docker_compose.get_container_ip("rest")
-                ),
-            ),
-            (
-                "table.io.root",
-                format!(
-                    "{}/{}/{}",
-                    self.test_case.warehouse_root.clone(),
-                    self.test_case.table_name.namespace,
-                    self.test_case.table_name.name,
-                ),
-            ),
-            ("table.io.bucket", "icebergdata".to_string()),
-            (
-                "table.io.endpoint",
-                format!(
-                    "http://{}:{}",
-                    self.docker_compose.get_container_ip("minio"),
-                    MINIO_DATA_PORT
-                ),
-            ),
-            ("table.io.region", "us-east-1".to_string()),
-            ("table.io.access_key_id", "admin".to_string()),
-            ("table.io.secret_access_key", "password".to_string()),
-        ])
-        .iter()
-        .map(|(k, v)| (k.to_string(), v.to_string()))
-        .collect();
-
-        let catalog = Arc::new(RestCatalog::new(&self.catalog, config).await.unwrap());
-
+        let catalog = load_catalog(&self.catalog_configs).await.unwrap();
         catalog
             .load_table(&self.test_case.table_name)
             .await
@@ -223,12 +207,7 @@ fn create_test_fixture(project_name: &str, toml_file: &str, catalog: &str) -> Te
 
     docker_compose.run();
 
-    TestFixture::new(
-        docker_compose,
-        poetry,
-        toml_file.to_string(),
-        catalog.to_string(),
-    )
+    TestFixture::new(docker_compose, poetry, toml_file.to_string(), catalog)
 }
 
 fn main() {
