@@ -1,42 +1,24 @@
-//! data_file is used create a data file writer to write data into files.
-
-use std::{collections::HashMap, sync::Arc};
+//! A module provide `DataFileWriter`.
+use std::sync::Arc;
 
 use crate::config::TableConfigRef;
-use crate::{
-    types::{DataFile, StructValue},
-    Result,
-};
+use crate::types::DataFileBuilder;
+use crate::Result;
 use arrow_array::RecordBatch;
 use arrow_schema::SchemaRef;
 use opendal::Operator;
-use parquet::file::properties::{WriterProperties, WriterVersion};
-use parquet::format::FileMetaData;
 
-use super::{
-    location_generator::DataFileLocationGenerator,
-    parquet::{ParquetWriter, ParquetWriterBuilder},
-};
+use super::location_generator::DataFileLocationGenerator;
+use super::rolling_writer::RollingWriter;
 
 /// A writer capable of splitting incoming data into multiple files within one spec/partition based on the target file size.
 /// When complete, it will return a list of `DataFile`.
+///
+/// # NOTE
+/// This writer will not gurantee the writen data is within one spec/partition. It is the caller's responsibility to make sure the data is within one spec/partition.
 pub struct DataFileWriter {
-    operator: Operator,
+    inner_writer: RollingWriter,
     table_location: String,
-    location_generator: Arc<DataFileLocationGenerator>,
-    arrow_schema: SchemaRef,
-
-    /// # TODO
-    ///
-    /// support to config `ParquetWriter` using `buffer_size` and writer properties.
-    current_writer: Option<ParquetWriter>,
-    current_row_num: usize,
-    /// `current_location` used to clean up the file when no row is written to it.
-    current_location: String,
-
-    result: Vec<DataFile>,
-
-    table_config: TableConfigRef,
 }
 
 impl DataFileWriter {
@@ -48,177 +30,37 @@ impl DataFileWriter {
         arrow_schema: SchemaRef,
         table_config: TableConfigRef,
     ) -> Result<Self> {
-        let mut writer = Self {
-            operator,
+        Ok(Self {
+            inner_writer: RollingWriter::try_new(
+                operator,
+                location_generator,
+                arrow_schema,
+                table_config,
+            )
+            .await?,
             table_location,
-            location_generator,
-            arrow_schema,
-            current_writer: None,
-            current_row_num: 0,
-            current_location: String::new(),
-            result: vec![],
-            table_config,
-        };
-        writer.open_new_writer().await?;
-        Ok(writer)
+        })
     }
 
     /// Write a record batch. The `DataFileWriter` will create a new file when the current row num is greater than `target_file_row_num`.
     pub async fn write(&mut self, batch: RecordBatch) -> Result<()> {
-        self.current_writer
-            .as_mut()
-            .expect("Should not be none here")
-            .write(&batch)
-            .await?;
-        self.current_row_num += batch.num_rows();
-
-        if self.should_split() {
-            self.close_current_writer().await?;
-            self.open_new_writer().await?;
-        }
+        self.inner_writer.write(batch).await?;
         Ok(())
     }
 
     /// Complte the write and return the list of `DataFile` as result.
-    pub async fn close(mut self) -> Result<Vec<DataFile>> {
-        self.close_current_writer().await?;
-        Ok(self.result)
-    }
-
-    fn should_split(&self) -> bool {
-        self.current_row_num % self.table_config.datafile_writer.rows_per_file == 0
-            && self.current_writer.as_ref().unwrap().get_written_size()
-                >= self.table_config.datafile_writer.target_file_size_in_bytes
-    }
-
-    async fn close_current_writer(&mut self) -> Result<()> {
-        let current_writer = self.current_writer.take().expect("Should not be none here");
-        let (meta_data, written_size) = current_writer.close().await?;
-
-        // Check if this file is empty
-        if meta_data.num_rows == 0 {
-            self.operator
-                .delete(&self.current_location)
-                .await
-                .expect("Delete file failed");
-            return Ok(());
-        }
-
-        let file = self.convert_meta_to_datafile(meta_data, written_size);
-        self.result.push(file);
-        Ok(())
-    }
-
-    async fn open_new_writer(&mut self) -> Result<()> {
-        // open new write must call when current writer is closed or inited.
-        assert!(self.current_writer.is_none());
-
-        let location = self.location_generator.generate_name();
-        let file_writer = self.operator.writer(&location).await?;
-        let current_writer = {
-            let mut props = WriterProperties::builder()
-                .set_writer_version(WriterVersion::PARQUET_1_0)
-                .set_bloom_filter_enabled(self.table_config.parquet_writer.enable_bloom_filter)
-                .set_compression(self.table_config.parquet_writer.compression)
-                .set_max_row_group_size(self.table_config.parquet_writer.max_row_group_size)
-                .set_write_batch_size(self.table_config.parquet_writer.write_batch_size)
-                .set_data_page_size_limit(self.table_config.parquet_writer.data_page_size);
-
-            if let Some(created_by) = self.table_config.parquet_writer.created_by.as_ref() {
-                props = props.set_created_by(created_by.to_string());
-            }
-
-            ParquetWriterBuilder::new(file_writer, self.arrow_schema.clone())
-                .with_properties(props.build())
-                .build()?
-        };
-        self.current_writer = Some(current_writer);
-        self.current_row_num = 0;
-        self.current_location = location;
-        Ok(())
-    }
-
-    /// # TODO
-    ///
-    /// This function may be refactor when we support more file format.
-    fn convert_meta_to_datafile(&self, meta_data: FileMetaData, written_size: u64) -> DataFile {
-        log::info!("{meta_data:?}");
-        let (column_sizes, value_counts, null_value_counts, distinct_counts) = {
-            // how to decide column id
-            let mut per_col_size: HashMap<i32, _> = HashMap::new();
-            let mut per_col_val_num: HashMap<i32, _> = HashMap::new();
-            let mut per_col_null_val_num: HashMap<i32, _> = HashMap::new();
-            let mut per_col_distinct_val_num: HashMap<i32, _> = HashMap::new();
-            meta_data.row_groups.iter().for_each(|group| {
-                group
-                    .columns
-                    .iter()
-                    .enumerate()
-                    .for_each(|(column_id, column_chunk)| {
-                        if let Some(column_chunk_metadata) = &column_chunk.meta_data {
-                            *per_col_size.entry(column_id as i32).or_insert(0) +=
-                                column_chunk_metadata.total_compressed_size;
-                            *per_col_val_num.entry(column_id as i32).or_insert(0) +=
-                                column_chunk_metadata.num_values;
-                            *per_col_null_val_num
-                                .entry(column_id as i32)
-                                .or_insert(0_i64) += column_chunk_metadata
-                                .statistics
-                                .as_ref()
-                                .map(|s| s.null_count)
-                                .unwrap_or(None)
-                                .unwrap_or(0);
-                            *per_col_distinct_val_num
-                                .entry(column_id as i32)
-                                .or_insert(0_i64) += column_chunk_metadata
-                                .statistics
-                                .as_ref()
-                                .map(|s| s.distinct_count)
-                                .unwrap_or(None)
-                                .unwrap_or(0);
-                        }
-                    })
-            });
-            (
-                per_col_size,
-                per_col_val_num,
-                per_col_null_val_num,
-                per_col_distinct_val_num,
-            )
-        };
-        DataFile {
-            content: crate::types::DataContentType::Data,
-            file_path: format!("{}/{}", &self.table_location, &self.current_location),
-            file_format: crate::types::DataFileFormat::Parquet,
-            // /// # NOTE
-            // ///
-            // /// DataFileWriter only response to write data. Partition should place by more high level writer.
-            partition: StructValue::default(),
-            record_count: meta_data.num_rows,
-            column_sizes: Some(column_sizes),
-            value_counts: Some(value_counts),
-            null_value_counts: Some(null_value_counts),
-            distinct_counts: Some(distinct_counts),
-            key_metadata: meta_data.footer_signing_key_metadata,
-            file_size_in_bytes: written_size as i64,
-            /// # TODO
-            ///
-            /// Following fields unsupported now:
-            /// - `file_size_in_bytes` can't get from `FileMetaData` now.
-            /// - `file_offset` in `FileMetaData` always be None now.
-            /// - `nan_value_counts` can't get from `FileMetaData` now.
-            // Currently arrow parquet writer doesn't fill row group offsets, we can use first column chunk offset for it.
-            split_offsets: Some(meta_data
-                .row_groups
-                .iter()
-                .filter_map(|group| group.file_offset)
-                .collect()),
-            nan_value_counts: None,
-            lower_bounds: None,
-            upper_bounds: None,
-            equality_ids: None,
-            sort_order_id: None,
-        }
+    pub async fn close(self) -> Result<Vec<DataFileBuilder>> {
+        Ok(self
+            .inner_writer
+            .close()
+            .await?
+            .into_iter()
+            .map(|builder| {
+                builder
+                    .with_content(crate::types::DataContentType::Data)
+                    .with_table_location(self.table_location.clone())
+            })
+            .collect())
     }
 }
 
@@ -278,7 +120,12 @@ mod test {
         writer.write(to_write.clone()).await?;
         writer.write(to_write.clone()).await?;
         writer.write(to_write.clone()).await?;
-        let data_files = writer.close().await?;
+        let data_files = writer
+            .close()
+            .await?
+            .into_iter()
+            .map(|f| f.build())
+            .collect::<Vec<_>>();
 
         let mut row_num = 0;
         for data_file in data_files {

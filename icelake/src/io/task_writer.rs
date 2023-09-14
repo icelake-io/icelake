@@ -167,7 +167,13 @@ impl UnpartitionedWriter {
     ///
     /// For unpartitioned table, the key of the result map is default partition key.
     pub async fn close(self) -> Result<Vec<DataFile>> {
-        self.data_file_writer.close().await
+        Ok(self
+            .data_file_writer
+            .close()
+            .await?
+            .into_iter()
+            .map(|x| x.build())
+            .collect())
     }
 }
 
@@ -420,12 +426,13 @@ impl PartitionedWriter {
                     unreachable!("Partition value should be struct value")
                 }
             };
-            let mut data_files = writer.close().await?;
+            let data_file_builders = writer.close().await?;
             // Update the partition value in data file.
-            data_files.iter_mut().for_each(|data_file| {
-                data_file.partition = value.clone();
-            });
-            res.extend(data_files);
+            res.extend(data_file_builders.into_iter().map(|data_file_builder| {
+                data_file_builder
+                    .with_partition_value(value.clone())
+                    .build()
+            }));
         }
         Ok(res)
     }
