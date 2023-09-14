@@ -16,6 +16,7 @@ pub struct PartitionSplitter {
     field_infos: Vec<PartitionFieldComputeInfo>,
     partition_value: HashMap<OwnedRow, StructValue>,
     partition_type: Any,
+    row_converter: RowConverter,
 }
 
 /// Internal info used to compute single partition field .
@@ -32,6 +33,11 @@ impl PartitionSplitter {
         schema: &SchemaRef,
         partition_type: Any,
     ) -> Result<Self> {
+        let row_converter = RowConverter::new(vec![SortField::new(
+            partition_type.clone().try_into()?,
+        )])
+        .map_err(|e| crate::error::Error::new(crate::ErrorKind::ArrowError, format!("{}", e)))?;
+
         let field_infos = partition_spec
             .fields
             .iter()
@@ -60,6 +66,7 @@ impl PartitionSplitter {
             field_infos,
             partition_value: HashMap::new(),
             partition_type,
+            row_converter,
         })
     }
 
@@ -119,11 +126,8 @@ impl PartitionSplitter {
                 .collect::<Result<Vec<_>>>()?,
         ));
 
-        let mut row_converter = RowConverter::new(vec![SortField::new(
-            value_array.data_type().clone(),
-        )])
-        .map_err(|e| crate::error::Error::new(crate::ErrorKind::ArrowError, format!("{}", e)))?;
-        let rows = row_converter
+        let rows = self
+            .row_converter
             .convert_columns(&[value_array.clone()])
             .map_err(|e| {
                 crate::error::Error::new(crate::ErrorKind::ArrowError, format!("{}", e))
