@@ -3,9 +3,9 @@ use std::fmt::Display;
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 
-use crate::catalog::{CatalogRef, OperatorArgs, OP_ARGS_BUCKET, OP_ARGS_ROOT};
+use crate::catalog::CatalogRef;
 use crate::error::Result;
-use opendal::{Operator, Scheme};
+use opendal::Operator;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
@@ -217,112 +217,6 @@ impl Table {
         self.catalog.clone()
     }
 
-    pub(crate) fn create_operator_args(path: &str) -> Result<OperatorArgs> {
-        if path.starts_with('/') {
-            // Local file path such as: /tmp
-            return Ok(OperatorArgs::builder(Scheme::Fs)
-                .with_arg(OP_ARGS_ROOT, path)
-                .build());
-        }
-
-        let url = Url::parse(path)?;
-
-        let op = match url.scheme() {
-            "file" => OperatorArgs::builder(Scheme::Fs)
-                .with_arg(OP_ARGS_ROOT, url.path().to_string())
-                .build(),
-            "s3" | "s3a" => OperatorArgs::builder(Scheme::S3)
-                .with_arg(OP_ARGS_ROOT, url.path().to_string())
-                .with_arg(
-                    OP_ARGS_BUCKET,
-                    url.host_str()
-                        .ok_or_else(|| {
-                            Error::new(
-                                ErrorKind::IcebergDataInvalid,
-                                format!("Invalid s3 url: {path}"),
-                            )
-                        })?
-                        .to_string(),
-                )
-                .build(),
-
-            _ => {
-                return Err(Error::new(
-                    ErrorKind::IcebergFeatureUnsupported,
-                    format!("Unsupported warehouse path: {path}"),
-                ));
-            }
-        };
-
-        Ok(op)
-    }
-    /// Create a new table via the given operator.
-    // pub fn new(op: Operator) -> Self {
-    //     Self::with_config(op, Arc::new(TableConfig::default()))
-    // }
-
-    /// Creates a new table with operator and config.
-    // pub fn with_config(op: Operator, config: TableConfigRef) -> Self {
-    //     Self {
-    //         op,
-
-    //         table_metadata: HashMap::new(),
-
-    //         current_version: 0,
-    //         current_location: None,
-    //         task_id: AtomicUsize::new(0),
-    //         current_table_version: 0,
-    //         table_config: config,
-    //     }
-    // }
-
-    /// Currently this api is used to construct table from rest catalog. Don't used it in other places.
-    /// We will remove it after refactoring.
-    // pub(crate) fn read_only_table(table_metadata: TableMetadata, metadata_location: &str) -> Self {
-    //     let op = {
-    //         let mut fs = Fs::default();
-    //         fs.root("/tmp");
-    //         Operator::new(fs).unwrap().finish()
-    //     };
-    //     let mut table = Self::new(op);
-    //     table.current_version = table_metadata.last_updated_ms;
-    //     table.current_location = Some(metadata_location.to_string());
-    //     table
-    //         .table_metadata
-    //         .insert(table_metadata.last_updated_ms, table_metadata);
-
-    //     table
-    // }
-
-    /// Open an iceberg table by uri
-    // pub async fn open(uri: &str) -> Result<Table> {
-    //     // Todo(xudong): inferring storage types by uri
-    //     let mut builder = Fs::default();
-    //     builder.root(uri);
-
-    //     let op = Operator::new(builder)?
-    //         .layer(LoggingLayer::default())
-    //         .finish();
-
-    //     let mut table = Table::new(op);
-    //     table.load().await?;
-    //     Ok(table)
-    // }
-
-    /// Open an iceberg table by operator
-    // pub async fn open_with_op(op: Operator) -> Result<Table> {
-    //     let mut table = Table::new(op);
-    //     table.load().await?;
-    //     Ok(table)
-    // }
-
-    /// Open an iceberg table with operator and config.
-    // pub async fn open_with_config(op: Operator, config: TableConfigRef) -> Result<Self> {
-    //     let mut table = Table::with_config(op, config);
-    //     table.load().await?;
-    //     Ok(table)
-    // }
-
     /// Fetch current table metadata.
     pub fn current_table_metadata(&self) -> &types::TableMetadata {
         assert!(
@@ -503,35 +397,6 @@ mod tests {
 
         Ok(())
     }
-
-    // #[tokio::test]
-    // async fn test_table_read_table_metadata() -> Result<()> {
-    //     let path = format!("{}/../testdata/simple_table", env!("CARGO_MANIFEST_DIR"));
-
-    //     let mut builder = Fs::default();
-    //     builder.root(&path);
-
-    //     let op = Operator::new(builder)?
-    //         .layer(LoggingLayer::default())
-    //         .finish();
-
-    //     let table = Table::new(op);
-
-    //     let table_v1 = table
-    //         .read_table_metadata("metadata/v1.metadata.json")
-    //         .await?;
-
-    //     assert_eq!(table_v1.format_version, types::TableFormatVersion::V1);
-    //     assert_eq!(table_v1.last_updated_ms, 1686911664577);
-
-    //     let table_v2 = table
-    //         .read_table_metadata("metadata/v2.metadata.json")
-    //         .await?;
-    //     assert_eq!(table_v2.format_version, types::TableFormatVersion::V1);
-    //     assert_eq!(table_v2.last_updated_ms, 1686911671713);
-
-    //     Ok(())
-    // }
 
     #[tokio::test]
     async fn test_table_load() -> Result<()> {

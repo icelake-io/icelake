@@ -1,6 +1,6 @@
 //! This module contains file system catalog for icelake.
 
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
 
@@ -12,25 +12,33 @@ use uuid::Uuid;
 
 use crate::{
     types::{self, serialize_table_meta, TableMetadata},
-    Error, Namespace, Table, TableIdentifier, METADATA_FILE_EXTENSION, META_ROOT_PATH,
+    Error, ErrorKind, Namespace, Table, TableIdentifier, METADATA_FILE_EXTENSION, META_ROOT_PATH,
     VERSIONED_TABLE_METADATA_FILE_PATTERN, VERSION_HINT_FILENAME,
 };
 
-use super::{Catalog, OperatorArgs, UpdateTable};
+use super::{
+    load_catalog, BaseCatalogConfig, Catalog, OperatorArgs, UpdateTable, CATALOG_NAME, CATALOG_TYPE,
+};
+use crate::catalog::CATALOG_CONFIG_PREFIX;
 use crate::error::Result;
+
+/// Configuration for storage config.
+pub struct StorageCatalogConfig {
+    warehouse: String,
+    base_catalog_config: BaseCatalogConfig,
+    op_args: OperatorArgs,
+}
 
 /// File system catalog.
 pub struct StorageCatalog {
-    name: String,
-    root_uri: String,
-    op_args: OperatorArgs,
     op: Operator,
+    config: StorageCatalogConfig,
 }
 
 #[async_trait]
 impl Catalog for StorageCatalog {
     fn name(&self) -> &str {
-        &self.name
+        &self.config.base_catalog_config.name
     }
 
     async fn list_tables(self: Arc<Self>, ns: &Namespace) -> Result<Vec<TableIdentifier>> {
@@ -134,6 +142,35 @@ impl Catalog for StorageCatalog {
 }
 
 impl StorageCatalog {
+    /// Creates a new storage catalog.
+    pub async fn new(
+        base_config: BaseCatalogConfig,
+        others: &HashMap<String, String>,
+    ) -> Result<Self> {
+        let warehouse = others
+            .get(format!("{CATALOG_CONFIG_PREFIX}{}.warehouse", base_config.name).as_str())
+            .ok_or_else(|| {
+                Error::new(
+                    ErrorKind::IcebergDataInvalid,
+                    "warehouse not found for storage catalog",
+                )
+            })?;
+
+        let op_args = OperatorArgs::builder_from_path(warehouse)?
+            .with_args(base_config.table_io_configs.iter())
+            .build();
+
+        let op = Operator::try_from(&op_args)?;
+
+        let config = StorageCatalogConfig {
+            warehouse: warehouse.to_string(),
+            base_catalog_config: base_config,
+            op_args,
+        };
+
+        Ok(StorageCatalog { op, config })
+    }
+
     /// Load table from path.
     pub async fn load_table(path: &str) -> Result<Table> {
         if let Some((warehouse_path, table_name)) = path.rsplit_once('/') {
@@ -148,15 +185,16 @@ impl StorageCatalog {
 
     /// Load table in warehouse.
     pub async fn load_table_in(warehouse_path: &str, table_name: &str) -> Result<Table> {
-        let op_args = Table::create_operator_args(warehouse_path)?;
-        let op = Operator::try_from(&op_args)?;
+        let configs = HashMap::from([
+            (CATALOG_NAME.to_string(), "demo".to_string()),
+            (CATALOG_TYPE.to_string(), "storage".to_string()),
+            (
+                format!("{CATALOG_CONFIG_PREFIX}demo.warehouse"),
+                warehouse_path.to_string(),
+            ),
+        ]);
 
-        let fs_catalog = Arc::new(StorageCatalog {
-            name: "fs catalog".to_string(),
-            root_uri: warehouse_path.to_string(),
-            op_args,
-            op,
-        });
+        let fs_catalog = load_catalog(&configs).await?;
 
         fs_catalog
             .load_table(&TableIdentifier::new(vec![table_name])?)
@@ -164,16 +202,16 @@ impl StorageCatalog {
     }
 
     /// Create filesystem catalog from operator args.
-    pub async fn open(op_args: OperatorArgs) -> Result<StorageCatalog> {
-        let op = Operator::try_from(&op_args)?;
+    // pub async fn open(op_args: OperatorArgs) -> Result<StorageCatalog> {
+    //     let op = Operator::try_from(&op_args)?;
 
-        Ok(StorageCatalog {
-            name: "fs catalog".to_string(),
-            root_uri: op_args.url()?,
-            op_args,
-            op,
-        })
-    }
+    //     Ok(StorageCatalog {
+    //         name: "fs catalog".to_string(),
+    //         root_uri: op_args.url()?,
+    //         op_args,
+    //         op,
+    //     })
+    // }
 
     async fn is_table_dir(&self, table_name: &TableIdentifier) -> Result<bool> {
         let table_metadata_dir = format!("{}/{}", table_name.to_path()?, META_ROOT_PATH);
@@ -346,7 +384,7 @@ impl StorageCatalog {
     }
 
     fn table_operator(&self, table_path: &str) -> Result<Operator> {
-        Operator::try_from(&self.op_args.sub_dir(table_path)?)
+        Operator::try_from(&self.config.op_args.sub_dir(table_path)?)
     }
 }
 

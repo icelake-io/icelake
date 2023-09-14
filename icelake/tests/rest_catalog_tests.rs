@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use icelake::{
-    catalog::{CatalogRef, RestCatalog},
+    catalog::{load_catalog, CatalogRef},
     types::{Any, Field, Primitive, Schema, Struct, TableFormatVersion},
     Namespace, TableIdentifier,
 };
@@ -28,23 +28,35 @@ fn create_test_fixture(project_name: &str) -> TestFixture2 {
 
 impl TestFixture2 {
     async fn get_rest_catalog(&self) -> CatalogRef {
-        let config: HashMap<String, String> = HashMap::from([
+        let configs: HashMap<String, String> = HashMap::from([
+            ("iceberg.catalog.name", "demo".to_string()),
+            ("iceberg.catalog.type", "rest".to_string()),
             (
-                "uri",
+                "iceberg.catalog.demo.uri",
                 format!(
                     "http://{}:{REST_CATALOG_PORT}",
                     self.docker_compose.get_container_ip("rest")
                 ),
             ),
-            ("table.io.root", "demo".to_string()),
-            ("table.io.bucket", "icebergdata".to_string()),
-            ("table.io.region", "us-east-1".to_string()),
+            ("iceberg.table.io.region", "us-east-1".to_string()),
+            (
+                "iceberg.table.io.endpoint",
+                format!(
+                    "http://{}:{}",
+                    self.docker_compose.get_container_ip("minio"),
+                    MINIO_DATA_PORT
+                ),
+            ),
+            ("iceberg.table.io.bucket", "icebergdata".to_string()),
+            ("iceberg.table.io.root", "demo".to_string()),
+            ("iceberg.table.io.access_key_id", "admin".to_string()),
+            ("iceberg.table.io.secret_access_key", "password".to_string()),
         ])
-        .iter()
+        .into_iter()
         .map(|(k, v)| (k.to_string(), v.to_string()))
         .collect();
 
-        Arc::new(RestCatalog::new("test", config).await.unwrap())
+        load_catalog(&configs).await.unwrap()
     }
 }
 
