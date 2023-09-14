@@ -292,8 +292,7 @@ impl Endpoint {
             &ns.encode_in_url()?,
             "tables",
         ]
-        .join("/")
-        .to_string())
+        .join("/"))
     }
 
     fn table(&self, table: &TableIdentifier) -> Result<String> {
@@ -305,8 +304,7 @@ impl Endpoint {
             "tables",
             encode(&table.name).as_ref(),
         ]
-        .join("/")
-        .to_string())
+        .join("/"))
     }
 }
 

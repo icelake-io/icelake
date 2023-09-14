@@ -390,18 +390,12 @@ impl StorageCatalog {
 
 impl Namespace {
     fn to_path(&self) -> Result<String> {
-        Ok(self.levels.iter().join("/").to_string())
+        Ok(self.levels.iter().join("/"))
     }
 }
 
 impl TableIdentifier {
     fn to_path(&self) -> Result<String> {
-        Ok(self
-            .namespace
-            .levels
-            .iter()
-            .chain([&self.name])
-            .join("/")
-            .to_string())
+        Ok(self.namespace.levels.iter().chain([&self.name]).join("/"))
     }
 }

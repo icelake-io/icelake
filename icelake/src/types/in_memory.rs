@@ -12,6 +12,7 @@ use chrono::Utc;
 use chrono::{DateTime, Datelike};
 use opendal::Operator;
 use ordered_float::OrderedFloat;
+use parquet::format::FileMetaData;
 use rust_decimal::Decimal;
 use serde::ser::SerializeMap;
 use serde::ser::SerializeStruct;
@@ -1371,6 +1372,137 @@ impl TryFrom<u8> for ManifestStatus {
     }
 }
 
+/// This type used to build DataFile.
+pub struct DataFileBuilder {
+    meta_data: FileMetaData,
+    file_location: String,
+    written_size: u64,
+    table_location: Option<String>,
+    content: Option<DataContentType>,
+    partition_value: Option<StructValue>,
+}
+
+impl DataFileBuilder {
+    /// Create a new `DataFileBuilder`.
+    pub fn new(meta_data: FileMetaData, file_location: String, written_size: u64) -> Self {
+        Self {
+            meta_data,
+            file_location,
+            written_size,
+            table_location: None,
+            content: None,
+            partition_value: None,
+        }
+    }
+
+    /// Set the content type of this data file.
+    /// This function must be call before build.
+    pub fn with_content(self, content: DataContentType) -> Self {
+        Self {
+            content: Some(content),
+            ..self
+        }
+    }
+
+    /// Set the table location of this data file.
+    /// This function must be call before build.
+    pub fn with_table_location(self, location: String) -> Self {
+        Self {
+            table_location: Some(location),
+            ..self
+        }
+    }
+
+    /// Set the partition value of this data file.
+    pub fn with_partition_value(self, value: StructValue) -> Self {
+        Self {
+            partition_value: Some(value),
+            ..self
+        }
+    }
+
+    /// Build the `DataFile`.
+    pub fn build(self) -> DataFile {
+        log::info!("{:?}", self.meta_data);
+        let (column_sizes, value_counts, null_value_counts, distinct_counts) = {
+            // how to decide column id
+            let mut per_col_size: HashMap<i32, _> = HashMap::new();
+            let mut per_col_val_num: HashMap<i32, _> = HashMap::new();
+            let mut per_col_null_val_num: HashMap<i32, _> = HashMap::new();
+            let mut per_col_distinct_val_num: HashMap<i32, _> = HashMap::new();
+            self.meta_data.row_groups.iter().for_each(|group| {
+                group
+                    .columns
+                    .iter()
+                    .enumerate()
+                    .for_each(|(column_id, column_chunk)| {
+                        if let Some(column_chunk_metadata) = &column_chunk.meta_data {
+                            *per_col_size.entry(column_id as i32).or_insert(0) +=
+                                column_chunk_metadata.total_compressed_size;
+                            *per_col_val_num.entry(column_id as i32).or_insert(0) +=
+                                column_chunk_metadata.num_values;
+                            *per_col_null_val_num
+                                .entry(column_id as i32)
+                                .or_insert(0_i64) += column_chunk_metadata
+                                .statistics
+                                .as_ref()
+                                .map(|s| s.null_count)
+                                .unwrap_or(None)
+                                .unwrap_or(0);
+                            *per_col_distinct_val_num
+                                .entry(column_id as i32)
+                                .or_insert(0_i64) += column_chunk_metadata
+                                .statistics
+                                .as_ref()
+                                .map(|s| s.distinct_count)
+                                .unwrap_or(None)
+                                .unwrap_or(0);
+                        }
+                    })
+            });
+            (
+                per_col_size,
+                per_col_val_num,
+                per_col_null_val_num,
+                per_col_distinct_val_num,
+            )
+        };
+        DataFile {
+            content: self.content.expect("content should be set"),
+            file_path: format!("{}/{}", self.table_location.expect("table_location should be set"), self.file_location),
+            file_format: crate::types::DataFileFormat::Parquet,
+            // /// # NOTE
+            // ///
+            // /// DataFileWriter only response to write data. Partition should place by more high level writer.
+            partition: self.partition_value.unwrap_or_default(),
+            record_count: self.meta_data.num_rows,
+            column_sizes: Some(column_sizes),
+            value_counts: Some(value_counts),
+            null_value_counts: Some(null_value_counts),
+            distinct_counts: Some(distinct_counts),
+            key_metadata: self.meta_data.footer_signing_key_metadata,
+            file_size_in_bytes: self.written_size as i64,
+            /// # TODO
+            ///
+            /// Following fields unsupported now:
+            /// - `file_size_in_bytes` can't get from `FileMetaData` now.
+            /// - `file_offset` in `FileMetaData` always be None now.
+            /// - `nan_value_counts` can't get from `FileMetaData` now.
+            // Currently arrow parquet writer doesn't fill row group offsets, we can use first column chunk offset for it.
+            split_offsets: Some(self.meta_data
+                .row_groups
+                .iter()
+                .filter_map(|group| group.file_offset)
+                .collect()),
+            nan_value_counts: None,
+            lower_bounds: None,
+            upper_bounds: None,
+            equality_ids: None,
+            sort_order_id: None,
+        }
+    }
+}
+
 /// Data file carries data file path, partition tuple, metrics, …
 #[derive(Debug, PartialEq, Clone)]
 pub struct DataFile {
@@ -1644,6 +1776,7 @@ impl DataFile {
             .with_comment("Partition data tuple, schema based on the partition spec")
     }
 
+    #[cfg(test)]
     pub(crate) fn new(
         content: DataContentType,
         file_path: impl Into<String>,
