@@ -15,3 +15,6 @@ mod to_avro;
 
 mod transform;
 pub use transform::*;
+
+mod partition_splitter;
+pub use partition_splitter::*;

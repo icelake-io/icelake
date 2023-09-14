@@ -53,7 +53,7 @@ impl TestFixture2 {
             ("iceberg.table.io.secret_access_key", "password".to_string()),
         ])
         .into_iter()
-        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .map(|(k, v)| (k.to_string(), v))
         .collect();
 
         load_catalog(&configs).await.unwrap()
