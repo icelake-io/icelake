@@ -1,12 +1,9 @@
-use std::{
-    collections::{hash_map::Entry, HashMap},
-    sync::Arc,
-};
+use std::{collections::HashMap, sync::Arc};
 
 use super::{create_transform_function, Any, BoxedTransformFunction, PartitionSpec};
-use crate::types::{struct_to_anyvalue_array_with_type, AnyValue, StructValue};
 use crate::{Error, ErrorKind, Result};
 use arrow_array::{Array, ArrayRef, BooleanArray, RecordBatch, StructArray};
+use arrow_cast::cast;
 use arrow_row::{OwnedRow, RowConverter, SortField};
 use arrow_schema::{DataType, FieldRef, Fields, SchemaRef};
 use arrow_select::filter::filter_record_batch;
@@ -14,7 +11,6 @@ use arrow_select::filter::filter_record_batch;
 /// `PartitionSplitter` is used to splite a given record according partition value.
 pub struct PartitionSplitter {
     field_infos: Vec<PartitionFieldComputeInfo>,
-    partition_value: HashMap<OwnedRow, StructValue>,
     partition_type: Any,
     row_converter: RowConverter,
 }
@@ -82,7 +78,6 @@ impl PartitionSplitter {
         };
         Ok(Self {
             field_infos,
-            partition_value: HashMap::new(),
             partition_type,
             row_converter,
         })
@@ -132,7 +127,24 @@ impl PartitionSplitter {
                          transform,
                      }| {
                         let array = Self::get_column_by_index_vec(batch, index_vec);
-                        let array = transform.transform(array)?;
+                        let mut array = transform.transform(array)?;
+                        // Try avoid different timestamp time zone.
+                        if array.data_type() != field.data_type() {
+                            if let DataType::Timestamp(unit, _) = array.data_type() {
+                                if let DataType::Timestamp(field_unit, _) = field.data_type() {
+                                    if unit == field_unit {
+                                        array =
+                                            cast(&transform.transform(array)?, field.data_type())
+                                                .map_err(|e| {
+                                                    crate::error::Error::new(
+                                                        crate::ErrorKind::ArrowError,
+                                                        format!("{e}"),
+                                                    )
+                                                })?
+                                    }
+                                }
+                            }
+                        }
                         Ok((field.clone(), array))
                     },
                 )
@@ -141,7 +153,7 @@ impl PartitionSplitter {
 
         let rows = self
             .row_converter
-            .convert_columns(&[value_array.clone()])
+            .convert_columns(&[value_array])
             .map_err(|e| {
                 crate::error::Error::new(crate::ErrorKind::ArrowError, format!("{}", e))
             })?;
@@ -151,30 +163,6 @@ impl PartitionSplitter {
         rows.into_iter().enumerate().for_each(|(row_id, row)| {
             group_ids.entry(row.owned()).or_insert(vec![]).push(row_id);
         });
-
-        // Create the partition group if not exist.
-        for (row, row_ids) in group_ids.iter() {
-            let row_id = row_ids[0];
-            if let Entry::Vacant(entry) = self.partition_value.entry(row.clone()) {
-                let partition_array = value_array.slice(row_id, 1);
-                let mut array = struct_to_anyvalue_array_with_type(
-                    &partition_array,
-                    self.partition_type.clone(),
-                )?;
-                // We guarantee the partition array only has one value.
-                assert!(array.len() == 1);
-                let value = array
-                    .pop()
-                    .unwrap()
-                    .expect("Partition Value is alway valid");
-                // cast to StructValue
-                if let AnyValue::Struct(v) = value {
-                    entry.insert(v);
-                } else {
-                    unreachable!("Partition value should be struct value")
-                }
-            }
-        }
 
         // Partition the batch with same partition partition_values
         let mut partition_batches = HashMap::new();
@@ -213,8 +201,9 @@ impl PartitionSplitter {
         array
     }
 
-    /// Get the partition value.
-    pub fn partition_values(self) -> HashMap<OwnedRow, StructValue> {
-        self.partition_value
+    /// Close self and return the row converter. It can be used to convert `OwnedRow` to
+    /// `StructArray`
+    pub fn extract_row_converter(self) -> RowConverter {
+        self.row_converter
     }
 }

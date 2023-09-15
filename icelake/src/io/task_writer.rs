@@ -6,11 +6,14 @@ use super::location_generator;
 use crate::config::TableConfigRef;
 use crate::error::Result;
 use crate::io::location_generator::DataFileLocationGenerator;
+use crate::types::struct_to_anyvalue_array_with_type;
 use crate::types::Any;
+use crate::types::AnyValue;
 use crate::types::PartitionSpec;
 use crate::types::PartitionSplitter;
 use crate::types::{DataFile, TableMetadata};
 use arrow_array::RecordBatch;
+use arrow_array::StructArray;
 use arrow_row::OwnedRow;
 use arrow_schema::SchemaRef as ArrowSchemaRef;
 use opendal::Operator;
@@ -176,6 +179,7 @@ pub struct PartitionedWriter {
     location_generator: Arc<DataFileLocationGenerator>,
     table_config: TableConfigRef,
     schema: ArrowSchemaRef,
+    partition_type: Any,
 
     writers: HashMap<OwnedRow, DataFileWriter>,
     partition_splitter: PartitionSplitter,
@@ -198,7 +202,12 @@ impl PartitionedWriter {
             location_generator: location_generator.into(),
             table_config,
             writers: HashMap::new(),
-            partition_splitter: PartitionSplitter::new(partition_spec, &schema, partition_type)?,
+            partition_splitter: PartitionSplitter::new(
+                partition_spec,
+                &schema,
+                partition_type.clone(),
+            )?,
+            partition_type,
             schema,
         })
     }
@@ -236,15 +245,38 @@ impl PartitionedWriter {
     /// Complete the write and return the data files.
     pub async fn close(self) -> Result<Vec<DataFile>> {
         let mut res = vec![];
-        let mut partition_values = self.partition_splitter.partition_values();
+        let row_converter = self.partition_splitter.extract_row_converter();
         for (row, writer) in self.writers.into_iter() {
             let data_file_builders = writer.close().await?;
-            // Update the partition value in data file.
-            res.extend(data_file_builders.into_iter().map(|data_file_builder| {
-                data_file_builder
-                    .with_partition_value(partition_values.remove(&row).unwrap())
-                    .build()
-            }));
+
+            let array = {
+                let mut arrays = row_converter
+                    .convert_rows([row.row()].into_iter())
+                    .map_err(|e| {
+                        crate::error::Error::new(crate::ErrorKind::ArrowError, format!("{e}"))
+                    })?;
+                assert!(arrays.len() == 1);
+                arrays.pop().unwrap()
+            };
+            let struct_array = array.as_any().downcast_ref::<StructArray>().unwrap();
+
+            let mut value_array =
+                struct_to_anyvalue_array_with_type(struct_array, self.partition_type.clone())?;
+            // We guarantee the partition array only has one value.
+            assert!(value_array.len() == 1);
+            let value = value_array
+                .pop()
+                .unwrap()
+                .expect("Partition Value is alway valid");
+
+            if let AnyValue::Struct(v) = value {
+                // Update the partition value in data file.
+                res.extend(data_file_builders.into_iter().map(|data_file_builder| {
+                    data_file_builder.with_partition_value(v.clone()).build()
+                }));
+            } else {
+                unreachable!("Partition value should be struct value")
+            }
         }
         Ok(res)
     }
