@@ -8,6 +8,8 @@ pub use utils::*;
 
 use libtest_mimic::{Arguments, Trial};
 
+const TIMES: usize = 100;
+
 pub struct TestFixture {
     docker_compose: DockerCompose,
     poetry: Poetry,
@@ -114,17 +116,17 @@ impl TestFixture {
         )
     }
 
-    fn check_table_with_spark(&self) {
+    fn check_table_with_spark(&self, num: usize) {
         for check_sqls in &self.test_case.query_sql {
             self.poetry.run_file(
-                "check.py",
+                "check_result.py",
                 [
                     "-s",
                     &self.spark_connect_url(),
-                    "-q1",
-                    check_sqls[0].as_str(),
-                    "-q2",
-                    check_sqls[1].as_str(),
+                    "-q",
+                    "select count(*) from s1.t1",
+                    "-n",
+                    &format!("{num}"),
                 ],
                 format!("Check {}", check_sqls[0].as_str()),
             )
@@ -154,33 +156,58 @@ impl TestFixture {
             table.current_table_metadata().location
         );
 
-        let records = &self.test_case.write_date;
+        let mut results = Vec::with_capacity(TIMES);
+        for i in 0..TIMES {
+            log::debug!("Start inserting into icelake table {i} times.");
+            let records = &self.test_case.write_date;
 
-        let mut task_writer = table.task_writer().await.unwrap();
+            let mut task_writer = table.task_writer().await.unwrap();
 
-        for record_batch in records {
-            log::info!(
-                "Insert record batch with {} records using icelake.",
-                record_batch.num_rows()
-            );
-            task_writer.write(record_batch).await.unwrap();
+            for record_batch in records {
+                log::info!(
+                    "Insert record batch with {} records using icelake.",
+                    record_batch.num_rows()
+                );
+                task_writer.write(record_batch).await.unwrap();
+            }
+
+            let result = task_writer.close().await.unwrap();
+            log::debug!("Insert {} data files: {:?}", result.len(), result);
+            results.push(result);
+            log::debug!("Finished inserting into icelake table {i} times.");
         }
-
-        let result = task_writer.close().await.unwrap();
-        log::debug!("Insert {} data files: {:?}", result.len(), result);
 
         // Commit table transaction
         {
             let mut tx = Transaction::new(&mut table);
-            tx.append_file(result);
+            tx.append_file(results.into_iter().flatten());
             tx.commit().await.unwrap();
         }
+    }
+
+    fn call_spark_to_compact_table_written_with_icelake(&mut self) {
+        let args = vec![
+            "-s".to_string(),
+            self.spark_connect_url(),
+            "--sql".to_string(),
+            "CALL demo.system.rewrite_data_files(table => 's1.t1', options => map('target-file-size-bytes', '104857600'))".to_string(),
+        ];
+
+        self.poetry.run_file(
+            "init.py",
+            args,
+            format!("Init {} with spark", self.test_case.table_name),
+        )
     }
 
     async fn run(mut self) {
         self.init_table_with_spark();
         self.write_data_with_icelake().await;
-        self.check_table_with_spark();
+        self.call_spark_to_compact_table_written_with_icelake();
+        self.check_table_with_spark(5 * TIMES);
+        self.write_data_with_icelake().await;
+        self.call_spark_to_compact_table_written_with_icelake();
+        self.check_table_with_spark(5 * TIMES * 2);
     }
 
     pub fn block_run(self) {
@@ -215,22 +242,13 @@ fn main() {
     let args = Arguments::from_args();
 
     let catalogs = vec!["storage", "rest"];
-    let test_cases = vec![
-        "no_partition_test.toml",
-        // "partition_identity_test.toml",
-        // "partition_year_test.toml",
-        // "partition_month_test.toml",
-        // "partition_day_test.toml",
-        // "partition_hour_test.toml",
-        // "partition_hash_test.toml",
-        // "partition_truncate_test.toml",
-    ];
+    let test_cases = vec!["partition_month_test.toml"];
 
     let mut tests = Vec::with_capacity(16);
     for catalog in &catalogs {
         for test_case in &test_cases {
             let test_name = &normalize_test_name(format!(
-                "{}_test_insert_{test_case}_with_{catalog}_catalog",
+                "{}_test_compact_insert_{test_case}_with_{catalog}_catalog",
                 module_path!()
             ));
 
