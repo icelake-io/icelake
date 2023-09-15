@@ -18,6 +18,7 @@ arrow-row = { version = ">=46" }
 arrow-buffer = { version = ">=46" }
 arrow-arith = { version = ">=46" }
 arrow-csv = { version = ">=46" }
+arrow-cast = { version = ">=46" }
 bytes = "1"
 opendal = ">=0.37, <0.40"
 uuid = { version = "1", features = ["v4"] }
