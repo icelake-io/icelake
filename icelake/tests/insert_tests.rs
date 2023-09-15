@@ -217,13 +217,13 @@ fn main() {
     let catalogs = vec!["storage", "rest"];
     let test_cases = vec![
         "no_partition_test.toml",
-        // "partition_identity_test.toml",
-        // "partition_year_test.toml",
-        // "partition_month_test.toml",
-        // "partition_day_test.toml",
-        // "partition_hour_test.toml",
-        // "partition_hash_test.toml",
-        // "partition_truncate_test.toml",
+        "partition_identity_test.toml",
+        "partition_year_test.toml",
+        "partition_month_test.toml",
+        "partition_day_test.toml",
+        "partition_hour_test.toml",
+        "partition_hash_test.toml",
+        "partition_truncate_test.toml",
     ];
 
     let mut tests = Vec::with_capacity(16);
