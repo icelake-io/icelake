@@ -8,7 +8,7 @@ use crate::types::{struct_to_anyvalue_array_with_type, AnyValue, StructValue};
 use crate::{Error, ErrorKind, Result};
 use arrow_array::{Array, ArrayRef, BooleanArray, RecordBatch, StructArray};
 use arrow_row::{OwnedRow, RowConverter, SortField};
-use arrow_schema::{DataType, Field, Fields, SchemaRef};
+use arrow_schema::{DataType, FieldRef, Fields, SchemaRef};
 use arrow_select::filter::filter_record_batch;
 
 /// `PartitionSplitter` is used to splite a given record according partition value.
@@ -22,7 +22,7 @@ pub struct PartitionSplitter {
 /// Internal info used to compute single partition field .
 struct PartitionFieldComputeInfo {
     pub index_vec: Vec<usize>,
-    pub field_name: String,
+    pub field: FieldRef,
     pub transform: BoxedTransformFunction,
 }
 
@@ -33,35 +33,53 @@ impl PartitionSplitter {
         schema: &SchemaRef,
         partition_type: Any,
     ) -> Result<Self> {
-        let row_converter = RowConverter::new(vec![SortField::new(
-            partition_type.clone().try_into()?,
-        )])
-        .map_err(|e| crate::error::Error::new(crate::ErrorKind::ArrowError, format!("{}", e)))?;
+        let arrow_partition_type: DataType = partition_type.clone().try_into()?;
+        let row_converter = RowConverter::new(vec![SortField::new(arrow_partition_type.clone())])
+            .map_err(|e| {
+            crate::error::Error::new(crate::ErrorKind::ArrowError, format!("{}", e))
+        })?;
 
-        let field_infos = partition_spec
-            .fields
-            .iter()
-            .map(|field| {
-                let transform = create_transform_function(&field.transform)?;
-                let mut index_vec = vec![];
-                Self::fetch_column_index(
-                    schema.fields(),
-                    &mut index_vec,
-                    field.source_column_id as i64,
-                );
-                if index_vec.is_empty() {
-                    return Err(Error::new(
-                        ErrorKind::IcebergDataInvalid,
-                        format!("Can't find source column id: {}", field.source_column_id),
-                    ));
-                }
-                Ok(PartitionFieldComputeInfo {
-                    index_vec,
-                    field_name: field.name.clone(),
-                    transform,
+        let field_infos = if let DataType::Struct(struct_type) = arrow_partition_type {
+            if struct_type.len() != partition_spec.fields.len() {
+                return Err(Error::new(
+                    ErrorKind::IcebergDataInvalid,
+                    format!(
+                        "Partition spec fields length {} not match partition type fields length {}",
+                        partition_spec.fields.len(),
+                        struct_type.len()
+                    ),
+                ));
+            }
+            struct_type
+                .iter()
+                .zip(partition_spec.fields.iter())
+                .map(|(arrow_field, spec_field)| {
+                    let transform = create_transform_function(&spec_field.transform)?;
+                    let mut index_vec = vec![];
+                    Self::fetch_column_index(
+                        schema.fields(),
+                        &mut index_vec,
+                        spec_field.source_column_id as i64,
+                    );
+                    if index_vec.is_empty() {
+                        return Err(Error::new(
+                            ErrorKind::IcebergDataInvalid,
+                            format!(
+                                "Can't find source column id: {}",
+                                spec_field.source_column_id
+                            ),
+                        ));
+                    }
+                    Ok(PartitionFieldComputeInfo {
+                        index_vec,
+                        field: arrow_field.clone(),
+                        transform,
+                    })
                 })
-            })
-            .collect::<Result<Vec<_>>>()?;
+                .collect::<Result<Vec<_>>>()?
+        } else {
+            unreachable!("Partition type should be struct type")
+        };
         Ok(Self {
             field_infos,
             partition_value: HashMap::new(),
@@ -110,17 +128,12 @@ impl PartitionSplitter {
                 .map(
                     |PartitionFieldComputeInfo {
                          index_vec,
-                         field_name,
+                         field,
                          transform,
                      }| {
                         let array = Self::get_column_by_index_vec(batch, index_vec);
                         let array = transform.transform(array)?;
-                        let field = Arc::new(Field::new(
-                            field_name.clone(),
-                            array.data_type().clone(),
-                            true,
-                        ));
-                        Ok((field, array))
+                        Ok((field.clone(), array))
                     },
                 )
                 .collect::<Result<Vec<_>>>()?,
