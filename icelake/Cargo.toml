@@ -63,3 +63,8 @@ harness = false
 name = "insertion_test"
 path = "tests/insert_tests.rs"
 harness = false
+
+[[test]]
+name = "insert_compact_test"
+path = "tests/insert_compact_test.rs"
+harness = false
