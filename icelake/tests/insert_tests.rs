@@ -172,7 +172,7 @@ impl TestFixture {
         // Commit table transaction
         {
             let mut tx = Transaction::new(&mut table);
-            tx.append_file(result);
+            tx.append_data_file(result);
             tx.commit().await.unwrap();
         }
     }
