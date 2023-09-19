@@ -3,12 +3,11 @@ use arrow_array::RecordBatch;
 use parquet::file::properties::{WriterProperties, WriterVersion};
 use std::sync::Arc;
 
+use crate::io::location_generator::FileLocationGenerator;
 use crate::{config::TableConfigRef, io::parquet::ParquetWriterBuilder};
 use arrow_schema::SchemaRef;
 use opendal::Operator;
-
-use super::location_generator::DataFileLocationGenerator;
-use super::parquet::ParquetWriter;
+use crate::io::parquet::ParquetWriter;
 use crate::types::DataFileBuilder;
 use crate::Result;
 
@@ -18,7 +17,7 @@ use crate::Result;
 /// `FileMetaData` to specific `DataFile`.
 pub(crate) struct RollingWriter {
     operator: Operator,
-    location_generator: Arc<DataFileLocationGenerator>,
+    location_generator: Arc<FileLocationGenerator>,
     arrow_schema: SchemaRef,
 
     current_writer: Option<ParquetWriter>,
@@ -35,7 +34,7 @@ impl RollingWriter {
     /// Create a new `DataFileWriter`.
     pub async fn try_new(
         operator: Operator,
-        location_generator: Arc<DataFileLocationGenerator>,
+        location_generator: Arc<FileLocationGenerator>,
         arrow_schema: SchemaRef,
         table_config: TableConfigRef,
     ) -> Result<Self> {

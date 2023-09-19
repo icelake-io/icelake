@@ -1,7 +1,9 @@
 use std::{collections::HashMap, sync::Arc};
 
-use super::{create_transform_function, Any, BoxedTransformFunction, PartitionSpec};
-use crate::{Error, ErrorKind, Result};
+use super::{
+    create_transform_function, Any, AnyValue, BoxedTransformFunction, PartitionSpec, StructValue,
+};
+use crate::{types::struct_to_anyvalue_array_with_type, Error, ErrorKind, Result};
 use arrow_array::{Array, ArrayRef, BooleanArray, RecordBatch, StructArray};
 use arrow_cast::cast;
 use arrow_row::{OwnedRow, RowConverter, SortField};
@@ -22,9 +24,21 @@ struct PartitionFieldComputeInfo {
     pub transform: BoxedTransformFunction,
 }
 
+#[derive(Hash, PartialEq, PartialOrd, Eq, Ord, Clone)]
+/// `PartitionKey` is the wrapper of OwnedRow to avoid user depend OwnedRow directly.
+pub struct PartitionKey {
+    inner: OwnedRow,
+}
+
+impl From<OwnedRow> for PartitionKey {
+    fn from(value: OwnedRow) -> Self {
+        Self { inner: value }
+    }
+}
+
 impl PartitionSplitter {
     /// Create a new `PartitionSplitter`.
-    pub fn new(
+    pub fn try_new(
         partition_spec: &PartitionSpec,
         schema: &SchemaRef,
         partition_type: Any,
@@ -116,7 +130,7 @@ impl PartitionSplitter {
     pub async fn split_by_partition(
         &mut self,
         batch: &RecordBatch,
-    ) -> Result<HashMap<OwnedRow, RecordBatch>> {
+    ) -> Result<HashMap<PartitionKey, RecordBatch>> {
         let value_array = Arc::new(StructArray::from(
             self.field_infos
                 .iter()
@@ -178,7 +192,7 @@ impl PartitionSplitter {
 
             // filter the RecordBatch
             partition_batches.insert(
-                row.clone(),
+                row.clone().into(),
                 filter_record_batch(batch, &filter_array)
                     .expect("We should guarantee the filter array is valid"),
             );
@@ -201,9 +215,33 @@ impl PartitionSplitter {
         array
     }
 
-    /// Close self and return the row converter. It can be used to convert `OwnedRow` to
-    /// `StructArray`
-    pub fn extract_row_converter(self) -> RowConverter {
-        self.row_converter
+    /// Convert the `PartitionKey` to `PartitionValue`
+    ///
+    /// The reason we seperate them is to save memmory cost, when in write process, we only need to
+    /// keep the `PartitionKey`. It's effiect to used in Hash. When write complete, we can use it to convert `PartitionKey` to
+    /// `PartitionValue` to store it in `DataFile`.
+    pub fn convert_key_to_value(&self, key: PartitionKey) -> Result<StructValue> {
+        let array = {
+            let mut arrays = self
+                .row_converter
+                .convert_rows([key.inner.row()].into_iter())
+                .map_err(|e| {
+                    crate::error::Error::new(crate::ErrorKind::ArrowError, format!("{e}"))
+                })?;
+            assert!(arrays.len() == 1);
+            arrays.pop().unwrap()
+        };
+        let struct_array = array.as_any().downcast_ref::<StructArray>().unwrap();
+
+        let mut value_array =
+            struct_to_anyvalue_array_with_type(struct_array, self.partition_type.clone())?;
+
+        assert!(value_array.len() == 1);
+        let value = value_array.pop().unwrap().unwrap();
+        if let AnyValue::Struct(value) = value {
+            Ok(value)
+        } else {
+            unreachable!()
+        }
     }
 }

@@ -14,25 +14,46 @@ const DEFAULT_FILE_FORMAT_DEFAULT: &str = "parquet";
 const WRITE_DATA_LOCATION: &str = "write.data.path";
 const WRITE_FOLDER_STORAGE_LOCATION: &str = "write.folder-storage.path";
 
-/// DataFileLocationGenerator will generate a file location for the writer.
-pub struct DataFileLocationGenerator {
+/// FileLocationGenerator will generate a file location for the writer.
+pub struct FileLocationGenerator {
     file_count: AtomicUsize,
     partition_id: usize,
     task_id: usize,
     operation_id: String,
     file_format: DataFileFormat,
     suffix: Option<String>,
+    is_delete: bool,
     /// The data file relpath related to the base of table location.
     data_rel_location: String,
 }
 
-impl DataFileLocationGenerator {
-    /// Try to create a new file location generator.
-    pub fn try_new(
+impl FileLocationGenerator {
+    /// Create a file location generator for data file.
+    pub fn try_new_for_data_file(
         table_metatdata: &TableMetadata,
         partition_id: usize,
         task_id: usize,
         suffix: Option<String>,
+    ) -> Result<Self> {
+        Self::try_new(table_metatdata,partition_id,task_id,suffix,false)
+    }
+    
+    /// Create a file location generator for delete file.
+    pub fn try_new_for_delete_file(
+        table_metatdata: &TableMetadata,
+        partition_id: usize,
+        task_id: usize,
+        suffix: Option<String>,
+    ) -> Result<Self> {
+        Self::try_new(table_metatdata,partition_id,task_id,suffix,true)
+    }
+    
+    fn try_new(
+        table_metatdata: &TableMetadata,
+        partition_id: usize,
+        task_id: usize,
+        suffix: Option<String>,
+        is_delete: bool,
     ) -> Result<Self> {
         let operation_id = Uuid::new_v4().to_string();
 
@@ -79,6 +100,7 @@ impl DataFileLocationGenerator {
             file_format,
             suffix,
             data_rel_location,
+            is_delete,
         })
     }
 
@@ -95,15 +117,19 @@ impl DataFileLocationGenerator {
             "".to_string()
         };
 
-        let file_name = format!(
+        let mut file_name = format!(
             "{:05}-{}-{}-{:05}{}",
             self.partition_id,
             self.task_id,
             self.operation_id,
             self.file_count
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-            suffix
+            suffix,
         );
+
+        if self.is_delete {
+            file_name.push_str("-delete");
+        }
 
         let extension = self.file_format.to_string();
         let file_name = if file_name.to_ascii_lowercase().ends_with(&extension) {
@@ -124,7 +150,7 @@ mod test {
 
     use crate::{
         io::location_generator::{
-            DataFileLocationGenerator, WRITE_DATA_LOCATION, WRITE_FOLDER_STORAGE_LOCATION,
+            FileLocationGenerator, WRITE_DATA_LOCATION, WRITE_FOLDER_STORAGE_LOCATION,
         },
         types::parse_table_metadata,
     };
@@ -142,7 +168,7 @@ mod test {
             parse_table_metadata(&bs).expect("parse_table_metadata v1 must succeed")
         };
 
-        let generator = DataFileLocationGenerator::try_new(&metadata, 0, 0, None)?;
+        let generator = FileLocationGenerator::try_new_for_data_file(&metadata, 0, 0, None)?;
         let name = generator.generate_name();
         assert!(name.starts_with("data/"));
 
@@ -178,7 +204,7 @@ mod test {
         };
         metadata.properties = Some(mock_properties);
 
-        let generator = DataFileLocationGenerator::try_new(&metadata, 0, 0, None)?;
+        let generator = FileLocationGenerator::try_new_for_data_file(&metadata, 0, 0, None)?;
         let name = generator.generate_name();
         assert!(name.starts_with("/mock"));
         Ok(())
@@ -209,7 +235,7 @@ mod test {
         };
         metadata.properties = Some(mock_properties);
 
-        let generator = DataFileLocationGenerator::try_new(&metadata, 0, 0, None)?;
+        let generator = FileLocationGenerator::try_new_for_data_file(&metadata, 0, 0, None)?;
         let name = generator.generate_name();
         assert!(name.starts_with("/mock_storage"));
         Ok(())
