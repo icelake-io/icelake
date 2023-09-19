@@ -66,12 +66,7 @@ impl PositionDeleteTest {
                 ("iceberg.table.io.bucket", "icebergdata".to_string()),
                 (
                     "iceberg.table.io.root",
-                    format!(
-                        "{}/{}/{}",
-                        warehouse_root.clone(),
-                        table_namespace,
-                        table_name,
-                    ),
+                    format!("{}/{}/{}", warehouse_root, table_namespace, table_name,),
                 ),
                 ("iceberg.table.io.access_key_id", "admin".to_string()),
                 ("iceberg.table.io.secret_access_key", "password".to_string()),
@@ -130,9 +125,8 @@ impl PositionDeleteTest {
             "
             .to_string(),
         ];
-        let args: Vec<String> = args.into_iter().chain(init_sqls.clone()).collect();
-        self.poetry
-            .run_file("init.py", args, format!("Init t1 with spark"))
+        let args: Vec<String> = args.into_iter().chain(init_sqls).collect();
+        self.poetry.run_file("init.py", args, "Init t1 with spark")
     }
 
     fn spark_connect_url(&self) -> String {
@@ -205,7 +199,7 @@ impl PositionDeleteTest {
                 "-q2",
                 "select * from s1.t2",
             ],
-            format!("Check select * from s1.t1"),
+            "Check select * from s1.t1",
         )
     }
 
@@ -247,7 +241,7 @@ impl PositionDeleteTest {
                 "-q",
                 "delete from s1.t2 where vlong = 1;",
             ],
-            format!("delete from s1.t2 where vlong = 1;"),
+            "delete from s1.t2 where vlong = 1;",
         );
         self.poetry.run_file(
             "check.py",
@@ -259,7 +253,7 @@ impl PositionDeleteTest {
                 "-q2",
                 "select * from s1.t2",
             ],
-            format!("Check select * from s1.t1"),
+            "Check select * from s1.t1",
         )
     }
 
