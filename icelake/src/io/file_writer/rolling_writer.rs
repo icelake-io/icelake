@@ -4,12 +4,12 @@ use parquet::file::properties::{WriterProperties, WriterVersion};
 use std::sync::Arc;
 
 use crate::io::location_generator::FileLocationGenerator;
-use crate::{config::TableConfigRef, io::parquet::ParquetWriterBuilder};
-use arrow_schema::SchemaRef;
-use opendal::Operator;
 use crate::io::parquet::ParquetWriter;
 use crate::types::DataFileBuilder;
 use crate::Result;
+use crate::{config::TableConfigRef, io::parquet::ParquetWriterBuilder};
+use arrow_schema::SchemaRef;
+use opendal::Operator;
 
 /// A writer capable of splitting incoming data into multiple files within one spec/partition based on the target file size.
 /// When complete, it will return a list of `FileMetaData`.

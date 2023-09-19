@@ -35,9 +35,9 @@ impl FileLocationGenerator {
         task_id: usize,
         suffix: Option<String>,
     ) -> Result<Self> {
-        Self::try_new(table_metatdata,partition_id,task_id,suffix,false)
+        Self::try_new(table_metatdata, partition_id, task_id, suffix, false)
     }
-    
+
     /// Create a file location generator for delete file.
     pub fn try_new_for_delete_file(
         table_metatdata: &TableMetadata,
@@ -45,9 +45,9 @@ impl FileLocationGenerator {
         task_id: usize,
         suffix: Option<String>,
     ) -> Result<Self> {
-        Self::try_new(table_metatdata,partition_id,task_id,suffix,true)
+        Self::try_new(table_metatdata, partition_id, task_id, suffix, true)
     }
-    
+
     fn try_new(
         table_metatdata: &TableMetadata,
         partition_id: usize,
