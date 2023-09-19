@@ -4,8 +4,8 @@ use crate::catalog::{MetadataUpdate, UpdateTable};
 use crate::error::Result;
 use crate::types::{
     DataFile, DataFileFormat, ManifestContentType, ManifestEntry, ManifestFile, ManifestList,
-    ManifestListWriter, ManifestMetadata, ManifestStatus, ManifestWriter, Snapshot,
-    SnapshotReferenceType, MAIN_BRANCH,
+    ManifestListEntry, ManifestListWriter, ManifestMetadata, ManifestStatus, ManifestWriter,
+    Snapshot, SnapshotReferenceType, TableMetadata, MAIN_BRANCH,
 };
 use crate::Table;
 use opendal::Operator;
@@ -16,6 +16,7 @@ use uuid::Uuid;
 enum Operation {
     /// Append a new data file.
     AppendDataFile(DataFile),
+    AppendDeleteFile(DataFile),
 }
 
 struct CommitContext {
@@ -44,10 +45,16 @@ impl<'a> Transaction<'a> {
         Self { table, ops: vec![] }
     }
 
-    /// Append a new data file.
-    pub fn append_file(&mut self, data_file: impl IntoIterator<Item = DataFile>) {
+    /// Append new data files.
+    pub fn append_data_file(&mut self, data_file: impl IntoIterator<Item = DataFile>) {
         self.ops
             .extend(data_file.into_iter().map(Operation::AppendDataFile));
+    }
+
+    /// Append new delete files.
+    pub fn append_delete_file(&mut self, delete_file: impl IntoIterator<Item = DataFile>) {
+        self.ops
+            .extend(delete_file.into_iter().map(Operation::AppendDeleteFile));
     }
 
     /// Commit this transaction.
@@ -113,6 +120,37 @@ impl<'a> Transaction<'a> {
         ))
     }
 
+    async fn produce_new_manifest_list_entry(
+        manifest_entries: Vec<ManifestEntry>,
+        content: ManifestContentType,
+        table: &Table,
+        cur_metadata: &TableMetadata,
+        ctx: &mut CommitContext,
+        next_snapshot_id: i64,
+        next_seq_number: i64,
+    ) -> Result<ManifestListEntry> {
+        // Writing manifest file for data file
+        let writer = ManifestWriter::new(
+            cur_metadata.current_partition_spec()?.clone(),
+            table.operator(),
+            cur_metadata.location.as_str(),
+            Transaction::next_manifest_path(ctx),
+            next_snapshot_id,
+            next_seq_number,
+        );
+        let manifest_file = ManifestFile {
+            metadata: ManifestMetadata {
+                schema: cur_metadata.current_schema()?.clone(),
+                schema_id: cur_metadata.current_schema_id,
+                partition_spec_id: cur_metadata.default_spec_id,
+                format_version: Some(cur_metadata.format_version),
+                content,
+            },
+            entries: manifest_entries,
+        };
+        writer.write(manifest_file).await
+    }
+
     async fn produce_new_snapshot(
         mut ctx: CommitContext,
         ops: Vec<Operation>,
@@ -123,7 +161,8 @@ impl<'a> Transaction<'a> {
         let next_snapshot_id = cur_snapshot_id + 1;
         let next_seq_number = cur_metadata.last_sequence_number + 1;
 
-        let mut manifest_entries: Vec<ManifestEntry> = Vec::with_capacity(ops.len());
+        let mut data_manifest_entries: Vec<ManifestEntry> = Vec::with_capacity(ops.len());
+        let mut delete_manifest_entries: Vec<ManifestEntry> = Vec::with_capacity(ops.len());
 
         for op in ops {
             match op {
@@ -135,43 +174,65 @@ impl<'a> Transaction<'a> {
                         file_sequence_number: Some(next_seq_number),
                         data_file,
                     };
-                    manifest_entries.push(manifest_entry);
+                    data_manifest_entries.push(manifest_entry);
+                }
+                Operation::AppendDeleteFile(data_file) => {
+                    let manifest_entry = ManifestEntry {
+                        status: ManifestStatus::Added,
+                        snapshot_id: Some(next_snapshot_id),
+                        sequence_number: Some(next_seq_number),
+                        file_sequence_number: Some(next_seq_number),
+                        data_file,
+                    };
+                    delete_manifest_entries.push(manifest_entry);
                 }
             }
         }
 
         let manifest_list_path = {
-            // Writing manifest file
-            let writer = ManifestWriter::new(
-                cur_metadata.current_partition_spec()?.clone(),
-                table.operator(),
-                cur_metadata.location.as_str(),
-                Transaction::next_manifest_path(&mut ctx),
+            let data_manifest_list_entry = Self::produce_new_manifest_list_entry(
+                data_manifest_entries,
+                ManifestContentType::Data,
+                table,
+                cur_metadata,
+                &mut ctx,
                 next_snapshot_id,
                 next_seq_number,
-            );
-            let manifest_file = ManifestFile {
-                metadata: ManifestMetadata {
-                    schema: cur_metadata.current_schema()?.clone(),
-                    schema_id: cur_metadata.current_schema_id,
-                    partition_spec_id: cur_metadata.default_spec_id,
-                    format_version: Some(cur_metadata.format_version),
-                    content: ManifestContentType::Data,
-                },
-                entries: manifest_entries,
+            )
+            .await?;
+            let delete_manifest_list_entry = if delete_manifest_entries.is_empty() {
+                None
+            } else {
+                Some(
+                    Self::produce_new_manifest_list_entry(
+                        delete_manifest_entries,
+                        ManifestContentType::Deletes,
+                        table,
+                        cur_metadata,
+                        &mut ctx,
+                        next_snapshot_id,
+                        next_seq_number,
+                    )
+                    .await?,
+                )
             };
-            let manifest_list_entry = writer.write(manifest_file).await?;
-
             // Load existing manifest list
             let manifest_list = match cur_metadata.current_snapshot()? {
                 Some(s) => {
                     let mut ret = s.load_manifest_list(&ctx.io).await?;
-                    ret.entries.push(manifest_list_entry);
+                    ret.entries.push(data_manifest_list_entry);
+                    if let Some(delete_manifest_list_entry) = delete_manifest_list_entry {
+                        ret.entries.push(delete_manifest_list_entry);
+                    }
                     ret
                 }
-                None => ManifestList {
-                    entries: vec![manifest_list_entry],
-                },
+                None => {
+                    let mut entries = vec![data_manifest_list_entry];
+                    if let Some(delete_manifest_list_entry) = delete_manifest_list_entry {
+                        entries.push(delete_manifest_list_entry);
+                    }
+                    ManifestList { entries }
+                }
             };
 
             let manifest_list_path = Transaction::manifest_list_path(&mut ctx, next_snapshot_id);

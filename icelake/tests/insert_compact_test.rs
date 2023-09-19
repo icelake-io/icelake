@@ -180,7 +180,7 @@ impl TestFixture {
         // Commit table transaction
         {
             let mut tx = Transaction::new(&mut table);
-            tx.append_file(results.into_iter().flatten());
+            tx.append_data_file(results.into_iter().flatten());
             tx.commit().await.unwrap();
         }
     }
