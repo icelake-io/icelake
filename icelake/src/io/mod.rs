@@ -5,3 +5,4 @@ pub mod file_writer;
 pub mod location_generator;
 pub mod parquet;
 pub mod task_writer;
+pub mod writer_builder;

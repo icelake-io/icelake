@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use crate::catalog::CatalogRef;
 use crate::error::Result;
+use crate::io::writer_builder::WriterBuilder;
 use opendal::Operator;
 use serde::{Deserialize, Serialize};
 use url::Url;
@@ -314,6 +315,20 @@ impl Table {
         )
         .await?;
         Ok(task_writer)
+    }
+
+    /// Return `WriterBuilder` used to create kinds of writer.
+    pub async fn writer_builder(&self) -> Result<WriterBuilder> {
+        let task_id = self
+            .task_id
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        WriterBuilder::try_new(
+            self.current_table_metadata().clone(),
+            self.op.clone(),
+            task_id,
+            self.table_config.clone(),
+        )
+        .await
     }
 
     /// Returns path of metadata file relative to the table root path.
