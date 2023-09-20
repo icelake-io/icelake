@@ -9,6 +9,7 @@ use crate::types::{
 };
 use crate::Table;
 use opendal::Operator;
+use std::mem::swap;
 use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 
@@ -94,8 +95,10 @@ impl<'a> Transaction<'a> {
         };
 
         // Save new metadata
-        table.catalog().update_table(&table_update).await?;
-
+        swap(
+            table,
+            &mut table.catalog().update_table(&table_update).await?,
+        );
         Ok(())
     }
 
