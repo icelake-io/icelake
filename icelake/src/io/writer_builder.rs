@@ -73,10 +73,7 @@ impl WriterBuilder {
     }
 
     /// Build a `PositionDeleteWriter`.
-    pub async fn build_sorted_position_delete_writer(
-        self,
-        max_record_num: usize,
-    ) -> Result<SortedPositionDeleteWriter> {
+    pub async fn build_sorted_position_delete_writer(self) -> Result<SortedPositionDeleteWriter> {
         let location_generator = FileLocationGenerator::try_new_for_delete_file(
             &self.table_metadata,
             self.partition_id,
@@ -89,7 +86,6 @@ impl WriterBuilder {
             self.table_location,
             location_generator,
             self.table_config,
-            max_record_num,
         ))
     }
 }

@@ -214,7 +214,7 @@ impl PositionDeleteTest {
             .writer_builder()
             .await
             .unwrap()
-            .build_sorted_position_delete_writer(50)
+            .build_sorted_position_delete_writer()
             .await
             .unwrap();
 
@@ -294,13 +294,13 @@ fn main() {
     // Parse command line arguments
     let args = Arguments::from_args();
 
-    // let catalogs = vec!["storage", "rest"];
-    let catalogs = vec!["storage"];
+    let catalogs = vec!["storage", "rest"];
 
     let mut tests = Vec::with_capacity(2);
     for catalog in &catalogs {
-        let fixture = create_test_fixture("delete_position_test", catalog);
-        tests.push(Trial::test("delete_position_test", move || {
+        let test_name = format!("{}_delete_position_test_{}", module_path!(), catalog);
+        let fixture = create_test_fixture(&test_name, catalog);
+        tests.push(Trial::test(test_name, move || {
             fixture.block_run();
             Ok(())
         }));

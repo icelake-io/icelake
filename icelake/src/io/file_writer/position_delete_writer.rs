@@ -22,7 +22,6 @@ pub struct SortedPositionDeleteWriter {
 
     delete_cache: BTreeMap<String, Vec<i64>>,
     record_num: usize,
-    max_record_num: usize,
 
     result: Vec<DataFileBuilder>,
 }
@@ -34,7 +33,6 @@ impl SortedPositionDeleteWriter {
         table_location: String,
         location_generator: Arc<FileLocationGenerator>,
         table_config: TableConfigRef,
-        max_record_num: usize,
     ) -> Self {
         Self {
             operator,
@@ -43,7 +41,6 @@ impl SortedPositionDeleteWriter {
             table_config,
             delete_cache: BTreeMap::new(),
             record_num: 0,
-            max_record_num,
             result: vec![],
         }
     }
@@ -57,7 +54,12 @@ impl SortedPositionDeleteWriter {
         let delete_list = self.delete_cache.entry(file_path).or_insert(vec![]);
         delete_list.push(pos);
 
-        if self.record_num >= self.max_record_num {
+        if self.record_num
+            >= self
+                .table_config
+                .sorted_delete_position_writer
+                .max_record_num
+        {
             self.flush().await?;
         }
 

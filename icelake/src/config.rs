@@ -17,6 +17,8 @@ pub struct TableConfig {
     pub parquet_writer: ParquetWriterConfig,
     /// Datafile configuration
     pub datafile_writer: DataFileWriterConfig,
+    /// Sorted Delete Position writer configuration.
+    pub sorted_delete_position_writer: SortedDeletePositionWriterConfig,
 }
 
 /// Data file writer configuration.
@@ -33,6 +35,21 @@ impl Default for DataFileWriterConfig {
         Self {
             rows_per_file: 1000,
             target_file_size_in_bytes: 1024 * 1024,
+        }
+    }
+}
+
+/// Sorted Delete Position writer configuration.
+#[derive(PartialEq, Eq, Debug)]
+pub struct SortedDeletePositionWriterConfig {
+    /// The writer will flush into file when the number of records reaches this value.
+    pub max_record_num: usize,
+}
+
+impl Default for SortedDeletePositionWriterConfig {
+    fn default() -> Self {
+        Self {
+            max_record_num: 2000,
         }
     }
 }
@@ -160,7 +177,23 @@ impl TryFrom<&'_ HashMap<String, String>> for TableConfig {
                     "Can't parse iceberg.datafile.target_file_size_in_bytes.",
                 )
                 .set_source(e)
-            })?;
+            })?
+            .iter()
+            .for_each(|v| config.datafile_writer.target_file_size_in_bytes = *v);
+
+        value
+            .get("iceberg.table.sorted_delete_position_writer.max_record_num")
+            .map(|v| v.parse::<usize>())
+            .transpose()
+            .map_err(|e| {
+                Error::new(
+                    ErrorKind::IcebergDataInvalid,
+                    "Can't parse iceberg.sorted_delete_position_writer.max_record_num.",
+                )
+                .set_source(e)
+            })?
+            .iter()
+            .for_each(|v| config.sorted_delete_position_writer.max_record_num = *v);
 
         Ok(config)
     }
@@ -269,6 +302,7 @@ mod tests {
                 data_page_size: 7,
             },
             datafile_writer: Default::default(),
+            sorted_delete_position_writer: Default::default(),
         };
 
         let config_map = HashMap::from([
