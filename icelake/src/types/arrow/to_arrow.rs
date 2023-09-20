@@ -12,6 +12,7 @@ use arrow_schema::DataType as ArrowDataType;
 use arrow_schema::Field as ArrowField;
 use arrow_schema::Schema as ArrowSchema;
 use arrow_schema::TimeUnit;
+use parquet::arrow::PARQUET_FIELD_ID_META_KEY;
 
 impl TryFrom<types::Schema> for ArrowSchema {
     type Error = Error;
@@ -33,6 +34,7 @@ impl TryFrom<types::Field> for ArrowField {
     fn try_from(value: types::Field) -> Result<Self, Self::Error> {
         let mut metadata = HashMap::new();
         metadata.insert("column_id".to_string(), value.id.to_string());
+        metadata.insert(PARQUET_FIELD_ID_META_KEY.to_string(), value.id.to_string());
         Ok(
             ArrowField::new(value.name, value.field_type.try_into()?, !value.required)
                 .with_metadata(metadata),

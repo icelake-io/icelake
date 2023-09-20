@@ -1,20 +1,16 @@
 //! task_writer module provide a task writer for writing data in a table.
 //! table writer used directly by the compute engine.
-
-use super::data_file_writer::DataFileWriter;
+use super::file_writer::DataFileWriter;
 use super::location_generator;
 use crate::config::TableConfigRef;
 use crate::error::Result;
-use crate::io::location_generator::DataFileLocationGenerator;
-use crate::types::struct_to_anyvalue_array_with_type;
+use crate::io::location_generator::FileLocationGenerator;
 use crate::types::Any;
-use crate::types::AnyValue;
+use crate::types::PartitionKey;
 use crate::types::PartitionSpec;
 use crate::types::PartitionSplitter;
 use crate::types::{DataFile, TableMetadata};
 use arrow_array::RecordBatch;
-use arrow_array::StructArray;
-use arrow_row::OwnedRow;
 use arrow_schema::SchemaRef as ArrowSchemaRef;
 use opendal::Operator;
 use std::collections::hash_map::Entry;
@@ -46,17 +42,8 @@ impl TaskWriter {
         suffix: Option<String>,
         table_config: TableConfigRef,
     ) -> Result<Self> {
-        let current_schema = table_metadata
-            .schemas
-            .clone()
-            .into_iter()
-            .find(|schema| schema.schema_id == table_metadata.current_schema_id)
-            .ok_or_else(|| {
-                crate::error::Error::new(
-                    crate::ErrorKind::IcebergDataInvalid,
-                    "Can't find current schema",
-                )
-            })?;
+        let current_schema = table_metadata.current_schema()?;
+        let current_partition_spec = table_metadata.current_partition_spec()?;
 
         let arrow_schema = Arc::new(current_schema.clone().try_into().map_err(|e| {
             crate::error::Error::new(
@@ -65,22 +52,14 @@ impl TaskWriter {
             )
         })?);
 
-        let partition_spec = table_metadata
-            .partition_specs
-            .get(table_metadata.default_spec_id as usize)
-            .ok_or(crate::error::Error::new(
-                crate::ErrorKind::IcebergDataInvalid,
-                "Can't find default partition spec",
-            ))?;
-
-        let location_generator = location_generator::DataFileLocationGenerator::try_new(
+        let location_generator = location_generator::FileLocationGenerator::try_new_for_data_file(
             &table_metadata,
             partition_id,
             task_id,
             suffix,
         )?;
 
-        if partition_spec.is_unpartitioned() {
+        if current_partition_spec.is_unpartitioned() {
             Ok(Self::Unpartitioned(
                 UnpartitionedWriter::try_new(
                     arrow_schema,
@@ -92,13 +71,16 @@ impl TaskWriter {
                 .await?,
             ))
         } else {
-            let partition_type =
-                Any::Struct(partition_spec.partition_type(&current_schema)?.into());
-            Ok(Self::Partitioned(PartitionedWriter::new(
+            let partition_type = Any::Struct(
+                current_partition_spec
+                    .partition_type(current_schema)?
+                    .into(),
+            );
+            Ok(Self::Partitioned(PartitionedWriter::try_new(
                 arrow_schema,
-                table_metadata.location,
+                table_metadata.location.clone(),
                 location_generator,
-                partition_spec,
+                current_partition_spec,
                 partition_type,
                 operator,
                 table_config,
@@ -133,7 +115,7 @@ impl UnpartitionedWriter {
     pub async fn try_new(
         schema: ArrowSchemaRef,
         table_location: String,
-        location_generator: DataFileLocationGenerator,
+        location_generator: FileLocationGenerator,
         operator: Operator,
         table_config: TableConfigRef,
     ) -> Result<Self> {
@@ -176,21 +158,21 @@ impl UnpartitionedWriter {
 pub struct PartitionedWriter {
     operator: Operator,
     table_location: String,
-    location_generator: Arc<DataFileLocationGenerator>,
+    location_generator: Arc<FileLocationGenerator>,
     table_config: TableConfigRef,
     schema: ArrowSchemaRef,
     partition_type: Any,
 
-    writers: HashMap<OwnedRow, DataFileWriter>,
+    writers: HashMap<PartitionKey, DataFileWriter>,
     partition_splitter: PartitionSplitter,
 }
 
 impl PartitionedWriter {
     /// Create a new `PartitionedWriter`.
-    pub fn new(
+    pub fn try_new(
         schema: ArrowSchemaRef,
         table_location: String,
-        location_generator: DataFileLocationGenerator,
+        location_generator: FileLocationGenerator,
         partition_spec: &PartitionSpec,
         partition_type: Any,
         operator: Operator,
@@ -202,7 +184,7 @@ impl PartitionedWriter {
             location_generator: location_generator.into(),
             table_config,
             writers: HashMap::new(),
-            partition_splitter: PartitionSplitter::new(
+            partition_splitter: PartitionSplitter::try_new(
                 partition_spec,
                 &schema,
                 partition_type.clone(),
@@ -245,38 +227,16 @@ impl PartitionedWriter {
     /// Complete the write and return the data files.
     pub async fn close(self) -> Result<Vec<DataFile>> {
         let mut res = vec![];
-        let row_converter = self.partition_splitter.extract_row_converter();
-        for (row, writer) in self.writers.into_iter() {
+        for (key, writer) in self.writers.into_iter() {
             let data_file_builders = writer.close().await?;
 
-            let array = {
-                let mut arrays = row_converter
-                    .convert_rows([row.row()].into_iter())
-                    .map_err(|e| {
-                        crate::error::Error::new(crate::ErrorKind::ArrowError, format!("{e}"))
-                    })?;
-                assert!(arrays.len() == 1);
-                arrays.pop().unwrap()
-            };
-            let struct_array = array.as_any().downcast_ref::<StructArray>().unwrap();
+            let partition_value = self.partition_splitter.convert_key_to_value(key)?;
 
-            let mut value_array =
-                struct_to_anyvalue_array_with_type(struct_array, self.partition_type.clone())?;
-            // We guarantee the partition array only has one value.
-            assert!(value_array.len() == 1);
-            let value = value_array
-                .pop()
-                .unwrap()
-                .expect("Partition Value is alway valid");
-
-            if let AnyValue::Struct(v) = value {
-                // Update the partition value in data file.
-                res.extend(data_file_builders.into_iter().map(|data_file_builder| {
-                    data_file_builder.with_partition_value(v.clone()).build()
-                }));
-            } else {
-                unreachable!("Partition value should be struct value")
-            }
+            res.extend(data_file_builders.into_iter().map(|data_file_builder| {
+                data_file_builder
+                    .with_partition_value(partition_value.clone())
+                    .build()
+            }));
         }
         Ok(res)
     }

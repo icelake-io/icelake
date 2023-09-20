@@ -2,13 +2,13 @@
 use std::sync::Arc;
 
 use crate::config::TableConfigRef;
+use crate::io::location_generator::FileLocationGenerator;
 use crate::types::DataFileBuilder;
 use crate::Result;
 use arrow_array::RecordBatch;
 use arrow_schema::SchemaRef;
 use opendal::Operator;
 
-use super::location_generator::DataFileLocationGenerator;
 use super::rolling_writer::RollingWriter;
 
 /// A writer capable of splitting incoming data into multiple files within one spec/partition based on the target file size.
@@ -26,7 +26,7 @@ impl DataFileWriter {
     pub async fn try_new(
         operator: Operator,
         table_location: String,
-        location_generator: Arc<DataFileLocationGenerator>,
+        location_generator: Arc<FileLocationGenerator>,
         arrow_schema: SchemaRef,
         table_config: TableConfigRef,
     ) -> Result<Self> {
@@ -42,13 +42,13 @@ impl DataFileWriter {
         })
     }
 
-    /// Write a record batch. The `DataFileWriter` will create a new file when the current row num is greater than `target_file_row_num`.
+    /// Write a record batch.
     pub async fn write(&mut self, batch: RecordBatch) -> Result<()> {
         self.inner_writer.write(batch).await?;
         Ok(())
     }
 
-    /// Complte the write and return the list of `DataFile` as result.
+    /// Complte the write and return the list of `DataFileBuilder` as result.
     pub async fn close(self) -> Result<Vec<DataFileBuilder>> {
         Ok(self
             .inner_writer
@@ -77,10 +77,9 @@ mod test {
     use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 
     use crate::config::TableConfig;
-    use crate::{
-        io::{data_file_writer, location_generator::DataFileLocationGenerator},
-        types::parse_table_metadata,
-    };
+    use crate::io::file_writer::data_file_writer;
+    use crate::io::location_generator::FileLocationGenerator;
+    use crate::types::parse_table_metadata;
 
     #[tokio::test]
     async fn tets_data_file_writer() -> Result<()> {
@@ -101,7 +100,7 @@ mod test {
             };
             metadata.location = "/tmp/table".to_string();
 
-            DataFileLocationGenerator::try_new(&metadata, 0, 0, None)?
+            FileLocationGenerator::try_new_for_data_file(&metadata, 0, 0, None)?
         };
 
         let data = (0..1024 * 1024).collect::<Vec<_>>();
