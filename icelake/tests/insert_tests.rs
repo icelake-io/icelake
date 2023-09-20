@@ -14,7 +14,6 @@ pub struct TestFixture {
     catalog_configs: HashMap<String, String>,
 
     test_case: TestCase,
-    icelake_table: Option<Table>,
 }
 
 impl TestFixture {
@@ -95,7 +94,6 @@ impl TestFixture {
                 .iter()
                 .map(|(k, v)| (k.to_string(), v.to_string()))
                 .collect(),
-            icelake_table: None,
         }
     }
 
@@ -141,27 +139,22 @@ impl TestFixture {
         )
     }
 
-    pub async fn create_icelake_table(&mut self) -> &mut Table {
-        if self.icelake_table.is_none() {
-            let catalog = load_catalog(&self.catalog_configs).await.unwrap();
-            self.icelake_table = Some(
-                catalog
-                    .load_table(&self.test_case.table_name)
-                    .await
-                    .unwrap(),
-            );
-        }
-        self.icelake_table.as_mut().unwrap()
+    pub async fn create_icelake_table(&self) -> Table {
+        let catalog = load_catalog(&self.catalog_configs).await.unwrap();
+        catalog
+            .load_table(&self.test_case.table_name)
+            .await
+            .unwrap()
     }
 
     pub async fn write_data_with_icelake(&mut self) {
-        let records = self.test_case.write_date.clone();
-
         let mut table = self.create_icelake_table().await;
         log::info!(
             "Real path of table is: {}",
             table.current_table_metadata().location
         );
+
+        let records = &self.test_case.write_date;
 
         let mut task_writer = table.task_writer().await.unwrap();
 
@@ -170,7 +163,7 @@ impl TestFixture {
                 "Insert record batch with {} records using icelake.",
                 record_batch.num_rows()
             );
-            task_writer.write(&record_batch).await.unwrap();
+            task_writer.write(record_batch).await.unwrap();
         }
 
         let result = task_writer.close().await.unwrap();
@@ -178,7 +171,7 @@ impl TestFixture {
 
         // Commit table transaction
         {
-            let mut tx = Transaction::new(table);
+            let mut tx = Transaction::new(&mut table);
             tx.append_data_file(result);
             tx.commit().await.unwrap();
         }
@@ -221,17 +214,16 @@ fn main() {
     // Parse command line arguments
     let args = Arguments::from_args();
 
-    // let catalogs = vec!["storage", "rest"];
-    let catalogs = vec!["storage"];
+    let catalogs = vec!["storage", "rest"];
     let test_cases = vec![
         "no_partition_test.toml",
-        // "partition_identity_test.toml",
-        // "partition_year_test.toml",
-        // "partition_month_test.toml",
-        // "partition_day_test.toml",
-        // "partition_hour_test.toml",
-        // "partition_hash_test.toml",
-        // "partition_truncate_test.toml",
+        "partition_identity_test.toml",
+        "partition_year_test.toml",
+        "partition_month_test.toml",
+        "partition_day_test.toml",
+        "partition_hour_test.toml",
+        "partition_hash_test.toml",
+        "partition_truncate_test.toml",
     ];
 
     let mut tests = Vec::with_capacity(16);
