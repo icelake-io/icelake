@@ -43,7 +43,7 @@ impl Catalog for StorageCatalog {
 
     async fn list_tables(self: Arc<Self>, ns: &Namespace) -> Result<Vec<TableIdentifier>> {
         let ns_path = ns.to_path()?;
-        let mut ds = self.op.list(&ns_path).await?;
+        let mut ds = self.op.lister(&ns_path).await?;
         let mut tables = vec![];
         while let Some(de) = ds.try_next().await? {
             let table_name = de.name();
@@ -219,9 +219,13 @@ impl StorageCatalog {
             return Ok(false);
         }
 
-        let mut ds = self.op.list(&table_metadata_dir).await?;
+        let mut ds = self
+            .op
+            .lister_with(&table_metadata_dir)
+            .metakey(Metakey::Mode)
+            .await?;
         while let Some(de) = ds.try_next().await? {
-            let meta = self.op.metadata(&de, Metakey::Mode).await?;
+            let meta = de.metadata();
 
             match meta.mode() {
                 EntryMode::FILE if de.name().ends_with(METADATA_FILE_EXTENSION) => {
@@ -276,7 +280,7 @@ impl StorageCatalog {
     async fn list_table_metadata_paths(&self, table_path: &str) -> Result<Vec<String>> {
         let mut lister = self
             .op
-            .list(format!("{table_path}/metadata/").as_str())
+            .lister(format!("{table_path}/metadata/").as_str())
             .await
             .map_err(|err| {
                 Error::new(
@@ -374,7 +378,7 @@ impl StorageCatalog {
 
     async fn rename(op: &Operator, src_path: &str, dest_path: &str) -> Result<()> {
         let info = op.info();
-        if info.can_rename() {
+        if info.full_capability().rename {
             Ok(op.rename(src_path, dest_path).await?)
         } else {
             op.copy(src_path, dest_path).await?;
