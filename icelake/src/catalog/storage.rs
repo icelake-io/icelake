@@ -219,7 +219,11 @@ impl StorageCatalog {
             return Ok(false);
         }
 
-        let mut ds = self.op.lister_with(&table_metadata_dir).metakey(Metakey::Mode).await?;
+        let mut ds = self
+            .op
+            .lister_with(&table_metadata_dir)
+            .metakey(Metakey::Mode)
+            .await?;
         while let Some(de) = ds.try_next().await? {
             let meta = de.metadata();
 
