@@ -21,7 +21,7 @@ arrow-csv = { version = ">=46" }
 arrow-cast = { version = ">=46" }
 arrow-ord = { version = ">=46" }
 bytes = "1"
-opendal = "0.40"
+opendal = { version = "0.40", features = ["layers-prometheus"] }
 uuid = { version = "1", features = ["v4"] }
 serde = "1"
 serde_json = "1"
@@ -48,3 +48,4 @@ reqwest = { version = "0.11", default-features = false, features = ["json"] }
 urlencoding = "2"
 enum-display = "0.1"
 itertools = "0.11"
+prometheus = "0.13"

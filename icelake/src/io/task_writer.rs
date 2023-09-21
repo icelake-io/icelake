@@ -2,6 +2,8 @@
 //! table writer used directly by the compute engine.
 use super::file_writer::DataFileWriter;
 use super::location_generator;
+use super::FileAppender;
+use super::FileAppenderFactory;
 use crate::config::TableConfigRef;
 use crate::error::Result;
 use crate::io::location_generator::FileLocationGenerator;
@@ -25,14 +27,14 @@ use std::sync::Arc;
 /// If the table metadata has no partition spec, it will create a unpartitioned
 /// task writer. The unpartitioned task writer will write all data using a single
 /// data file writer.
-pub enum TaskWriter {
+pub enum TaskWriter<F: FileAppenderFactory> {
     /// Unpartitioned task writer
-    Unpartitioned(UnpartitionedWriter),
+    Unpartitioned(UnpartitionedWriter<F::F>),
     /// Partitioned task writer
-    Partitioned(PartitionedWriter),
+    Partitioned(PartitionedWriter<F>),
 }
 
-impl TaskWriter {
+impl<F: FileAppenderFactory> TaskWriter<F> {
     /// Create a new `TaskWriter`.
     pub async fn try_new(
         table_metadata: TableMetadata,
@@ -41,6 +43,7 @@ impl TaskWriter {
         task_id: usize,
         suffix: Option<String>,
         table_config: TableConfigRef,
+        file_appender_factory: F,
     ) -> Result<Self> {
         let current_schema = table_metadata.current_schema()?;
         let current_partition_spec = table_metadata.current_partition_spec()?;
@@ -60,16 +63,9 @@ impl TaskWriter {
         )?;
 
         if current_partition_spec.is_unpartitioned() {
-            Ok(Self::Unpartitioned(
-                UnpartitionedWriter::try_new(
-                    arrow_schema,
-                    table_metadata.location,
-                    location_generator,
-                    operator,
-                    table_config,
-                )
-                .await?,
-            ))
+            Ok(Self::Unpartitioned(UnpartitionedWriter::try_new(
+                file_appender_factory.build(arrow_schema).await?,
+            )?))
         } else {
             let partition_type = Any::Struct(
                 current_partition_spec
@@ -84,6 +80,7 @@ impl TaskWriter {
                 partition_type,
                 operator,
                 table_config,
+                file_appender_factory,
             )?))
         }
     }
@@ -106,28 +103,15 @@ impl TaskWriter {
 }
 
 /// Unpartitioned task writer
-pub struct UnpartitionedWriter {
-    data_file_writer: DataFileWriter,
+pub struct UnpartitionedWriter<F: FileAppender> {
+    data_file_writer: DataFileWriter<F>,
 }
 
-impl UnpartitionedWriter {
+impl<F: FileAppender> UnpartitionedWriter<F> {
     /// Create a new `TaskWriter`.
-    pub async fn try_new(
-        schema: ArrowSchemaRef,
-        table_location: String,
-        location_generator: FileLocationGenerator,
-        operator: Operator,
-        table_config: TableConfigRef,
-    ) -> Result<Self> {
+    pub fn try_new(writer: F) -> Result<Self> {
         Ok(Self {
-            data_file_writer: DataFileWriter::try_new(
-                operator,
-                table_location,
-                location_generator.into(),
-                schema,
-                table_config,
-            )
-            .await?,
+            data_file_writer: DataFileWriter::try_new(writer)?,
         })
     }
 
@@ -155,7 +139,7 @@ impl UnpartitionedWriter {
 }
 
 /// Partition task writer
-pub struct PartitionedWriter {
+pub struct PartitionedWriter<F: FileAppenderFactory> {
     operator: Operator,
     table_location: String,
     location_generator: Arc<FileLocationGenerator>,
@@ -163,12 +147,14 @@ pub struct PartitionedWriter {
     schema: ArrowSchemaRef,
     partition_type: Any,
 
-    writers: HashMap<PartitionKey, DataFileWriter>,
+    writers: HashMap<PartitionKey, DataFileWriter<F::F>>,
     partition_splitter: PartitionSplitter,
+    file_appender_factory: F,
 }
 
-impl PartitionedWriter {
+impl<F: FileAppenderFactory> PartitionedWriter<F> {
     /// Create a new `PartitionedWriter`.
+    #[allow(clippy::too_many_arguments)]
     pub fn try_new(
         schema: ArrowSchemaRef,
         table_location: String,
@@ -177,6 +163,7 @@ impl PartitionedWriter {
         partition_type: Any,
         operator: Operator,
         table_config: TableConfigRef,
+        file_appender_factory: F,
     ) -> Result<Self> {
         Ok(Self {
             operator,
@@ -191,6 +178,7 @@ impl PartitionedWriter {
             )?,
             partition_type,
             schema,
+            file_appender_factory,
         })
     }
 
@@ -206,16 +194,11 @@ impl PartitionedWriter {
                 }
                 Entry::Vacant(writer) => {
                     writer
-                        .insert(
-                            DataFileWriter::try_new(
-                                self.operator.clone(),
-                                self.table_location.clone(),
-                                self.location_generator.clone(),
-                                self.schema.clone(),
-                                self.table_config.clone(),
-                            )
-                            .await?,
-                        )
+                        .insert(DataFileWriter::try_new(
+                            self.file_appender_factory
+                                .build(self.schema.clone())
+                                .await?,
+                        )?)
                         .write(batch)
                         .await?;
                 }

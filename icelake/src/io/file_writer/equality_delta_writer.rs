@@ -1,4 +1,5 @@
 //! This module provide the `EqualityDeltaWriter`.
+use crate::io::FileAppenderFactory;
 use crate::types::DataFile;
 use crate::types::StructValue;
 use crate::types::COLUMN_ID_META_KEY;
@@ -15,6 +16,7 @@ use opendal::Operator;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use super::new_eq_delete_writer;
 use super::{DataFileWriter, EqualityDeleteWriter, SortedPositionDeleteWriter};
 
 struct PathOffset {
@@ -40,25 +42,32 @@ pub struct DeltaWriterResult {
 /// NOTE:
 /// This write is not as same with `upsert`. If the row with same unique columns is not written in
 /// this writer, it will not delete it.
-pub struct EqualityDeltaWriter {
-    data_file_writer: DataFileWriter,
+pub struct EqualityDeltaWriter<F: FileAppenderFactory> {
+    data_file_writer: DataFileWriter<F::F>,
     sorted_pos_delete_writer: SortedPositionDeleteWriter,
-    eq_delete_writer: EqualityDeleteWriter,
+    eq_delete_writer: EqualityDeleteWriter<F::F>,
     inserted_rows: HashMap<OwnedRow, PathOffset>,
     row_converter: RowConverter,
     unique_column_idx: Vec<usize>,
+    file_appender_factory: F,
 }
 
-impl EqualityDeltaWriter {
+pub struct EqDeltaWriterMetrics {
+    buffer_path_offset_count: usize,
+    sorted_pos_delete_cache_count: usize,
+}
+
+impl<F: FileAppenderFactory> EqualityDeltaWriter<F> {
     /// Create a new `EqualityDeltaWriter`.
+    #[allow(clippy::too_many_arguments)]
     pub async fn try_new(
         operator: Operator,
         table_location: String,
-        data_location_generator: Arc<FileLocationGenerator>,
         delete_location_generator: Arc<FileLocationGenerator>,
         arrow_schema: SchemaRef,
         table_config: TableConfigRef,
         unique_column_ids: Vec<usize>,
+        file_appender_factory: F,
     ) -> Result<Self> {
         // Convert column id into corresponding index.
         let mut unique_column_idx = Vec::with_capacity(unique_column_ids.len());
@@ -113,39 +122,38 @@ impl EqualityDeltaWriter {
 
         Ok(Self {
             data_file_writer: DataFileWriter::try_new(
-                operator.clone(),
-                table_location.clone(),
-                data_location_generator.clone(),
-                arrow_schema.clone(),
-                table_config.clone(),
-            )
-            .await?,
+                file_appender_factory.build(arrow_schema.clone()).await?,
+            )?,
             sorted_pos_delete_writer: SortedPositionDeleteWriter::new(
                 operator.clone(),
                 table_location.clone(),
                 delete_location_generator.clone(),
                 table_config.clone(),
             ),
-            eq_delete_writer: EqualityDeleteWriter::try_new(
-                operator,
-                table_location,
-                delete_location_generator,
-                arrow_schema,
-                table_config,
+            eq_delete_writer: new_eq_delete_writer(
+                arrow_schema.clone(),
                 unique_column_ids,
+                &file_appender_factory,
             )
             .await?,
             inserted_rows: HashMap::new(),
             row_converter,
             unique_column_idx,
+            file_appender_factory,
         })
     }
 
+    pub fn current_metrics(&self) -> EqDeltaWriterMetrics {
+        EqDeltaWriterMetrics {
+            buffer_path_offset_count: self.inserted_rows.len(),
+            sorted_pos_delete_cache_count: self.sorted_pos_delete_writer.record_num,
+        }
+    }
     /// Delta write will write and delete the row automatically according to the ops.
     /// 1. If op == 1, write the row.
     /// 2. If op == 2, delete the row.
     /// This interface will batch the row automatically. E.g.
-    /// ```
+    /// ```ignore
     /// | ops | batch |
     /// |  1  |  "a"  |
     /// |  1  |  "b"  |
@@ -177,6 +185,7 @@ impl EqualityDeltaWriter {
                 }
             }
         }
+
         Ok(())
     }
 
@@ -197,7 +206,11 @@ impl EqualityDeltaWriter {
             );
             if let Some(previous_row_offset) = previous_row_offset {
                 self.sorted_pos_delete_writer
-                    .delete(previous_row_offset.path, previous_row_offset.offset as i64)
+                    .delete(
+                        previous_row_offset.path,
+                        previous_row_offset.offset as i64,
+                        &self.file_appender_factory,
+                    )
                     .await?;
             }
         }
@@ -214,7 +227,11 @@ impl EqualityDeltaWriter {
         for row in rows.iter() {
             if let Some(previous_row_offset) = self.inserted_rows.remove(&row.owned()) {
                 self.sorted_pos_delete_writer
-                    .delete(previous_row_offset.path, previous_row_offset.offset as i64)
+                    .delete(
+                        previous_row_offset.path,
+                        previous_row_offset.offset as i64,
+                        &self.file_appender_factory,
+                    )
                     .await?;
                 delete_row.append_value(false);
             } else {
@@ -247,7 +264,7 @@ impl EqualityDeltaWriter {
             .collect();
         let pos_delete = self
             .sorted_pos_delete_writer
-            .close()
+            .close(&self.file_appender_factory)
             .await?
             .into_iter()
             .map(|builder| {

@@ -1,15 +1,19 @@
 //! A module provide `RollingWriter`.
 use arrow_array::RecordBatch;
+use async_trait::async_trait;
 use parquet::file::properties::{WriterProperties, WriterVersion};
 use std::sync::Arc;
 
 use crate::io::location_generator::FileLocationGenerator;
 use crate::io::parquet::ParquetWriter;
+
 use crate::types::DataFileBuilder;
 use crate::Result;
 use crate::{config::TableConfigRef, io::parquet::ParquetWriterBuilder};
 use arrow_schema::SchemaRef;
 use opendal::Operator;
+
+use super::FileAppender;
 
 /// A writer capable of splitting incoming data into multiple files within one spec/partition based on the target file size.
 /// When complete, it will return a list of `FileMetaData`.
@@ -55,36 +59,6 @@ impl RollingWriter {
         Ok(writer)
     }
 
-    /// Write a record batch. The `DataFileWriter` will create a new file when the current row num is greater than `target_file_row_num`.
-    pub async fn write(&mut self, batch: RecordBatch) -> Result<()> {
-        self.current_writer
-            .as_mut()
-            .expect("Should not be none here")
-            .write(&batch)
-            .await?;
-        self.current_row_num += batch.num_rows();
-
-        if self.should_split() {
-            self.close_current_writer().await?;
-            self.open_new_writer().await?;
-        }
-        Ok(())
-    }
-
-    /// Complte the write and return the list of `DataFile` as result.
-    pub async fn close(mut self) -> Result<Vec<DataFileBuilder>> {
-        self.close_current_writer().await?;
-        Ok(self.result)
-    }
-
-    pub fn current_file(&self) -> String {
-        format!("{}/{}", self.table_location, self.current_location)
-    }
-
-    pub fn current_row(&self) -> usize {
-        self.current_row_num
-    }
-
     fn should_split(&self) -> bool {
         self.current_row_num % self.table_config.datafile_writer.rows_per_file == 0
             && self.current_writer.as_ref().unwrap().get_written_size()
@@ -110,6 +84,7 @@ impl RollingWriter {
             self.current_location.clone(),
             written_size,
         ));
+
         Ok(())
     }
 
@@ -140,5 +115,40 @@ impl RollingWriter {
         self.current_row_num = 0;
         self.current_location = location;
         Ok(())
+    }
+}
+
+// unsafe impl Sync for RollingWriter {}
+
+#[async_trait]
+impl FileAppender for RollingWriter {
+    /// Write a record batch. The `DataFileWriter` will create a new file when the current row num is greater than `target_file_row_num`.
+    async fn write(&mut self, batch: RecordBatch) -> Result<()> {
+        self.current_writer
+            .as_mut()
+            .expect("Should not be none here")
+            .write(&batch)
+            .await?;
+        self.current_row_num += batch.num_rows();
+
+        if self.should_split() {
+            self.close_current_writer().await?;
+            self.open_new_writer().await?;
+        }
+        Ok(())
+    }
+
+    /// Complte the write and return the list of `DataFile` as result.
+    async fn close(&mut self) -> Result<Vec<DataFileBuilder>> {
+        self.close_current_writer().await?;
+        Ok(self.result.drain(0..).collect())
+    }
+
+    fn current_file(&self) -> String {
+        format!("{}/{}", self.table_location, self.current_location)
+    }
+
+    fn current_row(&self) -> usize {
+        self.current_row_num
     }
 }

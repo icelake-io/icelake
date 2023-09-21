@@ -24,6 +24,10 @@ use crate::error::{Error, ErrorKind};
 pub use storage::*;
 mod io;
 pub use io::*;
+mod prometheus;
+pub use prometheus::*;
+mod layer;
+pub use layer::*;
 
 /// Reference to catalog.
 pub type CatalogRef = Arc<dyn Catalog>;
@@ -431,6 +435,7 @@ pub struct BaseCatalogConfig {
 /// iceberg.table.parquet_writer.enable_bloom_filter = true
 /// ```
 pub async fn load_catalog(configs: &HashMap<String, String>) -> Result<CatalogRef> {
+    log::info!("Loading catalog from configs: {:?}", configs);
     let catalog_type = configs.get(CATALOG_TYPE).ok_or_else(|| {
         Error::new(
             ErrorKind::IcebergDataInvalid,
@@ -458,6 +463,8 @@ pub async fn load_catalog(configs: &HashMap<String, String>) -> Result<CatalogRe
         table_io_configs,
         table_config,
     };
+
+    log::info!("Parsed base catalog config: {:?}", base_catalog_config);
 
     match catalog_type.as_str() {
         "storage" => Ok(Arc::new(

@@ -6,56 +6,74 @@ use crate::{config::TableConfigRef, types::TableMetadata};
 use arrow_schema::SchemaRef;
 use opendal::Operator;
 
-use super::file_writer::{EqualityDeleteWriter, EqualityDeltaWriter, SortedPositionDeleteWriter};
+use super::file_writer::{
+    new_eq_delete_writer, EqualityDeleteWriter, EqualityDeltaWriter, SortedPositionDeleteWriter,
+};
 use super::location_generator::FileLocationGenerator;
+use super::{
+    new_file_appender_builder, FileAppenderBuilder, FileAppenderFactory, FileAppenderLayer,
+};
 
 /// `WriterBuilder` used to create kinds of writer.
-pub struct WriterBuilder {
+pub struct WriterBuilder<L: FileAppenderLayer> {
     table_metadata: TableMetadata,
-    current_arrow_schema: SchemaRef,
+    cur_arrow_schema: SchemaRef,
     operator: Operator,
     partition_id: usize,
     task_id: usize,
     table_config: TableConfigRef,
     table_location: String,
     suffix: Option<String>,
+
+    file_appender_builder: FileAppenderBuilder<L>,
 }
 
-impl WriterBuilder {
-    /// Try to create a new `WriterBuilder`.
-    pub async fn try_new(
-        table_metadata: TableMetadata,
-        operator: Operator,
-        task_id: usize,
-        table_config: TableConfigRef,
-    ) -> Result<Self> {
-        let table_location = table_metadata.location.clone();
+pub async fn new_writer_builder(
+    table_metadata: TableMetadata,
+    operator: Operator,
+    task_id: usize,
+    table_config: TableConfigRef,
+) -> Result<WriterBuilder<impl FileAppenderLayer>> {
+    let table_location = table_metadata.location.clone();
+    let cur_arrow_schema = Arc::new(
+        table_metadata
+            .current_schema()?
+            .clone()
+            .try_into()
+            .map_err(|e| {
+                crate::error::Error::new(
+                    crate::ErrorKind::IcebergDataInvalid,
+                    format!("Can't convert iceberg schema to arrow schema: {}", e),
+                )
+            })?,
+    );
 
-        let current_arrow_schema = Arc::new(
-            table_metadata
-                .current_schema()?
-                .clone()
-                .try_into()
-                .map_err(|e| {
-                    crate::error::Error::new(
-                        crate::ErrorKind::IcebergDataInvalid,
-                        format!("Can't convert iceberg schema to arrow schema: {}", e),
-                    )
-                })?,
-        );
-
-        Ok(Self {
-            table_metadata,
-            current_arrow_schema,
-            operator,
-            partition_id: 0,
+    let file_appender_builder = new_file_appender_builder(
+        operator.clone(),
+        table_location.clone(),
+        Arc::new(FileLocationGenerator::try_new_for_data_file(
+            &table_metadata,
+            0,
             task_id,
-            table_config,
-            table_location,
-            suffix: None,
-        })
-    }
+            None,
+        )?),
+        table_config.clone(),
+    );
 
+    Ok(WriterBuilder {
+        table_metadata,
+        operator,
+        cur_arrow_schema,
+        partition_id: 0,
+        task_id,
+        table_config,
+        table_location,
+        suffix: None,
+        file_appender_builder,
+    })
+}
+
+impl<L: FileAppenderLayer> WriterBuilder<L> {
     /// Add suffix for file name.
     pub fn with_suffix(self, suffix: String) -> Self {
         Self {
@@ -69,6 +87,23 @@ impl WriterBuilder {
         Self {
             partition_id,
             ..self
+        }
+    }
+
+    pub fn with_file_appender_layer<L1: FileAppenderLayer>(
+        self,
+        layer: L1,
+    ) -> WriterBuilder<impl FileAppenderLayer> {
+        WriterBuilder {
+            table_metadata: self.table_metadata,
+            operator: self.operator,
+            partition_id: self.partition_id,
+            task_id: self.task_id,
+            table_config: self.table_config,
+            table_location: self.table_location,
+            suffix: self.suffix,
+            cur_arrow_schema: self.cur_arrow_schema,
+            file_appender_builder: self.file_appender_builder.layer(layer),
         }
     }
 
@@ -93,21 +128,11 @@ impl WriterBuilder {
     pub async fn build_equality_delete_writer(
         self,
         equality_ids: Vec<usize>,
-    ) -> Result<EqualityDeleteWriter> {
-        let location_generator = FileLocationGenerator::try_new_for_delete_file(
-            &self.table_metadata,
-            self.partition_id,
-            self.task_id,
-            self.suffix,
-        )?
-        .into();
-        EqualityDeleteWriter::try_new(
-            self.operator,
-            self.table_location,
-            location_generator,
-            self.current_arrow_schema,
-            self.table_config,
+    ) -> Result<EqualityDeleteWriter<L::LayeredFileAppender>> {
+        new_eq_delete_writer(
+            self.cur_arrow_schema,
             equality_ids,
+            &self.file_appender_builder,
         )
         .await
     }
@@ -115,15 +140,8 @@ impl WriterBuilder {
     /// Build a `EqualityDeltaWriter`.
     pub async fn build_equality_delta_writer(
         self,
-        primary_column_ids: Vec<usize>,
-    ) -> Result<EqualityDeltaWriter> {
-        let data_location_generator = FileLocationGenerator::try_new_for_data_file(
-            &self.table_metadata,
-            self.partition_id,
-            self.task_id,
-            self.suffix.clone(),
-        )?
-        .into();
+        unique_column_ids: Vec<usize>,
+    ) -> Result<EqualityDeltaWriter<impl FileAppenderFactory>> {
         let delete_location_generator = FileLocationGenerator::try_new_for_delete_file(
             &self.table_metadata,
             self.partition_id,
@@ -134,11 +152,11 @@ impl WriterBuilder {
         EqualityDeltaWriter::try_new(
             self.operator,
             self.table_location,
-            data_location_generator,
             delete_location_generator,
-            self.current_arrow_schema,
+            self.cur_arrow_schema,
             self.table_config,
-            primary_column_ids,
+            unique_column_ids,
+            self.file_appender_builder,
         )
         .await
     }
