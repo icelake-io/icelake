@@ -351,9 +351,9 @@ impl Table {
     ///
     /// The returned paths are sorted by name.
     ///
-    /// TODO: we can imporve this by only fetch the latest metadata.
+    /// TODO: we can improve this by only fetch the latest metadata.
     async fn list_table_metadata_paths(&self) -> Result<Vec<String>> {
-        let mut lister = self.op.list("metadata/").await.map_err(|err| {
+        let mut lister = self.op.lister("metadata/").await.map_err(|err| {
             Error::new(
                 crate::ErrorKind::Unexpected,
                 format!("list metadata failed: {}", err),
@@ -424,7 +424,7 @@ impl Table {
 
     async fn rename(op: &Operator, src_path: &str, dest_path: &str) -> Result<()> {
         let info = op.info();
-        if info.can_rename() {
+        if info.full_capability().rename {
             Ok(op.rename(src_path, dest_path).await?)
         } else {
             op.copy(src_path, dest_path).await?;
