@@ -9,7 +9,7 @@ pub use utils::*;
 
 use libtest_mimic::{Arguments, Trial};
 
-pub struct PositionDeleteTest {
+pub struct DeleteTest {
     docker_compose: DockerCompose,
     poetry: Poetry,
     catalog_configs: HashMap<String, String>,
@@ -17,7 +17,7 @@ pub struct PositionDeleteTest {
     partition_value: Option<StructValue>,
 }
 
-impl PositionDeleteTest {
+impl DeleteTest {
     pub fn new(docker_compose: DockerCompose, poetry: Poetry, catalog_type: &str) -> Self {
         let warehouse_root = "demo";
         let table_namespace = "s1";
@@ -203,7 +203,7 @@ impl PositionDeleteTest {
         )
     }
 
-    async fn delete_data(&mut self) {
+    async fn position_delete_data(&mut self) {
         let mut table = self.create_icelake_table().await;
         log::info!(
             "Real path of table is: {}",
@@ -239,9 +239,9 @@ impl PositionDeleteTest {
                 "-s",
                 &self.spark_connect_url(),
                 "-q",
-                "delete from s1.t2 where vlong = 1;",
+                "delete from s1.t2 where id = 1 and vlong = 1;",
             ],
-            "delete from s1.t2 where vlong = 1;",
+            "delete from s1.t2 where id = 1 and vlong = 1;",
         );
         self.poetry.run_file(
             "check.py",
@@ -257,13 +257,88 @@ impl PositionDeleteTest {
         )
     }
 
-    async fn run(mut self) {
+    async fn run_position_delete_test(mut self) {
         self.init();
         self.write_data_with_icelake().await;
-        self.delete_data().await;
+        self.position_delete_data().await;
     }
 
-    pub fn block_run(self) {
+    async fn equality_delete_data(&mut self) {
+        let mut table = self.create_icelake_table().await;
+        log::info!(
+            "Real path of table is: {}",
+            table.current_table_metadata().location
+        );
+
+        let mut writer = table
+            .writer_builder()
+            .await
+            .unwrap()
+            .build_equality_delete_writer(vec![1, 2])
+            .await
+            .unwrap();
+
+        let records = RecordBatch::try_new(
+            Arc::new(
+                table
+                    .current_table_metadata()
+                    .current_schema()
+                    .unwrap()
+                    .clone()
+                    .try_into()
+                    .unwrap(),
+            ),
+            vec![
+                Arc::new(Int64Array::from(vec![1])),
+                Arc::new(Int64Array::from(vec![1])),
+            ],
+        )
+        .unwrap();
+
+        writer.write(records).await.unwrap();
+
+        let result = writer.close().await.unwrap().pop().unwrap();
+
+        // Commit table transaction
+        {
+            let mut tx = Transaction::new(&mut table);
+            tx.append_delete_file(vec![result
+                .with_equality_ids(vec![1, 2])
+                .with_partition_value(self.partition_value.clone().unwrap())
+                .build()]);
+            tx.commit().await.unwrap();
+        }
+        self.poetry.run_file(
+            "execute.py",
+            [
+                "-s",
+                &self.spark_connect_url(),
+                "-q",
+                "delete from s1.t2 where id = 1 and vlong = 1;",
+            ],
+            "delete from s1.t2 where id = 1 and vlong = 1;",
+        );
+        self.poetry.run_file(
+            "check.py",
+            [
+                "-s",
+                &self.spark_connect_url(),
+                "-q1",
+                "select * from s1.t1",
+                "-q2",
+                "select * from s1.t2",
+            ],
+            "Check select * from s1.t1",
+        )
+    }
+
+    async fn run_equality_delete_test(mut self) {
+        self.init();
+        self.write_data_with_icelake().await;
+        self.equality_delete_data().await;
+    }
+
+    pub fn block_run(self, test_case: String) {
         let rt = Builder::new_multi_thread()
             .enable_all()
             .worker_threads(4)
@@ -271,11 +346,15 @@ impl PositionDeleteTest {
             .build()
             .unwrap();
 
-        rt.block_on(async { self.run().await })
+        if test_case == "position_delete_test" {
+            rt.block_on(async { self.run_position_delete_test().await })
+        } else if test_case == "equality_delete_test" {
+            rt.block_on(async { self.run_equality_delete_test().await })
+        }
     }
 }
 
-fn create_test_fixture(project_name: &str, catalog: &str) -> PositionDeleteTest {
+fn create_test_fixture(project_name: &str, catalog: &str) -> DeleteTest {
     set_up();
 
     let docker_compose = match catalog {
@@ -287,7 +366,7 @@ fn create_test_fixture(project_name: &str, catalog: &str) -> PositionDeleteTest 
 
     docker_compose.run();
 
-    PositionDeleteTest::new(docker_compose, poetry, catalog)
+    DeleteTest::new(docker_compose, poetry, catalog)
 }
 
 fn main() {
@@ -295,15 +374,19 @@ fn main() {
     let args = Arguments::from_args();
 
     let catalogs = vec!["storage", "rest"];
+    let test_cases = vec!["position_delete_test", "equality_delete_test"];
 
     let mut tests = Vec::with_capacity(2);
     for catalog in &catalogs {
-        let test_name = format!("{}_delete_position_test_{}", module_path!(), catalog);
-        let fixture = create_test_fixture(&test_name, catalog);
-        tests.push(Trial::test(test_name, move || {
-            fixture.block_run();
-            Ok(())
-        }));
+        for test_case in &test_cases {
+            let test_case = test_case.to_string();
+            let test_name = format!("{}_{}_{}", module_path!(), test_case, catalog);
+            let fixture = create_test_fixture(&test_name, catalog);
+            tests.push(Trial::test(test_name, move || {
+                fixture.block_run(test_case);
+                Ok(())
+            }));
+        }
     }
 
     // Run all tests and exit the application appropriatly.

@@ -1380,6 +1380,7 @@ pub struct DataFileBuilder {
     table_location: Option<String>,
     content: Option<DataContentType>,
     partition_value: Option<StructValue>,
+    equality_ids: Option<Vec<i32>>,
 }
 
 impl DataFileBuilder {
@@ -1392,6 +1393,7 @@ impl DataFileBuilder {
             table_location: None,
             content: None,
             partition_value: None,
+            equality_ids: None,
         }
     }
 
@@ -1417,6 +1419,14 @@ impl DataFileBuilder {
     pub fn with_partition_value(self, value: StructValue) -> Self {
         Self {
             partition_value: Some(value),
+            ..self
+        }
+    }
+
+    /// Set the equality ids of this data file.
+    pub fn with_equality_ids(self, ids: Vec<i32>) -> Self {
+        Self {
+            equality_ids: Some(ids),
             ..self
         }
     }
@@ -1467,9 +1477,15 @@ impl DataFileBuilder {
                 per_col_distinct_val_num,
             )
         };
+
+        // equality_ids is requierd when content is EqualityDeletes.
+        if self.content.unwrap() == DataContentType::EqualityDeletes {
+            assert!(self.equality_ids.is_some());
+        }
+
         DataFile {
-            content: self.content.expect("content should be set"),
-            file_path: format!("{}/{}", self.table_location.expect("table_location should be set"), self.file_location),
+            content: self.content.unwrap(),
+            file_path: format!("{}/{}", self.table_location.unwrap(), self.file_location),
             file_format: crate::types::DataFileFormat::Parquet,
             // /// # NOTE
             // ///
@@ -1497,7 +1513,7 @@ impl DataFileBuilder {
             nan_value_counts: None,
             lower_bounds: None,
             upper_bounds: None,
-            equality_ids: None,
+            equality_ids: self.equality_ids,
             sort_order_id: None,
         }
     }
