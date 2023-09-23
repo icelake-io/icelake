@@ -6,7 +6,7 @@ use crate::{config::TableConfigRef, types::TableMetadata};
 use arrow_schema::SchemaRef;
 use opendal::Operator;
 
-use super::file_writer::{EqualityDeleteWriter, SortedPositionDeleteWriter};
+use super::file_writer::{EqualityDeleteWriter, EqualityDeltaWriter, SortedPositionDeleteWriter};
 use super::location_generator::FileLocationGenerator;
 
 /// `WriterBuilder` used to create kinds of writer.
@@ -108,6 +108,37 @@ impl WriterBuilder {
             self.current_arrow_schema,
             self.table_config,
             equality_ids,
+        )
+        .await
+    }
+
+    /// Build a `EqualityDeltaWriter`.
+    pub async fn build_equality_delta_writer(
+        self,
+        primary_column_ids: Vec<usize>,
+    ) -> Result<EqualityDeltaWriter> {
+        let data_location_generator = FileLocationGenerator::try_new_for_data_file(
+            &self.table_metadata,
+            self.partition_id,
+            self.task_id,
+            self.suffix.clone(),
+        )?
+        .into();
+        let delete_location_generator = FileLocationGenerator::try_new_for_delete_file(
+            &self.table_metadata,
+            self.partition_id,
+            self.task_id,
+            self.suffix,
+        )?
+        .into();
+        EqualityDeltaWriter::try_new(
+            self.operator,
+            self.table_location,
+            data_location_generator,
+            delete_location_generator,
+            self.current_arrow_schema,
+            self.table_config,
+            primary_column_ids,
         )
         .await
     }

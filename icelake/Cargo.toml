@@ -73,3 +73,8 @@ harness = false
 name = "delete_test"
 path = "tests/delete_test.rs"
 harness = false
+
+[[test]]
+name = "delta_test"
+path = "tests/delta_test.rs"
+harness = false

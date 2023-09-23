@@ -18,7 +18,6 @@ use super::rolling_writer::RollingWriter;
 /// This writer will not gurantee the writen data is within one spec/partition. It is the caller's responsibility to make sure the data is within one spec/partition.
 pub struct DataFileWriter {
     inner_writer: RollingWriter,
-    table_location: String,
 }
 
 impl DataFileWriter {
@@ -33,12 +32,12 @@ impl DataFileWriter {
         Ok(Self {
             inner_writer: RollingWriter::try_new(
                 operator,
+                table_location,
                 location_generator,
                 arrow_schema,
                 table_config,
             )
             .await?,
-            table_location,
         })
     }
 
@@ -55,12 +54,18 @@ impl DataFileWriter {
             .close()
             .await?
             .into_iter()
-            .map(|builder| {
-                builder
-                    .with_content(crate::types::DataContentType::Data)
-                    .with_table_location(self.table_location.clone())
-            })
+            .map(|builder| builder.with_content(crate::types::DataContentType::Data))
             .collect())
+    }
+
+    /// Return the current file name.
+    pub fn current_file(&self) -> String {
+        self.inner_writer.current_file()
+    }
+
+    /// Return the current row number.
+    pub fn current_row(&self) -> usize {
+        self.inner_writer.current_row()
     }
 }
 
