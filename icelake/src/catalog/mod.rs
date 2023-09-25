@@ -461,7 +461,7 @@ pub async fn load_catalog(configs: &HashMap<String, String>) -> Result<CatalogRe
 
     match catalog_type.as_str() {
         "storage" => Ok(Arc::new(
-            StorageCatalog::new(base_catalog_config, configs).await?,
+            StorageCatalog::from_config(base_catalog_config, configs).await?,
         )),
         "rest" => Ok(Arc::new(
             RestCatalog::new(base_catalog_config, configs).await?,
