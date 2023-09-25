@@ -4,7 +4,6 @@
 use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
-use opendal::Operator;
 use reqwest::{Client, ClientBuilder, Request, StatusCode};
 use serde::de::DeserializeOwned;
 use urlencoding::encode;
@@ -12,7 +11,7 @@ use urlencoding::encode;
 use crate::{
     catalog::{
         rest::_models::{CatalogConfig, CommitTableResponse},
-        OperatorArgs,
+        IcebergTableIoArgs,
     },
     table::{Namespace, TableIdentifier},
     types::TableMetadata,
@@ -22,7 +21,7 @@ use crate::{
 use self::_models::{CommitTableRequest, ListTablesResponse, LoadTableResult};
 
 use super::{BaseCatalogConfig, Catalog, UpdateTable};
-use crate::catalog::CATALOG_CONFIG_PREFIX;
+use crate::catalog::{CATALOG_CONFIG_PREFIX, OperatorCreator};
 use crate::error::Result;
 
 const PATH_V1: &str = "v1";
@@ -96,11 +95,9 @@ impl Catalog for RestCatalog {
 
         let table_metadata = TableMetadata::try_from(resp.metadata)?;
 
-        let table_op = Operator::try_from(
-            &OperatorArgs::builder_from_path(&table_metadata.location)?
-                .with_args(self.config.base_config.table_io_configs.iter())
-                .build(),
-        )?;
+        let iceberg_io_args =  IcebergTableIoArgs::builder_from_path(&table_metadata.location)?
+            .with_args(self.config.base_config.table_io_configs.iter()).build()?;
+        let table_op = iceberg_io_args.create()?;
 
         Ok(
             Table::builder_from_catalog(table_op, self.clone(), table_metadata, table_name.clone())
@@ -134,11 +131,10 @@ impl Catalog for RestCatalog {
 
         let table_metadata = TableMetadata::try_from(response.metadata)?;
 
-        let table_op = Operator::try_from(
-            &OperatorArgs::builder_from_path(&table_metadata.location)?
-                .with_args(self.config.base_config.table_io_configs.iter())
-                .build(),
-        )?;
+        let args = IcebergTableIoArgs::builder_from_path(&table_metadata.location)?
+            .with_args(self.config.base_config.table_io_configs.iter())
+            .build()?;
+        let table_op = args.create()?;
 
         Ok(Table::builder_from_catalog(
             table_op,

@@ -396,7 +396,7 @@ impl Table {
 mod tests {
     use std::env;
 
-    use crate::catalog::StorageCatalog;
+    use crate::catalog::IcebergStorageCatalog;
 
     use super::*;
 
@@ -404,7 +404,7 @@ mod tests {
     async fn test_table_version_hint() -> Result<()> {
         let path = format!("{}/../testdata/simple_table", env!("CARGO_MANIFEST_DIR"));
 
-        let table = StorageCatalog::load_table(&path).await?;
+        let table = IcebergStorageCatalog::load_table(&path).await?;
 
         let version_hint = table.current_table_version();
 
@@ -417,7 +417,7 @@ mod tests {
     async fn test_table_load() -> Result<()> {
         let path = format!("{}/../testdata/simple_table", env!("CARGO_MANIFEST_DIR"));
 
-        let table = StorageCatalog::load_table(&path).await?;
+        let table = IcebergStorageCatalog::load_table(&path).await?;
 
         let table_metadata = table.current_table_metadata();
         assert_eq!(table_metadata.format_version, types::TableFormatVersion::V1);
@@ -430,7 +430,7 @@ mod tests {
     async fn test_table_load_without_version_hint() -> Result<()> {
         let path = format!("{}/../testdata/no_hint_table", env!("CARGO_MANIFEST_DIR"));
 
-        let table = StorageCatalog::load_table(&path).await?;
+        let table = IcebergStorageCatalog::load_table(&path).await?;
 
         let table_metadata = table.current_table_metadata();
         assert_eq!(table_metadata.format_version, types::TableFormatVersion::V1);
@@ -447,7 +447,7 @@ mod tests {
     async fn test_table_current_data_files() -> Result<()> {
         let path = format!("{}/../testdata/simple_table", env!("CARGO_MANIFEST_DIR"));
 
-        let table = StorageCatalog::load_table(&path).await?;
+        let table = IcebergStorageCatalog::load_table(&path).await?;
 
         let data_files = table.current_data_files().await?;
         assert_eq!(data_files.len(), 3);
