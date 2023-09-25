@@ -18,6 +18,7 @@ arrow-row = { workspace = true }
 arrow-arith = { workspace = true }
 arrow-buffer = { workspace = true }
 arrow-cast = { workspace = true }
+arrow-ord = { workspace = true }
 bytes = { workspace = true }
 futures = { workspace = true }
 opendal = { workspace = true }

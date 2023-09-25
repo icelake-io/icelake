@@ -1,6 +1,8 @@
 use std::{collections::HashMap, sync::Arc};
 
 use arrow_array::{ArrayRef, Int64Array, RecordBatch};
+use arrow_schema::SchemaRef;
+use arrow_select::concat::concat_batches;
 use icelake::io::file_writer::EqualityDeltaWriter;
 use icelake::types::{AnyValue, Field, Struct, StructValue, StructValueBuilder};
 use icelake::{catalog::load_catalog, transaction::Transaction, Table, TableIdentifier};
@@ -154,39 +156,32 @@ impl DeltaTest {
         write: Option<Vec<ArrayRef>>,
         delete: Option<Vec<ArrayRef>>,
     ) {
+        let mut ops = Vec::new();
+        let mut batches = Vec::with_capacity(2);
+        let schema: SchemaRef = Arc::new(
+            table
+                .current_table_metadata()
+                .current_schema()
+                .unwrap()
+                .clone()
+                .try_into()
+                .unwrap(),
+        );
+
         if let Some(write) = write {
-            let records = RecordBatch::try_new(
-                Arc::new(
-                    table
-                        .current_table_metadata()
-                        .current_schema()
-                        .unwrap()
-                        .clone()
-                        .try_into()
-                        .unwrap(),
-                ),
-                write,
-            )
-            .unwrap();
-            delta_writer.write(records).await.unwrap();
+            let records = RecordBatch::try_new(schema.clone(), write).unwrap();
+            ops.append(&mut vec![1; records.num_rows()]);
+            batches.push(records);
         }
 
         if let Some(delete) = delete {
-            let records = RecordBatch::try_new(
-                Arc::new(
-                    table
-                        .current_table_metadata()
-                        .current_schema()
-                        .unwrap()
-                        .clone()
-                        .try_into()
-                        .unwrap(),
-                ),
-                delete,
-            )
-            .unwrap();
-            delta_writer.delete(records).await.unwrap();
+            let records = RecordBatch::try_new(schema.clone(), delete).unwrap();
+            ops.append(&mut vec![2; records.num_rows()]);
+            batches.push(records);
         }
+
+        let batch = concat_batches(&schema, batches.iter()).unwrap();
+        delta_writer.delta_write(ops, batch).await.unwrap();
     }
 
     async fn commit_writer(&self, table: &mut Table, delta_writer: EqualityDeltaWriter) {
@@ -357,7 +352,7 @@ impl DeltaTest {
 
     async fn run_equality_delta_write_test(mut self) {
         self.init();
-        self.test_delete().await;
+        self.test_write().await;
     }
 
     async fn run_equality_delta_delete_test(mut self) {
@@ -400,7 +395,7 @@ fn main() {
     // Parse command line arguments
     let args = Arguments::from_args();
 
-    let catalogs = vec!["storage"];
+    let catalogs = vec!["storage", "rest"];
     let test_cases = vec!["equality_delta_delete_test"];
 
     let mut tests = Vec::with_capacity(2);
