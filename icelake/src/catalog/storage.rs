@@ -17,9 +17,10 @@ use crate::{
 };
 
 use super::{
-    load_catalog, BaseCatalogConfig, Catalog, IcebergTableIoArgs, UpdateTable, CATALOG_NAME, CATALOG_TYPE,
+    load_catalog, BaseCatalogConfig, Catalog, IcebergTableIoArgs, UpdateTable, CATALOG_NAME,
+    CATALOG_TYPE,
 };
-use crate::catalog::{CATALOG_CONFIG_PREFIX, OperatorCreator};
+use crate::catalog::{OperatorCreator, CATALOG_CONFIG_PREFIX};
 use crate::error::Result;
 
 /// Configuration for storage config.
@@ -51,7 +52,11 @@ impl<O: OperatorCreator> StorageCatalog<O> {
     }
 
     /// Create a new storage catalog with given catalog config.
-    pub fn with_catalog_config(warehouse: &str, operator_creator: O, catalog_config: BaseCatalogConfig) -> Self {
+    pub fn with_catalog_config(
+        warehouse: &str,
+        operator_creator: O,
+        catalog_config: BaseCatalogConfig,
+    ) -> Self {
         StorageCatalog {
             warehouse: warehouse.to_string(),
             catalog_config,
@@ -71,7 +76,8 @@ impl<O: OperatorCreator> StorageCatalog<O> {
         }
 
         let mut ds = self
-            .operator_creator.create()?
+            .operator_creator
+            .create()?
             .lister_with(&table_metadata_dir)
             .metakey(Metakey::Mode)
             .await?;
@@ -94,7 +100,8 @@ impl<O: OperatorCreator> StorageCatalog<O> {
     /// `table_path`: relative path of table dir under warehouse root.
     async fn read_version_hint(&self, table_path: &str) -> Result<i32> {
         let content = self
-            .operator_creator.create()?
+            .operator_creator
+            .create()?
             .read(format!("{table_path}/metadata/version-hint.text").as_str())
             .await?;
         let version_hint = String::from_utf8(content).map_err(|err| {
@@ -130,7 +137,8 @@ impl<O: OperatorCreator> StorageCatalog<O> {
     /// `table_path`: relative path of table dir under warehouse root.
     async fn list_table_metadata_paths(&self, table_path: &str) -> Result<Vec<String>> {
         let mut lister = self
-            .operator_creator.create()?
+            .operator_creator
+            .create()?
             .lister(format!("{table_path}/metadata/").as_str())
             .await
             .map_err(|err| {
@@ -200,7 +208,12 @@ impl<O: OperatorCreator> StorageCatalog<O> {
             .await?;
 
         log::debug!("Renaming temporary metadata file path [{tmp_metadata_file_path}] to final metadata file path [{final_metadata_file_path}]");
-        Self::rename(&self.operator()?, &tmp_metadata_file_path, &final_metadata_file_path).await?;
+        Self::rename(
+            &self.operator()?,
+            &tmp_metadata_file_path,
+            &final_metadata_file_path,
+        )
+        .await?;
         self.write_metadata_version_hint(next_version, table_path)
             .await?;
 
@@ -216,9 +229,16 @@ impl<O: OperatorCreator> StorageCatalog<O> {
 
         let final_version_hint_path = format!("{table_path}/metadata/{VERSION_HINT_FILENAME}");
 
-        self.operator()?.delete(final_version_hint_path.as_str()).await?;
+        self.operator()?
+            .delete(final_version_hint_path.as_str())
+            .await?;
         log::debug!("Renaming temporary version hint file path [{tmp_version_hint_path}] to final metadata file path [{final_version_hint_path}]");
-        Self::rename(&self.operator()?, &tmp_version_hint_path, &final_version_hint_path).await?;
+        Self::rename(
+            &self.operator()?,
+            &tmp_version_hint_path,
+            &final_version_hint_path,
+        )
+        .await?;
 
         Ok(())
     }
@@ -242,8 +262,6 @@ impl<O: OperatorCreator> StorageCatalog<O> {
         self.operator_creator.create_with_subdir(table_path)
     }
 }
-
-
 
 #[async_trait]
 impl<O: OperatorCreator> Catalog for StorageCatalog<O> {
@@ -373,7 +391,11 @@ impl IcebergStorageCatalog {
             .with_args(base_config.table_io_configs.iter())
             .build()?;
 
-        Ok(StorageCatalog::with_catalog_config(warehouse, op, base_config))
+        Ok(StorageCatalog::with_catalog_config(
+            warehouse,
+            op,
+            base_config,
+        ))
     }
 
     /// Load table from path.
@@ -389,7 +411,7 @@ impl IcebergStorageCatalog {
     }
 
     /// Load table in warehouse.
-    pub(crate)  async fn load_table_in(warehouse_path: &str, table_name: &str) -> Result<Table> {
+    pub(crate) async fn load_table_in(warehouse_path: &str, table_name: &str) -> Result<Table> {
         let configs = HashMap::from([
             (CATALOG_NAME.to_string(), "demo".to_string()),
             (CATALOG_TYPE.to_string(), "storage".to_string()),
@@ -406,7 +428,6 @@ impl IcebergStorageCatalog {
             .await
     }
 }
-
 
 impl Namespace {
     fn to_path(&self) -> Result<String> {

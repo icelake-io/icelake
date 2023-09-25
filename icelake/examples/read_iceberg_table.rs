@@ -1,7 +1,7 @@
 use std::env;
 
 use anyhow::Result;
-use icelake::catalog::{IcebergStorageCatalog};
+use icelake::catalog::IcebergStorageCatalog;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {

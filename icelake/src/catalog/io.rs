@@ -20,7 +20,6 @@ pub const OP_ARGS_ACCESS_KEY: &str = "access_key_id";
 /// s3 access secret
 pub const OP_ARGS_ACCESS_SECRET: &str = "secret_access_key";
 
-
 /// OperatorCreator is used to create an opendal::Operator.
 ///
 /// OpenDAL doesn't support checkout sub dir yet, thus we need to support create a new operator
@@ -69,9 +68,8 @@ impl IcebergTableIoArgs {
         let url = Url::parse(path)?;
 
         let op = match url.scheme() {
-            "file" => {
-                IcebergTableIoArgs::builder(Scheme::Fs).with_arg(OP_ARGS_ROOT, url.path().to_string())
-            }
+            "file" => IcebergTableIoArgs::builder(Scheme::Fs)
+                .with_arg(OP_ARGS_ROOT, url.path().to_string()),
             "s3" | "s3a" => IcebergTableIoArgs::builder(Scheme::S3)
                 .with_arg(OP_ARGS_ROOT, url.path().to_string())
                 .with_arg(
@@ -112,8 +110,7 @@ impl IcebergTableIoArgsBuilder {
 
     /// Add all args
     pub fn with_args(mut self, args: impl Iterator<Item = (impl ToString, impl ToString)>) -> Self {
-        self
-            .args
+        self.args
             .extend(args.map(|(k, v)| (k.to_string(), v.to_string())));
         self
     }
@@ -121,8 +118,8 @@ impl IcebergTableIoArgsBuilder {
     /// Build arg.
     pub fn build(self) -> Result<IcebergTableIoArgs> {
         let op = Operator::via_map(self.scheme, self.args.clone())?;
-        
-        Ok( IcebergTableIoArgs {
+
+        Ok(IcebergTableIoArgs {
             scheme: self.scheme,
             args: self.args,
             op,
@@ -136,10 +133,13 @@ impl OperatorCreator for IcebergTableIoArgs {
     }
 
     fn create_with_subdir(&self, path: &str) -> Result<Operator> {
-        let scheme= self.scheme;
-        let mut args= self.args.clone();
+        let scheme = self.scheme;
+        let mut args = self.args.clone();
 
-        let new_root = format!("{}/{path}", args.get(OP_ARGS_ROOT).cloned().unwrap_or_default());
+        let new_root = format!(
+            "{}/{path}",
+            args.get(OP_ARGS_ROOT).cloned().unwrap_or_default()
+        );
         args.insert(OP_ARGS_ROOT.to_string(), new_root);
 
         Ok(Operator::via_map(scheme, args.clone())?)
