@@ -1,7 +1,10 @@
 use std::{collections::HashMap, sync::Arc};
 
-use arrow_array::{Int64Array, RecordBatch};
-use icelake::types::StructValue;
+use arrow_array::{ArrayRef, Int64Array, RecordBatch};
+use arrow_schema::SchemaRef;
+use arrow_select::concat::concat_batches;
+use icelake::io::file_writer::EqualityDeltaWriter;
+use icelake::types::{AnyValue, Field, Struct, StructValue, StructValueBuilder};
 use icelake::{catalog::load_catalog, transaction::Transaction, Table, TableIdentifier};
 mod utils;
 use tokio::runtime::Builder;
@@ -9,15 +12,14 @@ pub use utils::*;
 
 use libtest_mimic::{Arguments, Trial};
 
-pub struct DeleteTest {
+pub struct DeltaTest {
     docker_compose: DockerCompose,
     poetry: Poetry,
     catalog_configs: HashMap<String, String>,
-    data_file_name: Option<String>,
-    partition_value: Option<StructValue>,
+    partition_value: StructValue,
 }
 
-impl DeleteTest {
+impl DeltaTest {
     pub fn new(docker_compose: DockerCompose, poetry: Poetry, catalog_type: &str) -> Self {
         let warehouse_root = "demo";
         let table_namespace = "s1";
@@ -73,6 +75,20 @@ impl DeleteTest {
             ]),
             _ => panic!("Unrecognized catalog type: {catalog_type}"),
         };
+
+        let struct_type = Struct::new(vec![Arc::new(Field::required(
+            1,
+            "id",
+            icelake::types::Any::Primitive(icelake::types::Primitive::Long),
+        ))]);
+        let mut builder = StructValueBuilder::new(struct_type.into());
+        builder
+            .add_field(
+                1,
+                Some(AnyValue::Primitive(icelake::types::PrimitiveValue::Long(1))),
+            )
+            .unwrap();
+        let partition_value = builder.build().unwrap();
         Self {
             docker_compose,
             poetry,
@@ -80,8 +96,7 @@ impl DeleteTest {
                 .iter()
                 .map(|(k, v)| (k.to_string(), v.to_string()))
                 .collect(),
-            data_file_name: None,
-            partition_value: None,
+            partition_value,
         }
     }
 
@@ -97,7 +112,8 @@ impl DeleteTest {
         CREATE TABLE s1.t1
         (
             id long,
-            vlong long
+            key long,
+            value long
         )  USING iceberg partitioned by(id)
         TBLPROPERTIES ('format-version'='2','write.delete.mode'='merge-on-read');
             "
@@ -106,22 +122,10 @@ impl DeleteTest {
         CREATE TABLE s1.t2
         (
             id long,
-            vlong long
+            key long,
+            value long
         ) USING iceberg partitioned by(id)
         TBLPROPERTIES ('format-version'='2','write.delete.mode'='merge-on-read');
-            "
-            .to_string(),
-            "
-        CREATE TABLE s1.t3
-        (
-            id long,
-            vlong long
-        ) using iceberg partitioned by(id)
-        TBLPROPERTIES ('format-version'='2','write.delete.mode'='merge-on-read');
-            "
-            .to_string(),
-            "
-        INSERT INTO TABLE s1.t2 VALUES (1,1),(1,2),(1,3);
             "
             .to_string(),
         ];
@@ -145,49 +149,113 @@ impl DeleteTest {
             .unwrap()
     }
 
-    pub async fn write_data_with_icelake(&mut self) {
+    async fn write_and_delete_with_delta(
+        &self,
+        table: &Table,
+        delta_writer: &mut EqualityDeltaWriter,
+        write: Option<Vec<ArrayRef>>,
+        delete: Option<Vec<ArrayRef>>,
+    ) {
+        let mut ops = Vec::new();
+        let mut batches = Vec::with_capacity(2);
+        let schema: SchemaRef = Arc::new(
+            table
+                .current_table_metadata()
+                .current_schema()
+                .unwrap()
+                .clone()
+                .try_into()
+                .unwrap(),
+        );
+
+        if let Some(write) = write {
+            let records = RecordBatch::try_new(schema.clone(), write).unwrap();
+            ops.append(&mut vec![1; records.num_rows()]);
+            batches.push(records);
+        }
+
+        if let Some(delete) = delete {
+            let records = RecordBatch::try_new(schema.clone(), delete).unwrap();
+            ops.append(&mut vec![2; records.num_rows()]);
+            batches.push(records);
+        }
+
+        let batch = concat_batches(&schema, batches.iter()).unwrap();
+        delta_writer.delta_write(ops, batch).await.unwrap();
+    }
+
+    async fn commit_writer(&self, table: &mut Table, delta_writer: EqualityDeltaWriter) {
+        let mut result = delta_writer
+            .close(Some(self.partition_value.clone()))
+            .await
+            .unwrap();
+
+        // Commit table transaction
+        {
+            let mut tx = Transaction::new(table);
+            if let Some(data) = result.data.pop() {
+                tx.append_data_file([data].into_iter());
+            }
+            if let Some(delete) = result.pos_delete.pop() {
+                tx.append_delete_file([delete].into_iter());
+            }
+            if let Some(delete) = result.eq_delete.pop() {
+                tx.append_delete_file([delete].into_iter());
+            }
+            tx.commit().await.unwrap();
+        }
+    }
+
+    pub async fn test_write(&mut self) {
+        self.poetry.run_file(
+            "execute.py",
+            [
+                "-s",
+                &self.spark_connect_url(),
+                "-q",
+                "insert into s1.t2 values (1,1,1),(1,2,2),(1,3,3),(1,4,4)",
+            ],
+            "insert into s1.t2 values (1,1,1),(1,2,2),(1,3,3),(1,4,4)",
+        );
+
         let mut table = self.create_icelake_table().await;
         log::info!(
             "Real path of table is: {}",
             table.current_table_metadata().location
         );
+        let mut delta_writer = table
+            .writer_builder()
+            .await
+            .unwrap()
+            .build_equality_delta_writer(vec![1, 2])
+            .await
+            .unwrap();
 
-        let records = RecordBatch::try_new(
-            Arc::new(
-                table
-                    .current_table_metadata()
-                    .current_schema()
-                    .unwrap()
-                    .clone()
-                    .try_into()
-                    .unwrap(),
-            ),
-            vec![
+        self.write_and_delete_with_delta(
+            &table,
+            &mut delta_writer,
+            Some(vec![
                 Arc::new(Int64Array::from(vec![1, 1, 1])),
                 Arc::new(Int64Array::from(vec![1, 2, 3])),
-            ],
+                Arc::new(Int64Array::from(vec![1, 4, 5])),
+            ]),
+            None,
         )
-        .unwrap();
+        .await;
 
-        let mut task_writer = table.task_writer().await.unwrap();
+        self.write_and_delete_with_delta(
+            &table,
+            &mut delta_writer,
+            Some(vec![
+                Arc::new(Int64Array::from(vec![1, 1, 1])),
+                Arc::new(Int64Array::from(vec![2, 3, 4])),
+                Arc::new(Int64Array::from(vec![2, 3, 4])),
+            ]),
+            None,
+        )
+        .await;
 
-        log::info!(
-            "Insert record batch with {} records using icelake.",
-            records.num_rows()
-        );
-        task_writer.write(&records).await.unwrap();
-
-        let result = task_writer.close().await.unwrap();
-        assert!(result.len() == 1);
-        self.data_file_name = Some(result[0].file_path.clone());
-        self.partition_value = Some(result[0].partition.clone());
-
-        // Commit table transaction
-        {
-            let mut tx = Transaction::new(&mut table);
-            tx.append_data_file(result);
-            tx.commit().await.unwrap();
-        }
+        self.commit_writer(&mut table, delta_writer).await;
 
         self.poetry.run_file(
             "check.py",
@@ -203,121 +271,71 @@ impl DeleteTest {
         )
     }
 
-    async fn position_delete_data(&mut self) {
-        let mut table = self.create_icelake_table().await;
-        log::info!(
-            "Real path of table is: {}",
-            table.current_table_metadata().location
-        );
-
-        let mut writer = table
-            .writer_builder()
-            .await
-            .unwrap()
-            .build_sorted_position_delete_writer()
-            .await
-            .unwrap();
-
-        writer
-            .delete(self.data_file_name.clone().unwrap(), 0)
-            .await
-            .unwrap();
-
-        let result = writer.close().await.unwrap().pop().unwrap();
-
-        // Commit table transaction
-        {
-            let mut tx = Transaction::new(&mut table);
-            tx.append_delete_file(vec![result
-                .with_partition_value(Some(self.partition_value.clone().unwrap()))
-                .build()]);
-            tx.commit().await.unwrap();
-        }
+    pub async fn test_delete(&mut self) {
         self.poetry.run_file(
             "execute.py",
             [
                 "-s",
                 &self.spark_connect_url(),
                 "-q",
-                "delete from s1.t2 where id = 1 and vlong = 1;",
+                "insert into s1.t2 values (1,1,1),(1,2,2),(1,3,3)",
             ],
-            "delete from s1.t2 where id = 1 and vlong = 1;",
+            "insert into s1.t2 values (1,1,1),(1,2,2),(1,3,3)",
         );
-        self.poetry.run_file(
-            "check.py",
-            [
-                "-s",
-                &self.spark_connect_url(),
-                "-q1",
-                "select * from s1.t1",
-                "-q2",
-                "select * from s1.t2",
-            ],
-            "Check select * from s1.t1",
-        )
-    }
 
-    async fn run_position_delete_test(mut self) {
-        self.init();
-        self.write_data_with_icelake().await;
-        self.position_delete_data().await;
-    }
-
-    async fn equality_delete_data(&mut self) {
         let mut table = self.create_icelake_table().await;
         log::info!(
             "Real path of table is: {}",
             table.current_table_metadata().location
         );
-
-        let mut writer = table
+        let mut delta_writer = table
             .writer_builder()
             .await
             .unwrap()
-            .build_equality_delete_writer(vec![1, 2])
+            .build_equality_delta_writer(vec![1, 2])
             .await
             .unwrap();
 
-        let records = RecordBatch::try_new(
-            Arc::new(
-                table
-                    .current_table_metadata()
-                    .current_schema()
-                    .unwrap()
-                    .clone()
-                    .try_into()
-                    .unwrap(),
-            ),
-            vec![
-                Arc::new(Int64Array::from(vec![1])),
-                Arc::new(Int64Array::from(vec![1])),
-            ],
+        self.write_and_delete_with_delta(
+            &table,
+            &mut delta_writer,
+            Some(vec![
+                Arc::new(Int64Array::from(vec![1, 1, 1])),
+                Arc::new(Int64Array::from(vec![1, 2, 4])),
+                Arc::new(Int64Array::from(vec![1, 2, 4])),
+            ]),
+            None,
         )
-        .unwrap();
+        .await;
 
-        writer.write(records).await.unwrap();
+        self.commit_writer(&mut table, delta_writer).await;
 
-        let result = writer.close().await.unwrap().pop().unwrap();
+        let mut delta_writer = table
+            .writer_builder()
+            .await
+            .unwrap()
+            .build_equality_delta_writer(vec![1, 2])
+            .await
+            .unwrap();
 
-        // Commit table transaction
-        {
-            let mut tx = Transaction::new(&mut table);
-            tx.append_delete_file(vec![result
-                .with_equality_ids(vec![1, 2])
-                .with_partition_value(Some(self.partition_value.clone().unwrap()))
-                .build()]);
-            tx.commit().await.unwrap();
-        }
-        self.poetry.run_file(
-            "execute.py",
-            [
-                "-s",
-                &self.spark_connect_url(),
-                "-q",
-                "delete from s1.t2 where id = 1 and vlong = 1;",
-            ],
-            "delete from s1.t2 where id = 1 and vlong = 1;",
-        );
+        self.write_and_delete_with_delta(
+            &table,
+            &mut delta_writer,
+            Some(vec![
+                Arc::new(Int64Array::from(vec![1, 1])),
+                Arc::new(Int64Array::from(vec![3, 5])),
+                Arc::new(Int64Array::from(vec![3, 5])),
+            ]),
+            Some(vec![
+                Arc::new(Int64Array::from(vec![1, 1])),
+                Arc::new(Int64Array::from(vec![5, 4])),
+                Arc::new(Int64Array::from(vec![5, 4])),
+            ]),
+        )
+        .await;
+
+        self.commit_writer(&mut table, delta_writer).await;
+
         self.poetry.run_file(
             "check.py",
             [
@@ -332,10 +350,14 @@ impl DeleteTest {
         )
     }
 
-    async fn run_equality_delete_test(mut self) {
+    async fn run_equality_delta_write_test(mut self) {
         self.init();
-        self.write_data_with_icelake().await;
-        self.equality_delete_data().await;
+        self.test_write().await;
+    }
+
+    async fn run_equality_delta_delete_test(mut self) {
+        self.init();
+        self.test_delete().await;
     }
 
     pub fn block_run(self, test_case: String) {
@@ -346,15 +368,15 @@ impl DeleteTest {
             .build()
             .unwrap();
 
-        if test_case == "position_delete_test" {
-            rt.block_on(async { self.run_position_delete_test().await })
-        } else if test_case == "equality_delete_test" {
-            rt.block_on(async { self.run_equality_delete_test().await })
+        if test_case == "equality_delta_write_test" {
+            rt.block_on(async { self.run_equality_delta_write_test().await });
+        } else if test_case == "equality_delta_delete_test" {
+            rt.block_on(async { self.run_equality_delta_delete_test().await });
         }
     }
 }
 
-fn create_test_fixture(project_name: &str, catalog: &str) -> DeleteTest {
+fn create_test_fixture(project_name: &str, catalog: &str) -> DeltaTest {
     set_up();
 
     let docker_compose = match catalog {
@@ -366,7 +388,7 @@ fn create_test_fixture(project_name: &str, catalog: &str) -> DeleteTest {
 
     docker_compose.run();
 
-    DeleteTest::new(docker_compose, poetry, catalog)
+    DeltaTest::new(docker_compose, poetry, catalog)
 }
 
 fn main() {
@@ -374,7 +396,7 @@ fn main() {
     let args = Arguments::from_args();
 
     let catalogs = vec!["storage", "rest"];
-    let test_cases = vec!["position_delete_test", "equality_delete_test"];
+    let test_cases = vec!["equality_delta_delete_test"];
 
     let mut tests = Vec::with_capacity(2);
     for catalog in &catalogs {

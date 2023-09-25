@@ -18,6 +18,7 @@ arrow-row = { workspace = true }
 arrow-arith = { workspace = true }
 arrow-buffer = { workspace = true }
 arrow-cast = { workspace = true }
+arrow-ord = { workspace = true }
 bytes = { workspace = true }
 futures = { workspace = true }
 opendal = { workspace = true }
@@ -72,4 +73,9 @@ harness = false
 [[test]]
 name = "delete_test"
 path = "tests/delete_test.rs"
+harness = false
+
+[[test]]
+name = "delta_test"
+path = "tests/delta_test.rs"
 harness = false

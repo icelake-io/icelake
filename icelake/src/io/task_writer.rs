@@ -234,7 +234,7 @@ impl PartitionedWriter {
 
             res.extend(data_file_builders.into_iter().map(|data_file_builder| {
                 data_file_builder
-                    .with_partition_value(partition_value.clone())
+                    .with_partition_value(Some(partition_value.clone()))
                     .build()
             }));
         }

@@ -17,6 +17,7 @@ use opendal::Operator;
 /// `FileMetaData` to specific `DataFile`.
 pub(crate) struct RollingWriter {
     operator: Operator,
+    table_location: String,
     location_generator: Arc<FileLocationGenerator>,
     arrow_schema: SchemaRef,
 
@@ -34,12 +35,14 @@ impl RollingWriter {
     /// Create a new `DataFileWriter`.
     pub async fn try_new(
         operator: Operator,
+        table_location: String,
         location_generator: Arc<FileLocationGenerator>,
         arrow_schema: SchemaRef,
         table_config: TableConfigRef,
     ) -> Result<Self> {
         let mut writer = Self {
             operator,
+            table_location,
             location_generator,
             arrow_schema,
             current_writer: None,
@@ -74,6 +77,14 @@ impl RollingWriter {
         Ok(self.result)
     }
 
+    pub fn current_file(&self) -> String {
+        format!("{}/{}", self.table_location, self.current_location)
+    }
+
+    pub fn current_row(&self) -> usize {
+        self.current_row_num
+    }
+
     fn should_split(&self) -> bool {
         self.current_row_num % self.table_config.datafile_writer.rows_per_file == 0
             && self.current_writer.as_ref().unwrap().get_written_size()
@@ -95,6 +106,7 @@ impl RollingWriter {
 
         self.result.push(DataFileBuilder::new(
             meta_data,
+            self.table_location.clone(),
             self.current_location.clone(),
             written_size,
         ));

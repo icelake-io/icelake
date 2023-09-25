@@ -16,7 +16,6 @@ use super::rolling_writer::RollingWriter;
 /// EqualityDeleteWriter is a writer that writes to a file in the equality delete format.
 pub struct EqualityDeleteWriter {
     inner_writer: RollingWriter,
-    table_location: String,
     equality_ids: Vec<usize>,
     col_id_idx: Vec<usize>,
 }
@@ -60,12 +59,12 @@ impl EqualityDeleteWriter {
         Ok(Self {
             inner_writer: RollingWriter::try_new(
                 operator,
+                table_location,
                 location_generator,
                 delete_schema.into(),
                 table_config,
             )
             .await?,
-            table_location,
             equality_ids,
             col_id_idx,
         })
@@ -97,7 +96,6 @@ impl EqualityDeleteWriter {
             .map(|builder| {
                 builder
                     .with_content(crate::types::DataContentType::EqualityDeletes)
-                    .with_table_location(self.table_location.clone())
                     .with_equality_ids(self.equality_ids.iter().map(|&i| i as i32).collect())
             })
             .collect())

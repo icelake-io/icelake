@@ -10,18 +10,19 @@ def check(args):
     sql1 = args.sql1
     sql2 = args.sql2
     print(f"Executing sql: {sql1}")
-    df1 = spark.sql(sql1).collect()
-    print(f"Len of df1: {len(df1)}")
+    df1 = spark.sql(sql1)
     print(f"Executing sql: {sql2}")
-    df2 = spark.sql(sql2).collect()
-    print(f"Len of df2: {len(df2)}")
+    df2 = spark.sql(sql2)
+    
+    # tc.assertEqual(df1, df2)
+    # Using exceptAll to compare two dataframes so that the order of rows doesn't matter.
+    diff_df = df1.exceptAll(df2).collect()
+    print(f"diff_df: {diff_df}")
+    tc.assertEqual(len(diff_df), 0)
 
-    tc.assertEqual(df1, df2)
-    # diff_df = df1.exceptAll(df2).collect()
-    # tc.assertEqual(len(diff_df), 0)
-
-    # diff_df = df2.exceptAll(df1).collect()
-    # tc.assertEqual(len(diff_df), 0)
+    diff_df = df2.exceptAll(df1).collect()
+    print(f"diff_df: {diff_df}")
+    tc.assertEqual(len(diff_df), 0)
 
 
 if __name__ == "__main__":

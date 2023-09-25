@@ -1377,7 +1377,7 @@ pub struct DataFileBuilder {
     meta_data: FileMetaData,
     file_location: String,
     written_size: u64,
-    table_location: Option<String>,
+    table_location: String,
     content: Option<DataContentType>,
     partition_value: Option<StructValue>,
     equality_ids: Option<Vec<i32>>,
@@ -1385,12 +1385,17 @@ pub struct DataFileBuilder {
 
 impl DataFileBuilder {
     /// Create a new `DataFileBuilder`.
-    pub fn new(meta_data: FileMetaData, file_location: String, written_size: u64) -> Self {
+    pub fn new(
+        meta_data: FileMetaData,
+        table_location: String,
+        file_location: String,
+        written_size: u64,
+    ) -> Self {
         Self {
             meta_data,
             file_location,
             written_size,
-            table_location: None,
+            table_location,
             content: None,
             partition_value: None,
             equality_ids: None,
@@ -1406,19 +1411,10 @@ impl DataFileBuilder {
         }
     }
 
-    /// Set the table location of this data file.
-    /// This function must be call before build.
-    pub fn with_table_location(self, location: String) -> Self {
-        Self {
-            table_location: Some(location),
-            ..self
-        }
-    }
-
     /// Set the partition value of this data file.
-    pub fn with_partition_value(self, value: StructValue) -> Self {
+    pub fn with_partition_value(self, value: Option<StructValue>) -> Self {
         Self {
-            partition_value: Some(value),
+            partition_value: value,
             ..self
         }
     }
@@ -1485,7 +1481,7 @@ impl DataFileBuilder {
 
         DataFile {
             content: self.content.unwrap(),
-            file_path: format!("{}/{}", self.table_location.unwrap(), self.file_location),
+            file_path: format!("{}/{}", self.table_location, self.file_location),
             file_format: crate::types::DataFileFormat::Parquet,
             // /// # NOTE
             // ///

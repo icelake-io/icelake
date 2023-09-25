@@ -6,3 +6,5 @@ pub use position_delete_writer::*;
 pub mod equality_delete_writer;
 pub mod rolling_writer;
 pub use equality_delete_writer::*;
+pub mod equality_delta_writer;
+pub use equality_delta_writer::*;

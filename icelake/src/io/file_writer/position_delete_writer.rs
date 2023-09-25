@@ -108,7 +108,6 @@ impl SortedPositionDeleteWriter {
 /// But PositionDeleteWriter will not gurantee and check above. It is the caller's responsibility to gurantee them.
 pub struct PositionDeleteWriter {
     inner_writer: RollingWriter,
-    table_location: String,
     schema: SchemaRef,
 }
 
@@ -144,12 +143,12 @@ impl PositionDeleteWriter {
         Ok(Self {
             inner_writer: RollingWriter::try_new(
                 operator,
+                table_location,
                 location_generator,
                 schema.clone(),
                 table_config,
             )
             .await?,
-            table_location,
             schema,
         })
     }
@@ -190,11 +189,7 @@ impl PositionDeleteWriter {
             .close()
             .await?
             .into_iter()
-            .map(|builder| {
-                builder
-                    .with_content(crate::types::DataContentType::PostionDeletes)
-                    .with_table_location(self.table_location.clone())
-            })
+            .map(|builder| builder.with_content(crate::types::DataContentType::PostionDeletes))
             .collect())
     }
 }
