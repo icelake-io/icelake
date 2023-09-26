@@ -127,7 +127,7 @@ impl PartitionSplitter {
     /// This function do two things:
     /// 1. Partition the batch by partition spec.
     /// 2. Create the partition value.
-    pub async fn split_by_partition(
+    pub fn split_by_partition(
         &mut self,
         batch: &RecordBatch,
     ) -> Result<HashMap<PartitionKey, RecordBatch>> {
