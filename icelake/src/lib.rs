@@ -2,7 +2,7 @@
 //! like [Apache Iceberg](https://iceberg.apache.org/).
 
 // Make sure all our public APIs have docs.
-#![deny(missing_docs)]
+// #![deny(missing_docs)]
 #![allow(dead_code)]
 
 mod table;

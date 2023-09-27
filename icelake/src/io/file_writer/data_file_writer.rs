@@ -1,43 +1,24 @@
 //! A module provide `DataFileWriter`.
-use std::sync::Arc;
 
-use crate::config::TableConfigRef;
-use crate::io::location_generator::FileLocationGenerator;
+use crate::io::FileAppender;
 use crate::types::DataFileBuilder;
 use crate::Result;
 use arrow_array::RecordBatch;
-use arrow_schema::SchemaRef;
-use opendal::Operator;
-
-use super::rolling_writer::RollingWriter;
 
 /// A writer capable of splitting incoming data into multiple files within one spec/partition based on the target file size.
 /// When complete, it will return a list of `DataFile`.
 ///
 /// # NOTE
 /// This writer will not gurantee the writen data is within one spec/partition. It is the caller's responsibility to make sure the data is within one spec/partition.
-pub struct DataFileWriter {
-    inner_writer: RollingWriter,
+pub struct DataFileWriter<F: FileAppender> {
+    inner_writer: F,
 }
 
-impl DataFileWriter {
+impl<F: FileAppender> DataFileWriter<F> {
     /// Create a new `DataFileWriter`.
-    pub async fn try_new(
-        operator: Operator,
-        table_location: String,
-        location_generator: Arc<FileLocationGenerator>,
-        arrow_schema: SchemaRef,
-        table_config: TableConfigRef,
-    ) -> Result<Self> {
+    pub fn try_new(file_appender: F) -> Result<Self> {
         Ok(Self {
-            inner_writer: RollingWriter::try_new(
-                operator,
-                table_location,
-                location_generator,
-                arrow_schema,
-                table_config,
-            )
-            .await?,
+            inner_writer: file_appender,
         })
     }
 
@@ -48,7 +29,7 @@ impl DataFileWriter {
     }
 
     /// Complte the write and return the list of `DataFileBuilder` as result.
-    pub async fn close(self) -> Result<Vec<DataFileBuilder>> {
+    pub async fn close(mut self) -> Result<Vec<DataFileBuilder>> {
         Ok(self
             .inner_writer
             .close()
@@ -84,6 +65,7 @@ mod test {
     use crate::config::TableConfig;
     use crate::io::file_writer::data_file_writer;
     use crate::io::location_generator::FileLocationGenerator;
+    use crate::io::{new_file_appender_builder, FileAppenderFactory};
     use crate::types::parse_table_metadata;
 
     #[tokio::test]
@@ -113,13 +95,15 @@ mod test {
         let to_write = RecordBatch::try_from_iter([("col", col.clone())]).unwrap();
 
         let mut writer = data_file_writer::DataFileWriter::try_new(
-            op.clone(),
-            "/tmp/table".to_string(),
-            location_generator.into(),
-            to_write.schema(),
-            Arc::new(TableConfig::default()),
-        )
-        .await?;
+            new_file_appender_builder(
+                op.clone(),
+                "/tmp/table".to_string(),
+                location_generator.into(),
+                Arc::new(TableConfig::default()),
+            )
+            .build(to_write.schema())
+            .await?,
+        )?;
 
         writer.write(to_write.clone()).await?;
         writer.write(to_write.clone()).await?;
