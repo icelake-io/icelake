@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
 use opendal::{Operator, Scheme};
-use prometheus::Registry;
 use url::Url;
 
 use crate::Error;
@@ -56,7 +55,6 @@ impl IcebergTableIoArgs {
         IcebergTableIoArgsBuilder {
             scheme,
             args: HashMap::new(),
-            prometheus: None,
         }
     }
 
@@ -101,7 +99,6 @@ impl IcebergTableIoArgs {
 pub struct IcebergTableIoArgsBuilder {
     scheme: Scheme,
     args: HashMap<String, String>,
-    prometheus: Option<Registry>,
 }
 
 impl IcebergTableIoArgsBuilder {
@@ -115,12 +112,6 @@ impl IcebergTableIoArgsBuilder {
     pub fn with_args(mut self, args: impl Iterator<Item = (impl ToString, impl ToString)>) -> Self {
         self.args
             .extend(args.map(|(k, v)| (k.to_string(), v.to_string())));
-        self
-    }
-
-    /// Set prometheus registry
-    pub fn with_prometheus_registry(mut self, registry: Registry) -> Self {
-        self.prometheus = Some(registry);
         self
     }
 

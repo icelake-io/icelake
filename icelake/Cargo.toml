@@ -46,7 +46,7 @@ reqwest = { workspace = true }
 urlencoding = { workspace = true }
 enum-display = { workspace = true }
 itertools = { workspace = true }
-prometheus = { workspace = true }
+prometheus = { workspace = true, optional = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
@@ -55,6 +55,9 @@ csv = { workspace = true }
 env_logger = { workspace = true }
 arrow-csv = { workspace = true }
 libtest-mimic = { workspace = true }
+
+[features]
+prometheus = ["dep:prometheus"]
 
 [[example]]
 name = "read_iceberg_table"

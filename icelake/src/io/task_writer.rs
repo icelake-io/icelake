@@ -29,7 +29,7 @@ use std::sync::Arc;
 /// data file writer.
 pub enum TaskWriter<F: FileAppenderFactory> {
     /// Unpartitioned task writer
-    Unpartitioned(UnpartitionedWriter<F::F>),
+    Unpartitioned(UnpartitionedWriter<F::R>),
     /// Partitioned task writer
     Partitioned(PartitionedWriter<F>),
 }
@@ -147,7 +147,7 @@ pub struct PartitionedWriter<F: FileAppenderFactory> {
     schema: ArrowSchemaRef,
     partition_type: Any,
 
-    writers: HashMap<PartitionKey, DataFileWriter<F::F>>,
+    writers: HashMap<PartitionKey, DataFileWriter<F::R>>,
     partition_splitter: PartitionSplitter,
     file_appender_factory: F,
 }

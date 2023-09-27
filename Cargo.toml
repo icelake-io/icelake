@@ -48,4 +48,4 @@ reqwest = { version = "0.11", default-features = false, features = ["json"] }
 urlencoding = "2"
 enum-display = "0.1"
 itertools = "0.11"
-prometheus = "0.13"
+prometheus = { version = "0.13" }

@@ -11,11 +11,12 @@ use super::file_writer::{
 };
 use super::location_generator::FileLocationGenerator;
 use super::{
-    new_file_appender_builder, FileAppenderBuilder, FileAppenderFactory, FileAppenderLayer,
+    new_file_appender_builder, ChainedFileAppenderLayer, DefaultFileAppender, EmptyLayer,
+    FileAppenderBuilder, FileAppenderFactory, FileAppenderLayer,
 };
 
 /// `WriterBuilder` used to create kinds of writer.
-pub struct WriterBuilder<L: FileAppenderLayer> {
+pub struct WriterBuilder<L: FileAppenderLayer<DefaultFileAppender>> {
     table_metadata: TableMetadata,
     cur_arrow_schema: SchemaRef,
     operator: Operator,
@@ -33,7 +34,7 @@ pub async fn new_writer_builder(
     operator: Operator,
     task_id: usize,
     table_config: TableConfigRef,
-) -> Result<WriterBuilder<impl FileAppenderLayer>> {
+) -> Result<WriterBuilder<EmptyLayer>> {
     let table_location = table_metadata.location.clone();
     let cur_arrow_schema = Arc::new(
         table_metadata
@@ -73,7 +74,7 @@ pub async fn new_writer_builder(
     })
 }
 
-impl<L: FileAppenderLayer> WriterBuilder<L> {
+impl<L: FileAppenderLayer<DefaultFileAppender>> WriterBuilder<L> {
     /// Add suffix for file name.
     pub fn with_suffix(self, suffix: String) -> Self {
         Self {
@@ -90,10 +91,10 @@ impl<L: FileAppenderLayer> WriterBuilder<L> {
         }
     }
 
-    pub fn with_file_appender_layer<L1: FileAppenderLayer>(
+    pub fn with_file_appender_layer<L1: FileAppenderLayer<L::R>>(
         self,
         layer: L1,
-    ) -> WriterBuilder<impl FileAppenderLayer> {
+    ) -> WriterBuilder<ChainedFileAppenderLayer<L, DefaultFileAppender, L1>> {
         WriterBuilder {
             table_metadata: self.table_metadata,
             operator: self.operator,
@@ -128,7 +129,7 @@ impl<L: FileAppenderLayer> WriterBuilder<L> {
     pub async fn build_equality_delete_writer(
         self,
         equality_ids: Vec<usize>,
-    ) -> Result<EqualityDeleteWriter<L::LayeredFileAppender>> {
+    ) -> Result<EqualityDeleteWriter<L::R>> {
         new_eq_delete_writer(
             self.cur_arrow_schema,
             equality_ids,

@@ -19,7 +19,7 @@ use super::FileAppender;
 /// When complete, it will return a list of `FileMetaData`.
 /// This writer should be used by specific content writer(`DataFileWriter` and `PositionDeleteFileWriter`), they should convert
 /// `FileMetaData` to specific `DataFile`.
-pub(crate) struct RollingWriter {
+pub struct RollingWriter {
     operator: Operator,
     table_location: String,
     location_generator: Arc<FileLocationGenerator>,

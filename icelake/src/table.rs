@@ -6,9 +6,7 @@ use std::sync::Arc;
 use crate::catalog::CatalogRef;
 use crate::error::Result;
 use crate::io::writer_builder::{new_writer_builder, WriterBuilder};
-use crate::io::{
-    location_generator, new_file_appender_builder, FileAppenderFactory, FileAppenderLayer,
-};
+use crate::io::{location_generator, new_file_appender_builder, EmptyLayer, FileAppenderFactory};
 use opendal::Operator;
 use serde::{Deserialize, Serialize};
 use url::Url;
@@ -367,7 +365,7 @@ impl Table {
     }
 
     /// Return `WriterBuilder` used to create kinds of writer.
-    pub async fn writer_builder(&self) -> Result<WriterBuilder<impl FileAppenderLayer>> {
+    pub async fn writer_builder(&self) -> Result<WriterBuilder<EmptyLayer>> {
         let task_id = self
             .task_id
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);

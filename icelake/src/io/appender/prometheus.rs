@@ -1,6 +1,62 @@
 //! Prometheus layer for FileAppender.
 
+use std::collections::HashMap;
+
+use arrow_array::RecordBatch;
+use async_trait::async_trait;
+use prometheus::{
+    core::{AtomicI64, AtomicU64, GenericCounter, GenericGauge},
+    histogram_opts, labels, opts, register_histogram_vec_with_registry,
+    register_int_counter_vec_with_registry, register_int_gauge_vec_with_registry, Histogram,
+    HistogramVec, IntCounterVec, IntGaugeVec, Registry, DEFAULT_BUCKETS,
+};
+
+use crate::TableIdentifier;
+use crate::{types::DataFileBuilder, Result};
+
+use super::{FileAppender, FileAppenderLayer};
+
 const WRITER_METRICS_LABEL_NAMES: &[&str] = &["context", "catalog", "table"];
+
+/// File writer context
+#[derive(Clone)]
+pub struct WriterPrometheusLayer {
+    context_id: String,
+    catalog_name: String,
+    table_name: String,
+    registry: Registry,
+}
+
+impl WriterPrometheusLayer {
+    /// Create writer context.
+    pub fn new(
+        context_id: impl ToString,
+        catalog_name: impl ToString,
+        table_name: &TableIdentifier,
+        registry: Registry,
+    ) -> Self {
+        Self {
+            context_id: context_id.to_string(),
+            catalog_name: catalog_name.to_string(),
+            table_name: format!("{}", table_name),
+            registry,
+        }
+    }
+
+    /// Get table name
+    pub fn table_name(&self) -> &str {
+        &self.table_name
+    }
+
+    /// Get metrics labels.
+    pub fn writer_metrics_labels(&self) -> HashMap<&str, &str> {
+        labels! {
+            "context_id" => self.context_id.as_str(),
+            "catalog" => self.catalog_name.as_str(),
+            "table" => self.table_name(),
+        }
+    }
+}
 #[derive(Clone)]
 pub(crate) struct FileAppenderMetricsDef {
     write_qps: IntCounterVec,
@@ -99,35 +155,31 @@ pub(crate) struct FileAppenderMetrics {
 impl WriterPrometheusLayer {
     pub(crate) fn file_appender_metrics(&self) -> FileAppenderMetrics {
         let label_values = [
-            self.catalog_context().desc(),
-            self.catalog_name(),
+            self.context_id.as_str(),
+            self.catalog_name.as_str(),
             self.table_name(),
         ];
 
-        let def = self.catalog_context().metrics_def();
+        let def = FileAppenderMetricsDef::new(&self.registry);
+
         FileAppenderMetrics {
             write_qps: def
-                .file_appender_metrics_def
                 .write_qps
                 .get_metric_with_label_values(&label_values)
                 .unwrap(),
             write_latency: def
-                .file_appender_metrics_def
                 .write_latency
                 .get_metric_with_label_values(&label_values)
                 .unwrap(),
             flush_qps: def
-                .file_appender_metrics_def
                 .flush_qps
                 .get_metric_with_label_values(&label_values)
                 .unwrap(),
             flush_latency: def
-                .file_appender_metrics_def
                 .flush_latency
                 .get_metric_with_label_values(&label_values)
                 .unwrap(),
             in_memory_data_file_num: def
-                .file_appender_metrics_def
                 .in_memory_data_file_num
                 .get_metric_with_label_values(&label_values)
                 .unwrap(),
@@ -135,10 +187,10 @@ impl WriterPrometheusLayer {
     }
 }
 
-impl FileAppenderLayer<F: FileAppender> for WriterPrometheusLayer {
-    type LayeredFileAppender = PrometheusLayeredFileAppender<F>;
+impl<F: FileAppender + Sync> FileAppenderLayer<F> for WriterPrometheusLayer {
+    type R = PrometheusLayeredFileAppender<F>;
 
-    fn layer(&self, appender: F) -> Self::LayeredFileAppender {
+    fn layer(&self, appender: F) -> Self::R {
         PrometheusLayeredFileAppender {
             appender,
             metrics: self.file_appender_metrics(),
@@ -151,26 +203,23 @@ pub struct PrometheusLayeredFileAppender<F: FileAppender> {
     metrics: FileAppenderMetrics,
 }
 
-impl FileAppender for PrometheusLayeredFileAppender<F: FileAppender> {
-    fn write(&mut self, record: RecordBatch) -> Result<()> {
+#[async_trait]
+impl<F: FileAppender> FileAppender for PrometheusLayeredFileAppender<F> {
+    async fn write(&mut self, record: RecordBatch) -> Result<()> {
         self.metrics.write_qps.inc();
         let _ = self.metrics.write_latency.start_timer();
-        self.appender.write(record)
+        self.appender.write(record).await
     }
 
-    fn close(&mut self) -> Result<()> {
-        self.appender.close()
-    }
-}
-
-impl FileAppender for PrometheusLayeredFileAppender<RollingWriter> {
-    fn write(&mut self, record: RecordBatch) -> Result<()> {
-        self.metrics.write_qps.inc();
-        let _ = self.metrics.write_latency.start_timer();
-        self.appender.write(record)
+    async fn close(&mut self) -> Result<Vec<DataFileBuilder>> {
+        self.appender.close().await
     }
 
-    fn close(&mut self) -> Result<()> {
-        self.appender.close()
+    fn current_file(&self) -> String {
+        self.appender.current_file()
+    }
+
+    fn current_row(&self) -> usize {
+        self.appender.current_row()
     }
 }

@@ -22,7 +22,7 @@ pub async fn new_eq_delete_writer<FR: FileAppenderFactory>(
     arrow_schema: SchemaRef,
     equality_ids: Vec<usize>,
     factory: &FR,
-) -> Result<EqualityDeleteWriter<FR::F>> {
+) -> Result<EqualityDeleteWriter<FR::R>> {
     let mut col_id_idx = vec![];
     for &id in equality_ids.iter() {
         arrow_schema.fields().iter().enumerate().any(|(idx, f)| {

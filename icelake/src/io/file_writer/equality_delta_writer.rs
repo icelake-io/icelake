@@ -43,9 +43,9 @@ pub struct DeltaWriterResult {
 /// This write is not as same with `upsert`. If the row with same unique columns is not written in
 /// this writer, it will not delete it.
 pub struct EqualityDeltaWriter<F: FileAppenderFactory> {
-    data_file_writer: DataFileWriter<F::F>,
+    data_file_writer: DataFileWriter<F::R>,
     sorted_pos_delete_writer: SortedPositionDeleteWriter,
-    eq_delete_writer: EqualityDeleteWriter<F::F>,
+    eq_delete_writer: EqualityDeleteWriter<F::R>,
     inserted_rows: HashMap<OwnedRow, PathOffset>,
     row_converter: RowConverter,
     unique_column_idx: Vec<usize>,

@@ -24,9 +24,9 @@ use crate::error::{Error, ErrorKind};
 pub use storage::*;
 mod io;
 pub use io::*;
-mod prometheus;
-pub use prometheus::*;
 mod layer;
+#[cfg(feature = "prometheus")]
+pub mod prometheus;
 pub use layer::*;
 
 /// Reference to catalog.
