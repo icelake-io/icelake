@@ -197,7 +197,7 @@ impl PartitionedWriter {
     /// Write a record batch using data file writer.
     /// It will split the batch by partition spec and write the batch to different data file writer.
     pub async fn write(&mut self, batch: &RecordBatch) -> Result<()> {
-        let split_batch = self.partition_splitter.split_by_partition(batch).await?;
+        let split_batch = self.partition_splitter.split_by_partition(batch)?;
 
         for (row, batch) in split_batch.into_iter() {
             match self.writers.entry(row) {

@@ -12,7 +12,7 @@ use url::Url;
 
 use crate::config::{TableConfig, TableConfigRef};
 use crate::io::task_writer::TaskWriter;
-use crate::types::{DataFile, TableMetadata};
+use crate::types::{Any, DataFile, PartitionSplitter, TableMetadata};
 use crate::{types, Error, ErrorKind};
 
 pub(crate) const META_ROOT_PATH: &str = "metadata";
@@ -298,6 +298,34 @@ impl Table {
                 ),
             ))
             .map(|v| v.to_string())
+    }
+
+    /// Return a PartitionSplitter used to split data files into partitions.
+    /// None - Current partition is unpartitioned.
+    pub fn partition_splitter(&self) -> Result<Option<PartitionSplitter>> {
+        let current_partition_spec = self.current_table_metadata().current_partition_spec()?;
+        if current_partition_spec.is_unpartitioned() {
+            return Ok(None);
+        }
+
+        let current_schema = self.current_table_metadata().current_schema()?;
+        let arrow_schema = Arc::new(current_schema.clone().try_into().map_err(|e| {
+            crate::error::Error::new(
+                crate::ErrorKind::IcebergDataInvalid,
+                format!("Can't convert iceberg schema to arrow schema: {}", e),
+            )
+        })?);
+
+        let partition_type = Any::Struct(
+            current_partition_spec
+                .partition_type(current_schema)?
+                .into(),
+        );
+        Ok(Some(PartitionSplitter::try_new(
+            current_partition_spec,
+            &arrow_schema,
+            partition_type,
+        )?))
     }
 
     /// Return a task writer used to write data into table.
