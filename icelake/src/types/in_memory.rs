@@ -242,12 +242,27 @@ impl Serialize for PrimitiveValue {
 /// - Fields may be any type.
 /// - Fields may have an optional comment or doc string.
 /// - Fields can have default values.
-#[derive(Default, Debug, PartialEq, Clone, Eq)]
+#[derive(Default, Debug, Clone, Eq)]
 pub struct Struct {
     /// Fields contained in this struct.
     fields: Vec<FieldRef>,
     /// Map field id to index
     id_lookup: HashMap<i32, FieldRef>,
+}
+
+impl PartialEq for Struct {
+    fn eq(&self, other: &Self) -> bool {
+        for (id, field) in self.id_lookup.iter() {
+            if let Some(other_field) = other.id_lookup.get(id) {
+                if field != other_field {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+        true
+    }
 }
 
 impl Struct {
@@ -309,6 +324,11 @@ impl Struct {
     /// Lookup the field according to the field id.
     pub fn lookup_field(&self, field_id: i32) -> Option<&FieldRef> {
         self.id_lookup.get(&field_id)
+    }
+
+    /// Lookup field by field name.
+    pub fn lookup_field_by_name(&self, field_name: &str) -> Option<&FieldRef> {
+        self.fields.iter().find(|field| field.name == field_name)
     }
 }
 

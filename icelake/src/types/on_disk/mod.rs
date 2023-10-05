@@ -31,3 +31,5 @@ pub use table_metadata::serialize_table_meta;
 pub(crate) use table_metadata::TableMetadata as TableMetadataSerDe;
 
 mod types;
+
+mod value;
