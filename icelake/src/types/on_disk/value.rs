@@ -446,7 +446,7 @@ impl From<in_memory::AnyValue> for Value {
                 {
                     Value::StringMap(
                         keys.into_iter()
-                            .zip(values.into_iter())
+                            .zip(values)
                             .map(|(k, v)| {
                                 let k = if let AnyValue::Primitive(PrimitiveValue::String(s)) = k {
                                     s
@@ -460,7 +460,7 @@ impl From<in_memory::AnyValue> for Value {
                 } else {
                     Value::Map(
                         keys.into_iter()
-                            .zip(values.into_iter())
+                            .zip(values)
                             .map(|(k, v)| (k.into(), v.map(|v| v.into())))
                             .collect(),
                     )
