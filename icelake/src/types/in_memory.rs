@@ -43,7 +43,12 @@ pub enum Any {
 }
 
 /// All data values are either primitives or nested values, which are maps, lists, or structs.
-#[derive(Debug, PartialEq, Clone, Eq, Hash)]
+///
+/// # TODO:
+/// Allow derived hash because Map will not be used in hash, so it's ok to derive hash.
+/// But this may be misuse in the future.
+#[allow(clippy::derived_hash_with_manual_eq)]
+#[derive(Debug, Clone, Eq, Hash)]
 pub enum AnyValue {
     /// A Primitive type
     Primitive(PrimitiveValue),
@@ -66,6 +71,38 @@ pub enum AnyValue {
         /// All values in this map.
         values: Vec<Option<AnyValue>>,
     },
+}
+
+impl PartialEq for AnyValue {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Primitive(l0), Self::Primitive(r0)) => l0 == r0,
+            (Self::Struct(l0), Self::Struct(r0)) => l0 == r0,
+            (Self::List(l0), Self::List(r0)) => l0 == r0,
+            (
+                Self::Map {
+                    keys: l_keys,
+                    values: l_values,
+                },
+                Self::Map {
+                    keys: r_keys,
+                    values: r_values,
+                },
+            ) => {
+                // # TODO
+                // A inefficient way to compare map.
+                let mut map = HashMap::with_capacity(l_keys.len());
+                l_keys.iter().zip(l_values.iter()).for_each(|(key, value)| {
+                    map.insert(key, value);
+                });
+                r_keys
+                    .iter()
+                    .zip(r_values.iter())
+                    .all(|(key, value)| map.get(key).map_or(false, |v| *v == value))
+            }
+            _ => false,
+        }
+    }
 }
 
 impl Serialize for AnyValue {
@@ -242,12 +279,27 @@ impl Serialize for PrimitiveValue {
 /// - Fields may be any type.
 /// - Fields may have an optional comment or doc string.
 /// - Fields can have default values.
-#[derive(Default, Debug, PartialEq, Clone, Eq)]
+#[derive(Default, Debug, Clone, Eq)]
 pub struct Struct {
     /// Fields contained in this struct.
     fields: Vec<FieldRef>,
     /// Map field id to index
     id_lookup: HashMap<i32, FieldRef>,
+}
+
+impl PartialEq for Struct {
+    fn eq(&self, other: &Self) -> bool {
+        for (id, field) in self.id_lookup.iter() {
+            if let Some(other_field) = other.id_lookup.get(id) {
+                if field != other_field {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+        true
+    }
 }
 
 impl Struct {
@@ -309,6 +361,11 @@ impl Struct {
     /// Lookup the field according to the field id.
     pub fn lookup_field(&self, field_id: i32) -> Option<&FieldRef> {
         self.id_lookup.get(&field_id)
+    }
+
+    /// Lookup field by field name.
+    pub fn lookup_field_by_name(&self, field_name: &str) -> Option<&FieldRef> {
+        self.fields.iter().find(|field| field.name == field_name)
     }
 }
 

@@ -10,6 +10,7 @@ use serde_with::serde_as;
 use serde_with::Bytes;
 
 use super::parse_schema;
+use super::value::Value;
 use crate::types::on_disk::partition_spec::serialize_partition_spec_fields;
 use crate::types::on_disk::schema::serialize_schema;
 use crate::types::to_avro::to_avro_schema;
@@ -94,7 +95,9 @@ pub fn parse_manifest_file(bs: &[u8]) -> Result<types::ManifestFile> {
     let mut entries = Vec::<types::ManifestEntry>::new();
     for value in reader {
         let v = value?;
-        entries.push(from_value::<ManifestEntry>(&v)?.try_into()?);
+        // # TODO
+        // Read partition spec.
+        entries.push(from_value::<ManifestEntry>(&v)?.into_memory(None)?);
     }
 
     Ok(types::ManifestFile { metadata, entries })
@@ -113,11 +116,14 @@ pub fn data_file_to_json(data_file: types::DataFile) -> Result<serde_json::Value
 }
 
 /// Parse [`DataFile`] from json value.
-pub fn data_file_from_json(value: serde_json::Value) -> Result<types::DataFile> {
+pub fn data_file_from_json(
+    value: serde_json::Value,
+    partition_type: types::Any,
+) -> Result<types::DataFile> {
     let data_file = serde_json::from_value::<DataFile>(value).map_err(|e| {
         Error::new(ErrorKind::Unexpected, "Failed to parse data file from json").set_source(e)
     })?;
-    types::DataFile::try_from(data_file)
+    data_file.into_memory(Some(partition_type))
 }
 
 #[derive(Serialize, Deserialize)]
@@ -130,16 +136,14 @@ struct ManifestEntry {
     data_file: DataFile,
 }
 
-impl TryFrom<ManifestEntry> for types::ManifestEntry {
-    type Error = Error;
-
-    fn try_from(v: ManifestEntry) -> Result<Self> {
+impl ManifestEntry {
+    pub fn into_memory(self, partition_type: Option<types::Any>) -> Result<types::ManifestEntry> {
         Ok(types::ManifestEntry {
-            status: types::ManifestStatus::try_from(v.status as u8)?,
-            snapshot_id: v.snapshot_id,
-            sequence_number: v.sequence_number,
-            file_sequence_number: v.file_sequence_number,
-            data_file: v.data_file.try_into()?,
+            status: types::ManifestStatus::try_from(self.status as u8)?,
+            snapshot_id: self.snapshot_id,
+            sequence_number: self.sequence_number,
+            file_sequence_number: self.file_sequence_number,
+            data_file: self.data_file.into_memory(partition_type)?,
         })
     }
 }
@@ -166,8 +170,7 @@ struct DataFile {
     content: i32,
     file_path: String,
     file_format: String,
-    #[serde(skip_deserializing)]
-    partition: StructValue,
+    partition: Value,
     record_count: i64,
     file_size_in_bytes: i64,
     column_sizes: Option<Vec<I64Entry>>,
@@ -186,28 +189,39 @@ struct DataFile {
     sort_order_id: Option<i32>,
 }
 
-impl TryFrom<DataFile> for types::DataFile {
-    type Error = Error;
-
-    fn try_from(v: DataFile) -> Result<Self> {
+impl DataFile {
+    pub fn into_memory(self, partition_type: Option<types::Any>) -> Result<types::DataFile> {
+        let partition_value = if let Some(partition_type) = partition_type {
+            if let Some(value) = self.partition.into_memory(partition_type)? {
+                if let types::AnyValue::Struct(value) = value {
+                    value
+                } else {
+                    unreachable!()
+                }
+            } else {
+                StructValue::default()
+            }
+        } else {
+            StructValue::default()
+        };
         Ok(types::DataFile {
-            content: DataContentType::try_from(v.content as u8)?,
-            file_path: v.file_path,
-            file_format: parse_data_file_format(&v.file_format)?,
-            partition: v.partition,
-            record_count: v.record_count,
-            file_size_in_bytes: v.file_size_in_bytes,
-            column_sizes: v.column_sizes.map(parse_i64_entry),
-            value_counts: v.value_counts.map(parse_i64_entry),
-            null_value_counts: v.null_value_counts.map(parse_i64_entry),
-            nan_value_counts: v.nan_value_counts.map(parse_i64_entry),
-            distinct_counts: v.distinct_counts.map(parse_i64_entry),
-            lower_bounds: v.lower_bounds.map(parse_bytes_entry),
-            upper_bounds: v.upper_bounds.map(parse_bytes_entry),
-            key_metadata: v.key_metadata,
-            split_offsets: v.split_offsets,
-            equality_ids: v.equality_ids,
-            sort_order_id: v.sort_order_id,
+            content: DataContentType::try_from(self.content as u8)?,
+            file_path: self.file_path,
+            file_format: parse_data_file_format(&self.file_format)?,
+            partition: partition_value,
+            record_count: self.record_count,
+            file_size_in_bytes: self.file_size_in_bytes,
+            column_sizes: self.column_sizes.map(parse_i64_entry),
+            value_counts: self.value_counts.map(parse_i64_entry),
+            null_value_counts: self.null_value_counts.map(parse_i64_entry),
+            nan_value_counts: self.nan_value_counts.map(parse_i64_entry),
+            distinct_counts: self.distinct_counts.map(parse_i64_entry),
+            lower_bounds: self.lower_bounds.map(parse_bytes_entry),
+            upper_bounds: self.upper_bounds.map(parse_bytes_entry),
+            key_metadata: self.key_metadata,
+            split_offsets: self.split_offsets,
+            equality_ids: self.equality_ids,
+            sort_order_id: self.sort_order_id,
         })
     }
 }
@@ -233,7 +247,7 @@ impl TryFrom<types::DataFile> for DataFile {
             split_offsets: v.split_offsets,
             equality_ids: v.equality_ids,
             sort_order_id: v.sort_order_id,
-            partition: v.partition,
+            partition: v.partition.into(),
         })
     }
 }
@@ -456,12 +470,19 @@ mod tests {
     use std::env;
     use std::fs;
     use std::fs::{canonicalize, read};
+    use std::sync::Arc;
 
     use anyhow::Result;
     use apache_avro::from_value;
     use apache_avro::Reader;
     use opendal::services::Fs;
     use tempfile::TempDir;
+
+    use crate::types::AnyValue;
+    use crate::types::Field;
+    use crate::types::PrimitiveValue;
+    use crate::types::Struct;
+    use crate::types::StructValueBuilder;
 
     use super::*;
 
@@ -653,5 +674,58 @@ mod tests {
             { parse_manifest_file(&read(tmp_dir.path().join(filename)).unwrap()).unwrap() };
 
         assert_eq!(manifest_file, restored_manifest_file);
+    }
+
+    #[test]
+    fn test_data_file_json() {
+        let (partition, ty) = {
+            let struct_type = Arc::new(Struct::new(vec![
+                Field::optional(
+                    1,
+                    "a",
+                    crate::types::Any::Primitive(crate::types::Primitive::Int),
+                )
+                .into(),
+                Field::required(
+                    2,
+                    "b",
+                    crate::types::Any::Primitive(crate::types::Primitive::String),
+                )
+                .into(),
+            ]));
+            let mut builder = StructValueBuilder::new(struct_type.clone());
+            builder.add_field(1, None).unwrap();
+            builder
+                .add_field(
+                    2,
+                    Some(AnyValue::Primitive(PrimitiveValue::String(
+                        "hello".to_string(),
+                    ))),
+                )
+                .unwrap();
+            (builder.build().unwrap(), types::Any::Struct(struct_type))
+        };
+        let data_file = types::DataFile {
+            content: DataContentType::Data,
+            file_path: "/tmp/1.parquet".to_string(),
+            file_format: types::DataFileFormat::Parquet,
+            partition,
+            record_count: 100,
+            file_size_in_bytes: 200,
+            column_sizes: None,
+            value_counts: None,
+            null_value_counts: None,
+            nan_value_counts: None,
+            distinct_counts: None,
+            lower_bounds: None,
+            upper_bounds: None,
+            key_metadata: None,
+            split_offsets: None,
+            equality_ids: None,
+            sort_order_id: None,
+        };
+        let value = data_file_to_json(data_file.clone()).unwrap();
+        let actual_data_file = data_file_from_json(value, ty).unwrap();
+        assert_eq!(actual_data_file, data_file);
     }
 }

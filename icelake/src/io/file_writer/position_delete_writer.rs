@@ -57,7 +57,7 @@ impl SortedPositionDeleteWriter {
         file_appender_factory: &F,
     ) -> Result<()> {
         self.record_num += 1;
-        let delete_list = self.delete_cache.entry(file_path).or_insert(vec![]);
+        let delete_list = self.delete_cache.entry(file_path).or_default();
         delete_list.push(pos);
 
         if self.record_num
