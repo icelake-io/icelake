@@ -13,7 +13,7 @@ use url::Url;
 
 use crate::config::{TableConfig, TableConfigRef};
 use crate::io::task_writer::TaskWriter;
-use crate::types::{Any, DataFile, PartitionSplitter, TableMetadata};
+use crate::types::{Any, DataFile, PartitionSplitter, Struct, TableMetadata};
 use crate::{types, Error, ErrorKind};
 
 pub(crate) const META_ROOT_PATH: &str = "metadata";
@@ -299,6 +299,13 @@ impl Table {
                 ),
             ))
             .map(|v| v.to_string())
+    }
+
+    /// Return current partition type.
+    pub fn current_partition_type(&self) -> Result<Struct> {
+        let current_partition_spec = self.current_table_metadata().current_partition_spec()?;
+        let current_schema = self.current_table_metadata().current_schema()?;
+        current_partition_spec.partition_type(current_schema)
     }
 
     /// Return a PartitionSplitter used to split data files into partitions.

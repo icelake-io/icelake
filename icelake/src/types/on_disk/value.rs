@@ -1,4 +1,4 @@
-use crate::{types::in_memory, Error};
+use crate::{types::in_memory, Error, ErrorKind};
 use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, Utc};
 use in_memory::{Any, AnyValue, Primitive, PrimitiveValue, StructValue};
 use rust_decimal::Decimal;
@@ -63,14 +63,14 @@ impl Serialize for Value {
                 }
                 record.end()
             }
-            Value::Null => unreachable!(),
             Value::StringMap(v) => {
                 let mut map = serializer.serialize_map(Some(v.len()))?;
                 for (k, v) in v {
-                    map.serialize_entry(&k, &v).unwrap();
+                    map.serialize_entry(&k, &v)?;
                 }
                 map.end()
             }
+            Value::Null => unreachable!(),
         }
     }
 }
@@ -223,6 +223,12 @@ impl Value {
     }
 
     pub fn into_memory(self, ty: Any) -> Result<Option<in_memory::AnyValue>, Error> {
+        let invalid_err = || {
+            Error::new(
+                ErrorKind::IcebergDataInvalid,
+                format!("fail convert to {:?}", ty),
+            )
+        };
         match self {
             Value::Null => Ok(None),
             Value::Boolean(v) => Ok(Some(in_memory::AnyValue::Primitive(
@@ -234,10 +240,15 @@ impl Value {
                 ))),
                 Any::Primitive(Primitive::Date) => Ok(Some(in_memory::AnyValue::Primitive(
                     in_memory::PrimitiveValue::Date(
-                        NaiveDate::from_num_days_from_ce_opt(v).unwrap(),
+                        NaiveDate::from_num_days_from_ce_opt(v).ok_or_else(|| {
+                            Error::new(
+                                ErrorKind::IcebergDataInvalid,
+                                format!("invalid date: {}", v),
+                            )
+                        })?,
                     ),
                 ))),
-                _ => todo!(),
+                _ => Err(invalid_err()),
             },
             Value::Long(v) => match ty {
                 Any::Primitive(Primitive::Int) => Ok(Some(in_memory::AnyValue::Primitive(
@@ -248,28 +259,30 @@ impl Value {
                 ))),
                 Any::Primitive(Primitive::Time) => Ok(Some(in_memory::AnyValue::Primitive(
                     in_memory::PrimitiveValue::Time(
-                        NaiveDateTime::from_timestamp_micros(v).unwrap().time(),
+                        NaiveDateTime::from_timestamp_micros(v)
+                            .ok_or_else(invalid_err)?
+                            .time(),
                     ),
                 ))),
                 Any::Primitive(Primitive::Timestamp) => Ok(Some(in_memory::AnyValue::Primitive(
                     in_memory::PrimitiveValue::Timestamp(
-                        NaiveDateTime::from_timestamp_micros(v).unwrap(),
+                        NaiveDateTime::from_timestamp_micros(v).ok_or_else(invalid_err)?,
                     ),
                 ))),
                 Any::Primitive(Primitive::Timestampz) => Ok(Some(in_memory::AnyValue::Primitive(
                     in_memory::PrimitiveValue::Timestampz(
                         DateTime::<Utc>::from_naive_utc_and_offset(
-                            NaiveDateTime::from_timestamp_micros(v).unwrap(),
+                            NaiveDateTime::from_timestamp_micros(v).ok_or_else(invalid_err)?,
                             Utc,
                         ),
                     ),
                 ))),
                 Any::Primitive(Primitive::Date) => Ok(Some(in_memory::AnyValue::Primitive(
                     in_memory::PrimitiveValue::Date(
-                        NaiveDate::from_num_days_from_ce_opt(v as i32).unwrap(),
+                        NaiveDate::from_num_days_from_ce_opt(v as i32).ok_or_else(invalid_err)?,
                     ),
                 ))),
-                _ => todo!("ty: {:?}", ty),
+                _ => Err(invalid_err()),
             },
             Value::Float(v) => match ty {
                 Any::Primitive(Primitive::Float) => Ok(Some(in_memory::AnyValue::Primitive(
@@ -278,7 +291,7 @@ impl Value {
                 Any::Primitive(Primitive::Double) => Ok(Some(in_memory::AnyValue::Primitive(
                     in_memory::PrimitiveValue::Double((v as f64).into()),
                 ))),
-                _ => todo!(),
+                _ => Err(invalid_err()),
             },
             Value::Double(v) => match ty {
                 Any::Primitive(Primitive::Float) => Ok(Some(in_memory::AnyValue::Primitive(
@@ -287,18 +300,20 @@ impl Value {
                 Any::Primitive(Primitive::Double) => Ok(Some(in_memory::AnyValue::Primitive(
                     in_memory::PrimitiveValue::Double(v.into()),
                 ))),
-                _ => todo!(),
+                _ => Err(invalid_err()),
             },
             Value::String(v) => match ty {
                 Any::Primitive(Primitive::String) => Ok(Some(in_memory::AnyValue::Primitive(
                     in_memory::PrimitiveValue::String(v),
                 ))),
                 Any::Primitive(Primitive::Uuid) => Ok(Some(in_memory::AnyValue::Primitive(
-                    in_memory::PrimitiveValue::Uuid(uuid::Uuid::parse_str(&v).unwrap()),
+                    in_memory::PrimitiveValue::Uuid(
+                        uuid::Uuid::parse_str(&v).map_err(|err| invalid_err().set_source(err))?,
+                    ),
                 ))),
-                _ => todo!(),
+                _ => Err(invalid_err()),
             },
-            Value::Bytes(_) => todo!(),
+            Value::Bytes(_) => Err(invalid_err()),
             Value::List(v) => match ty {
                 Any::List(ty) => {
                     let ty = ty.element_type;
@@ -314,27 +329,32 @@ impl Value {
                             .collect::<Result<_, Error>>()?,
                     )))
                 }
-                Any::Map(map_ty) => {
-                    let key_ty = map_ty.key_type;
-                    let value_ty = map_ty.value_type;
+                Any::Map(ref map_ty) => {
+                    let key_ty = &map_ty.key_type;
+                    let value_ty = &map_ty.value_type;
                     let mut keys = Vec::with_capacity(v.len());
                     let mut values = Vec::with_capacity(v.len());
                     for v in v {
-                        let pair = v.unwrap();
+                        let pair = v.ok_or_else(invalid_err)?;
                         if let Value::Record {
                             required,
                             optional: _,
                         } = pair
                         {
                             assert!(required.len() == 2);
-                            let key = required.iter().find(|(k, _)| k == "key").unwrap().1.clone();
+                            let key = required
+                                .iter()
+                                .find(|(k, _)| k == "key")
+                                .ok_or_else(invalid_err)?
+                                .1
+                                .clone();
                             let value = required
                                 .iter()
                                 .find(|(k, _)| k == "value")
-                                .unwrap()
+                                .ok_or_else(invalid_err)?
                                 .1
                                 .clone();
-                            let key = key.into_memory(*key_ty.clone())?.unwrap();
+                            let key = key.into_memory(*key_ty.clone())?.ok_or_else(invalid_err)?;
                             let value = value.into_memory(*value_ty.clone())?;
                             keys.push(key);
                             values.push(value);
@@ -352,7 +372,7 @@ impl Value {
                     let bytes: Vec<u8> =
                         v.into_iter().map(|v| v.unwrap().as_long() as u8).collect();
                     if bytes.len() as u64 > len {
-                        todo!()
+                        return Err(invalid_err());
                     }
                     Ok(Some(AnyValue::Primitive(PrimitiveValue::Fixed(bytes))))
                 }
@@ -362,21 +382,21 @@ impl Value {
                 }) => {
                     let bytes: Vec<u8> =
                         v.into_iter().map(|v| v.unwrap().as_long() as u8).collect();
-                    let bytes: [u8; 16] = bytes.try_into().unwrap();
+                    let bytes: [u8; 16] = bytes.try_into().map_err(|_| invalid_err())?;
                     let mantissa: i128 = i128::from_be_bytes(bytes);
                     let decimal = Decimal::from_i128_with_scale(mantissa, scale as u32);
                     Ok(Some(AnyValue::Primitive(PrimitiveValue::Decimal(decimal))))
                 }
-                _ => todo!(),
+                _ => Err(invalid_err()),
             },
             Value::Map(v) => {
-                if let Any::Map(map_ty) = ty {
-                    let key_type = map_ty.key_type;
-                    let value_type = map_ty.value_type;
+                if let Any::Map(ref map_ty) = ty {
+                    let key_type = &map_ty.key_type;
+                    let value_type = &map_ty.value_type;
                     let mut keys = Vec::with_capacity(v.len());
                     let mut values = Vec::with_capacity(v.len());
                     for (k, v) in v {
-                        keys.push(k.into_memory(*key_type.clone())?.unwrap());
+                        keys.push(k.into_memory(*key_type.clone())?.ok_or_else(invalid_err)?);
                         values.push(
                             v.map(|v| v.into_memory(*value_type.clone()))
                                 .transpose()?
@@ -385,19 +405,21 @@ impl Value {
                     }
                     Ok(Some(in_memory::AnyValue::Map { keys, values }))
                 } else {
-                    todo!()
+                    Err(invalid_err())
                 }
             }
             Value::Record {
                 required,
                 optional: _,
             } => {
-                if let Any::Struct(struct_ty) = ty {
+                if let Any::Struct(ref struct_ty) = ty {
                     let mut builder = in_memory::StructValueBuilder::new(struct_ty.clone());
                     for (field_name, value) in required {
-                        let field = struct_ty.lookup_field_by_name(field_name.as_str()).unwrap();
+                        let field = struct_ty
+                            .lookup_field_by_name(field_name.as_str())
+                            .ok_or_else(invalid_err)?;
                         let value = value.into_memory(field.field_type.clone())?;
-                        builder.add_field(field.id, value).unwrap();
+                        builder.add_field(field.id, value)?;
                     }
                     Ok(Some(in_memory::AnyValue::Struct(builder.build()?)))
                 } else if let Any::Map(map_ty) = ty {
@@ -411,10 +433,10 @@ impl Value {
                     }
                     Ok(Some(in_memory::AnyValue::Map { keys, values }))
                 } else {
-                    todo!()
+                    Err(invalid_err())
                 }
             }
-            Value::StringMap(_) => todo!(),
+            Value::StringMap(_) => Err(invalid_err()),
         }
     }
 }
