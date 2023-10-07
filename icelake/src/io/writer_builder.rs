@@ -143,7 +143,7 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> WriterBuilder<L> {
     pub async fn build_equality_delta_writer(
         self,
         unique_column_ids: Vec<usize>,
-    ) -> Result<EqualityDeltaWriter<FileAppenderBuilder<L>>> {
+    ) -> Result<EqualityDeltaWriter<L>> {
         let delete_location_generator = FileLocationGenerator::try_new_for_delete_file(
             &self.table_metadata,
             self.partition_id,
@@ -163,7 +163,7 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> WriterBuilder<L> {
         .await
     }
 
-    pub async fn build_task_writer(self) -> Result<TaskWriter<FileAppenderBuilder<L>>> {
+    pub async fn build_task_writer(self) -> Result<TaskWriter<L>> {
         TaskWriter::try_new(
             self.table_metadata,
             self.operator,

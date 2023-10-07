@@ -116,18 +116,8 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> FileAppenderBuilder<L> {
             layer: self.layer.chain(layer),
         }
     }
-}
 
-#[async_trait]
-pub trait FileAppenderFactory: Send + Sync {
-    type R: FileAppender;
-    async fn build(&self, schema: SchemaRef) -> Result<Self::R>;
-}
-
-#[async_trait]
-impl<L: FileAppenderLayer<DefaultFileAppender>> FileAppenderFactory for FileAppenderBuilder<L> {
-    type R = L::R;
-    async fn build(&self, schema: SchemaRef) -> Result<Self::R> {
+    pub async fn build(&self, schema: SchemaRef) -> Result<L::R> {
         let inner = RollingWriter::try_new(
             self.operator.clone(),
             self.table_location.clone(),

@@ -2,8 +2,10 @@
 //! table writer used directly by the compute engine.
 use super::file_writer::DataFileWriter;
 use super::location_generator;
+use super::DefaultFileAppender;
 use super::FileAppender;
-use super::FileAppenderFactory;
+use super::FileAppenderBuilder;
+use super::FileAppenderLayer;
 use crate::config::TableConfigRef;
 use crate::error::Result;
 use crate::io::location_generator::FileLocationGenerator;
@@ -27,14 +29,14 @@ use std::sync::Arc;
 /// If the table metadata has no partition spec, it will create a unpartitioned
 /// task writer. The unpartitioned task writer will write all data using a single
 /// data file writer.
-pub enum TaskWriter<F: FileAppenderFactory> {
+pub enum TaskWriter<L: FileAppenderLayer<DefaultFileAppender>> {
     /// Unpartitioned task writer
-    Unpartitioned(UnpartitionedWriter<F::R>),
+    Unpartitioned(UnpartitionedWriter<L::R>),
     /// Partitioned task writer
-    Partitioned(PartitionedWriter<F>),
+    Partitioned(PartitionedWriter<L>),
 }
 
-impl<F: FileAppenderFactory> TaskWriter<F> {
+impl<L: FileAppenderLayer<DefaultFileAppender>> TaskWriter<L> {
     /// Create a new `TaskWriter`.
     pub async fn try_new(
         table_metadata: TableMetadata,
@@ -43,7 +45,7 @@ impl<F: FileAppenderFactory> TaskWriter<F> {
         task_id: usize,
         suffix: Option<String>,
         table_config: TableConfigRef,
-        file_appender_factory: F,
+        file_appender_factory: FileAppenderBuilder<L>,
     ) -> Result<Self> {
         let current_schema = table_metadata.current_schema()?;
         let current_partition_spec = table_metadata.current_partition_spec()?;
@@ -139,7 +141,7 @@ impl<F: FileAppender> UnpartitionedWriter<F> {
 }
 
 /// Partition task writer
-pub struct PartitionedWriter<F: FileAppenderFactory> {
+pub struct PartitionedWriter<L: FileAppenderLayer<DefaultFileAppender>> {
     operator: Operator,
     table_location: String,
     location_generator: Arc<FileLocationGenerator>,
@@ -147,12 +149,12 @@ pub struct PartitionedWriter<F: FileAppenderFactory> {
     schema: ArrowSchemaRef,
     partition_type: Any,
 
-    writers: HashMap<PartitionKey, DataFileWriter<F::R>>,
+    writers: HashMap<PartitionKey, DataFileWriter<L::R>>,
     partition_splitter: PartitionSplitter,
-    file_appender_factory: F,
+    file_appender_factory: FileAppenderBuilder<L>,
 }
 
-impl<F: FileAppenderFactory> PartitionedWriter<F> {
+impl<L: FileAppenderLayer<DefaultFileAppender>> PartitionedWriter<L> {
     /// Create a new `PartitionedWriter`.
     #[allow(clippy::too_many_arguments)]
     pub fn try_new(
@@ -163,7 +165,7 @@ impl<F: FileAppenderFactory> PartitionedWriter<F> {
         partition_type: Any,
         operator: Operator,
         table_config: TableConfigRef,
-        file_appender_factory: F,
+        file_appender_factory: FileAppenderBuilder<L>,
     ) -> Result<Self> {
         Ok(Self {
             operator,
