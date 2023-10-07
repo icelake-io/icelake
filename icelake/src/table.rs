@@ -6,14 +6,13 @@ use std::sync::Arc;
 use crate::catalog::CatalogRef;
 use crate::error::Result;
 use crate::io::writer_builder::{new_writer_builder, WriterBuilder};
-use crate::io::{location_generator, new_file_appender_builder, EmptyLayer, FileAppenderFactory};
+use crate::io::EmptyLayer;
 use opendal::Operator;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::config::{TableConfig, TableConfigRef};
-use crate::io::task_writer::TaskWriter;
-use crate::types::{Any, DataFile, PartitionSplitter, Struct, TableMetadata};
+use crate::types::{Any, DataFile, PartitionSplitter, TableMetadata};
 use crate::{types, Error, ErrorKind};
 
 pub(crate) const META_ROOT_PATH: &str = "metadata";
@@ -302,10 +301,12 @@ impl Table {
     }
 
     /// Return current partition type.
-    pub fn current_partition_type(&self) -> Result<Struct> {
+    pub fn current_partition_type(&self) -> Result<Any> {
         let current_partition_spec = self.current_table_metadata().current_partition_spec()?;
         let current_schema = self.current_table_metadata().current_schema()?;
-        current_partition_spec.partition_type(current_schema)
+        Ok(Any::Struct(Arc::new(
+            current_partition_spec.partition_type(current_schema)?,
+        )))
     }
 
     /// Return a PartitionSplitter used to split data files into partitions.
@@ -334,41 +335,6 @@ impl Table {
             &arrow_schema,
             partition_type,
         )?))
-    }
-
-    /// Return a task writer used to write data into table.
-    pub async fn task_writer(&self) -> Result<TaskWriter<impl FileAppenderFactory>> {
-        let task_id = self
-            .task_id
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-
-        let table_metadata = self.current_table_metadata();
-
-        let location_generator = Arc::new(
-            location_generator::FileLocationGenerator::try_new_for_data_file(
-                table_metadata,
-                0,
-                task_id,
-                None,
-            )?,
-        );
-
-        let task_writer = TaskWriter::try_new(
-            self.current_table_metadata().clone(),
-            self.op.clone(),
-            0,
-            task_id,
-            None,
-            self.table_config.clone(),
-            new_file_appender_builder(
-                self.op.clone(),
-                table_metadata.location.clone(),
-                location_generator,
-                self.table_config.clone(),
-            ),
-        )
-        .await?;
-        Ok(task_writer)
     }
 
     /// Return `WriterBuilder` used to create kinds of writer.

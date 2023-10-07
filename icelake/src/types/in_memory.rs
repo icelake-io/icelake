@@ -1540,9 +1540,8 @@ impl DataFileBuilder {
             content: self.content.unwrap(),
             file_path: format!("{}/{}", self.table_location, self.file_location),
             file_format: crate::types::DataFileFormat::Parquet,
-            // /// # NOTE
-            // ///
-            // /// DataFileWriter only response to write data. Partition should place by more high level writer.
+            // # NOTE
+            // DataFileWriter only response to write data. Partition should place by more high level writer.
             partition: self.partition_value.unwrap_or_default(),
             record_count: self.meta_data.num_rows,
             column_sizes: Some(column_sizes),
@@ -1551,18 +1550,20 @@ impl DataFileBuilder {
             distinct_counts: Some(distinct_counts),
             key_metadata: self.meta_data.footer_signing_key_metadata,
             file_size_in_bytes: self.written_size as i64,
-            /// # TODO
-            ///
-            /// Following fields unsupported now:
-            /// - `file_size_in_bytes` can't get from `FileMetaData` now.
-            /// - `file_offset` in `FileMetaData` always be None now.
-            /// - `nan_value_counts` can't get from `FileMetaData` now.
+            // # TODO
+            //
+            // Following fields unsupported now:
+            // - `file_size_in_bytes` can't get from `FileMetaData` now.
+            // - `file_offset` in `FileMetaData` always be None now.
+            // - `nan_value_counts` can't get from `FileMetaData` now.
             // Currently arrow parquet writer doesn't fill row group offsets, we can use first column chunk offset for it.
-            split_offsets: Some(self.meta_data
-                .row_groups
-                .iter()
-                .filter_map(|group| group.file_offset)
-                .collect()),
+            split_offsets: Some(
+                self.meta_data
+                    .row_groups
+                    .iter()
+                    .filter_map(|group| group.file_offset)
+                    .collect(),
+            ),
             nan_value_counts: None,
             lower_bounds: None,
             upper_bounds: None,

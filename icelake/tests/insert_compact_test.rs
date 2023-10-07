@@ -161,7 +161,13 @@ impl TestFixture {
             log::debug!("Start inserting into icelake table {i} times.");
             let records = &self.test_case.write_date;
 
-            let mut task_writer = table.task_writer().await.unwrap();
+            let mut task_writer = table
+                .writer_builder()
+                .await
+                .unwrap()
+                .build_task_writer()
+                .await
+                .unwrap();
 
             for record_batch in records {
                 log::info!(

@@ -156,7 +156,13 @@ impl TestFixture {
 
         let records = &self.test_case.write_date;
 
-        let mut task_writer = table.task_writer().await.unwrap();
+        let mut task_writer = table
+            .writer_builder()
+            .await
+            .unwrap()
+            .build_task_writer()
+            .await
+            .unwrap();
 
         for record_batch in records {
             log::info!(
