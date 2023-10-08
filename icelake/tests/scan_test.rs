@@ -1,6 +1,6 @@
 mod utils;
 
-use std::{collections::HashMap, fs::File, sync::Arc};
+use std::{collections::HashMap, fs::File};
 
 use arrow_array::RecordBatch;
 use arrow_csv::ReaderBuilder;
@@ -10,10 +10,8 @@ use futures::{StreamExt, TryStreamExt};
 use icelake::{
     catalog::load_catalog,
     io::{TableScan, TableScanBuilder},
-    types::{AnyValue, Field, Struct, StructValueBuilder},
     Table, TableIdentifier,
 };
-use opendal::Builder;
 pub use utils::*;
 
 pub struct ScanTestCase<F: FnMut(TableScanBuilder) -> TableScan> {
