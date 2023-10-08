@@ -65,7 +65,7 @@ mod test {
     use crate::config::TableConfig;
     use crate::io::file_writer::data_file_writer;
     use crate::io::location_generator::FileLocationGenerator;
-    use crate::io::{new_file_appender_builder, FileAppenderFactory};
+    use crate::io::new_file_appender_builder;
     use crate::types::parse_table_metadata;
 
     #[tokio::test]

@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use crate::config::TableConfigRef;
 use crate::io::location_generator::FileLocationGenerator;
-use crate::io::{FileAppender, FileAppenderFactory};
+use crate::io::{DefaultFileAppender, FileAppender, FileAppenderBuilder, FileAppenderLayer};
 use crate::types::{Any, DataFileBuilder, Field, Primitive, Schema};
 use crate::{types::Struct, Result};
 use crate::{Error, ErrorKind};
@@ -50,11 +50,11 @@ impl SortedPositionDeleteWriter {
     ///
     /// #TODO
     /// - support delete with row
-    pub async fn delete<F: FileAppenderFactory>(
+    pub async fn delete<L: FileAppenderLayer<DefaultFileAppender>>(
         &mut self,
         file_path: String,
         pos: i64,
-        file_appender_factory: &F,
+        file_appender_factory: &FileAppenderBuilder<L>,
     ) -> Result<()> {
         self.record_num += 1;
         let delete_list = self.delete_cache.entry(file_path).or_default();
@@ -87,9 +87,9 @@ impl SortedPositionDeleteWriter {
     }
 
     /// Complte the write and return the list of `DataFileBuilder` as result.
-    pub async fn close<F: FileAppenderFactory>(
+    pub async fn close<L: FileAppenderLayer<DefaultFileAppender>>(
         mut self,
-        file_appender_factory: &F,
+        file_appender_factory: &FileAppenderBuilder<L>,
     ) -> Result<Vec<DataFileBuilder>> {
         if self.record_num > 0 {
             self.flush(file_appender_factory.build(self.schema.clone()).await?)

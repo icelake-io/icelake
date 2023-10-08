@@ -4,7 +4,7 @@ use arrow_array::{ArrayRef, Int64Array, RecordBatch};
 use arrow_schema::SchemaRef;
 use arrow_select::concat::concat_batches;
 use icelake::io::file_writer::EqualityDeltaWriter;
-use icelake::io::FileAppenderFactory;
+use icelake::io::{DefaultFileAppender, FileAppenderLayer};
 use icelake::types::{AnyValue, Field, Struct, StructValue, StructValueBuilder};
 use icelake::{catalog::load_catalog, transaction::Transaction, Table, TableIdentifier};
 mod utils;
@@ -153,7 +153,7 @@ impl DeltaTest {
     async fn write_and_delete_with_delta(
         &self,
         table: &Table,
-        delta_writer: &mut EqualityDeltaWriter<impl FileAppenderFactory>,
+        delta_writer: &mut EqualityDeltaWriter<impl FileAppenderLayer<DefaultFileAppender>>,
         write: Option<Vec<ArrayRef>>,
         delete: Option<Vec<ArrayRef>>,
     ) {
@@ -188,7 +188,7 @@ impl DeltaTest {
     async fn commit_writer(
         &self,
         table: &mut Table,
-        delta_writer: EqualityDeltaWriter<impl FileAppenderFactory>,
+        delta_writer: EqualityDeltaWriter<impl FileAppenderLayer<DefaultFileAppender>>,
     ) {
         let mut result = delta_writer
             .close(Some(self.partition_value.clone()))

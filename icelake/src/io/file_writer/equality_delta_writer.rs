@@ -1,5 +1,7 @@
 //! This module provide the `EqualityDeltaWriter`.
-use crate::io::FileAppenderFactory;
+use crate::io::DefaultFileAppender;
+use crate::io::FileAppenderBuilder;
+use crate::io::FileAppenderLayer;
 use crate::types::DataFile;
 use crate::types::StructValue;
 use crate::types::COLUMN_ID_META_KEY;
@@ -42,14 +44,14 @@ pub struct DeltaWriterResult {
 /// NOTE:
 /// This write is not as same with `upsert`. If the row with same unique columns is not written in
 /// this writer, it will not delete it.
-pub struct EqualityDeltaWriter<F: FileAppenderFactory> {
-    data_file_writer: DataFileWriter<F::R>,
+pub struct EqualityDeltaWriter<L: FileAppenderLayer<DefaultFileAppender>> {
+    data_file_writer: DataFileWriter<L::R>,
     sorted_pos_delete_writer: SortedPositionDeleteWriter,
-    eq_delete_writer: EqualityDeleteWriter<F::R>,
+    eq_delete_writer: EqualityDeleteWriter<L::R>,
     inserted_rows: HashMap<OwnedRow, PathOffset>,
     row_converter: RowConverter,
     unique_column_idx: Vec<usize>,
-    file_appender_factory: F,
+    file_appender_factory: FileAppenderBuilder<L>,
 }
 
 pub struct EqDeltaWriterMetrics {
@@ -57,7 +59,7 @@ pub struct EqDeltaWriterMetrics {
     sorted_pos_delete_cache_count: usize,
 }
 
-impl<F: FileAppenderFactory> EqualityDeltaWriter<F> {
+impl<L: FileAppenderLayer<DefaultFileAppender>> EqualityDeltaWriter<L> {
     /// Create a new `EqualityDeltaWriter`.
     #[allow(clippy::too_many_arguments)]
     pub async fn try_new(
@@ -67,7 +69,7 @@ impl<F: FileAppenderFactory> EqualityDeltaWriter<F> {
         arrow_schema: SchemaRef,
         table_config: TableConfigRef,
         unique_column_ids: Vec<usize>,
-        file_appender_factory: F,
+        file_appender_factory: FileAppenderBuilder<L>,
     ) -> Result<Self> {
         // Convert column id into corresponding index.
         let mut unique_column_idx = Vec::with_capacity(unique_column_ids.len());

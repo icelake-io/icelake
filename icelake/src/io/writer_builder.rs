@@ -10,9 +10,10 @@ use super::file_writer::{
     new_eq_delete_writer, EqualityDeleteWriter, EqualityDeltaWriter, SortedPositionDeleteWriter,
 };
 use super::location_generator::FileLocationGenerator;
+use super::task_writer::TaskWriter;
 use super::{
     new_file_appender_builder, ChainedFileAppenderLayer, DefaultFileAppender, EmptyLayer,
-    FileAppenderBuilder, FileAppenderFactory, FileAppenderLayer,
+    FileAppenderBuilder, FileAppenderLayer,
 };
 
 /// `WriterBuilder` used to create kinds of writer.
@@ -142,7 +143,7 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> WriterBuilder<L> {
     pub async fn build_equality_delta_writer(
         self,
         unique_column_ids: Vec<usize>,
-    ) -> Result<EqualityDeltaWriter<impl FileAppenderFactory>> {
+    ) -> Result<EqualityDeltaWriter<L>> {
         let delete_location_generator = FileLocationGenerator::try_new_for_delete_file(
             &self.table_metadata,
             self.partition_id,
@@ -157,6 +158,19 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> WriterBuilder<L> {
             self.cur_arrow_schema,
             self.table_config,
             unique_column_ids,
+            self.file_appender_builder,
+        )
+        .await
+    }
+
+    pub async fn build_task_writer(self) -> Result<TaskWriter<L>> {
+        TaskWriter::try_new(
+            self.table_metadata,
+            self.operator,
+            self.partition_id,
+            self.task_id,
+            self.suffix,
+            self.table_config,
             self.file_appender_builder,
         )
         .await
