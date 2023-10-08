@@ -118,6 +118,11 @@ impl TableScan {
         let mut streams = Vec::with_capacity(data_files.len());
 
         let data_files = data_files.into_iter().skip(start_file_idx).filter(|f| {
+            log::error!(
+                "Data file path: {}, partition: {:?}",
+                f.file_path,
+                f.partition
+            );
             self.partition_value.is_none() || f.partition == *self.partition_value.as_ref().unwrap()
         });
 

@@ -6,16 +6,13 @@ use std::sync::Arc;
 use crate::catalog::CatalogRef;
 use crate::error::Result;
 use crate::io::writer_builder::{new_writer_builder, WriterBuilder};
-use crate::io::{
-    location_generator, new_file_appender_builder, EmptyLayer, FileAppenderFactory,
-    TableScanBuilder,
-};
+use crate::io::{EmptyLayer, TableScanBuilder};
 use opendal::Operator;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::config::{TableConfig, TableConfigRef};
-use crate::types::{Any, DataFile, PartitionSplitter, Snapshot, Struct, TableMetadata};
+use crate::types::{Any, DataFile, PartitionSplitter, Snapshot, TableMetadata};
 use crate::{types, Error, ErrorKind};
 
 pub(crate) const META_ROOT_PATH: &str = "metadata";

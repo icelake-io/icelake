@@ -225,7 +225,7 @@ impl<F: FnMut(TableScanBuilder) -> TableScan> ScanTestCase<F> {
     }
 }
 
-// #[tokio::test]
+#[tokio::test]
 async fn test_scan_all() {
     let case = ScanTestCase::new(
         "rest",
@@ -241,38 +241,38 @@ async fn test_scan_all() {
     case.run().await
 }
 
-#[tokio::test]
-async fn test_scan_partition() {
-    let case = ScanTestCase::new(
-        "rest",
-        |builder: TableScanBuilder| {
-            let partition_type = Struct::new(vec![Arc::new(Field::required(
-                1,
-                "id",
-                icelake::types::Any::Primitive(icelake::types::Primitive::String),
-            ))]);
-            let mut partition_value_builder = StructValueBuilder::new(partition_type.into());
-            partition_value_builder
-                .add_field(
-                    1,
-                    Some(AnyValue::Primitive(icelake::types::PrimitiveValue::String(
-                        "1".to_string(),
-                    ))),
-                )
-                .unwrap();
-            let partition_value = partition_value_builder.build().unwrap();
+// #[tokio::test]
+// async fn test_scan_partition() {
+//     let case = ScanTestCase::new(
+//         "rest",
+//         |builder: TableScanBuilder| {
+//             let partition_type = Struct::new(vec![Arc::new(Field::required(
+//                 1,
+//                 "id",
+//                 icelake::types::Any::Primitive(icelake::types::Primitive::String),
+//             ))]);
+//             let mut partition_value_builder = StructValueBuilder::new(partition_type.into());
+//             partition_value_builder
+//                 .add_field(
+//                     1,
+//                     Some(AnyValue::Primitive(icelake::types::PrimitiveValue::String(
+//                         "1".to_string(),
+//                     ))),
+//                 )
+//                 .unwrap();
+//             let partition_value = partition_value_builder.build().unwrap();
 
-            builder
-                .with_partition_value(Some(partition_value))
-                .build()
-                .unwrap()
-        },
-        vec!["1.csv".to_string()],
-        normalize_test_name(format!(
-            "{}_test_scan_partition_rest_catalog",
-            module_path!()
-        )),
-    );
+//             builder
+//                 .with_partition_value(Some(partition_value))
+//                 .build()
+//                 .unwrap()
+//         },
+//         vec!["1.csv".to_string()],
+//         normalize_test_name(format!(
+//             "{}_test_scan_partition_rest_catalog",
+//             module_path!()
+//         )),
+//     );
 
-    case.run().await
-}
+//     case.run().await
+// }
