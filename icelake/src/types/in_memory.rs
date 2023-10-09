@@ -2226,36 +2226,45 @@ impl TableMetadata {
 
     /// Current schema.
     pub fn current_schema(&self) -> Result<&Schema> {
-        self.schemas
-            .iter()
-            .find(|s| s.schema_id == self.current_schema_id)
-            .ok_or_else(|| {
-                Error::new(
-                    ErrorKind::IcebergDataInvalid,
-                    format!("Schema id {} not found!", self.current_schema_id),
-                )
-            })
+        self.schema(self.current_schema_id).ok_or_else(|| {
+            Error::new(
+                ErrorKind::IcebergDataInvalid,
+                format!("Schema id {} not found!", self.current_schema_id),
+            )
+        })
+    }
+
+    /// Get schema by id
+    pub fn schema(&self, schema_id: i32) -> Option<&Schema> {
+        self.schemas.iter().find(|s| s.schema_id == schema_id)
     }
 
     /// Current schema.
     pub fn current_snapshot(&self) -> Result<Option<&Snapshot>> {
-        if let (Some(snapshots), Some(snapshot_id)) = (&self.snapshots, self.current_snapshot_id) {
-            if snapshot_id == EMPTY_SNAPSHOT_ID {
-                return Ok(None);
-            }
-            Ok(Some(
-                snapshots
-                    .iter()
-                    .find(|s| s.snapshot_id == snapshot_id)
-                    .ok_or_else(|| {
-                        Error::new(
-                            ErrorKind::IcebergDataInvalid,
-                            format!("Snapshot id {snapshot_id} not found!"),
-                        )
-                    })?,
-            ))
+        if self.current_snapshot_id == Some(EMPTY_SNAPSHOT_ID) || self.current_snapshot_id.is_none()
+        {
+            return Ok(None);
+        }
+
+        Ok(Some(
+            self.snapshot(self.current_snapshot_id.unwrap())
+                .ok_or_else(|| {
+                    Error::new(
+                        ErrorKind::IcebergDataInvalid,
+                        format!(
+                            "Snapshot id {} not found!",
+                            self.current_snapshot_id.unwrap()
+                        ),
+                    )
+                })?,
+        ))
+    }
+
+    pub fn snapshot(&self, snapshot_id: i64) -> Option<&Snapshot> {
+        if let Some(snapshots) = &self.snapshots {
+            snapshots.iter().find(|s| s.snapshot_id == snapshot_id)
         } else {
-            Ok(None)
+            None
         }
     }
 

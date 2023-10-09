@@ -6,13 +6,13 @@ use std::sync::Arc;
 use crate::catalog::CatalogRef;
 use crate::error::Result;
 use crate::io::writer_builder::{new_writer_builder, WriterBuilder};
-use crate::io::EmptyLayer;
+use crate::io::{EmptyLayer, TableScanBuilder};
 use opendal::Operator;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::config::{TableConfig, TableConfigRef};
-use crate::types::{Any, DataFile, PartitionSplitter, TableMetadata};
+use crate::types::{Any, DataFile, PartitionSplitter, Snapshot, TableMetadata};
 use crate::{types, Error, ErrorKind};
 
 pub(crate) const META_ROOT_PATH: &str = "metadata";
@@ -270,7 +270,14 @@ impl Table {
                 )
             })?;
 
-        let manifest_list_path = self.rel_path(&current_snapshot.manifest_list)?;
+        self.data_files_of_snapshot(current_snapshot).await
+    }
+
+    pub async fn data_files_of_snapshot(
+        &self,
+        snapshot: &Snapshot,
+    ) -> Result<Vec<types::DataFile>> {
+        let manifest_list_path = self.rel_path(&snapshot.manifest_list)?;
         let manifest_list_content = self.op.read(&manifest_list_path).await?;
         let manifest_list = types::parse_manifest_list(&manifest_list_content)?;
 
@@ -409,6 +416,12 @@ impl Table {
 
     pub(crate) fn operator(&self) -> Operator {
         self.op.clone()
+    }
+
+    pub fn new_scan_builder(&self) -> TableScanBuilder {
+        TableScanBuilder::default()
+            .with_op(self.operator())
+            .with_snapshot_id(self.current_table_metadata().current_snapshot_id.unwrap())
     }
 }
 
