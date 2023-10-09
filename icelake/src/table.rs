@@ -418,7 +418,7 @@ impl Table {
         self.op.clone()
     }
 
-    pub fn scan(&self) -> TableScanBuilder {
+    pub fn new_scan_builder(&self) -> TableScanBuilder {
         TableScanBuilder::default()
             .with_op(self.operator())
             .with_snapshot_id(self.current_table_metadata().current_snapshot_id.unwrap())

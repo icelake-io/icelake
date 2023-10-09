@@ -175,7 +175,7 @@ impl<F: FnMut(TableScanBuilder) -> TableScan> ScanTestCase<F> {
 
     async fn perform_and_check_table_scan(mut self) {
         let table = self.create_icelake_table().await;
-        let table_scan_builder = table.scan();
+        let table_scan_builder = table.new_scan_builder();
         let mut result = (self.table_scan)(table_scan_builder)
             .scan(&table)
             .await
