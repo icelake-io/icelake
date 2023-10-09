@@ -1290,12 +1290,8 @@ pub struct ManifestMetadata {
     pub schema_id: i32,
 
     /// The partition spec used  to write the manifest
-    ///
-    /// FIXME: we should parse this field.
-    // pub partition_spec: Option<PartitionSpec>,
+    pub partition_spec: PartitionSpec,
 
-    /// ID of the partition spec used to write the manifest as a string
-    pub partition_spec_id: i32,
     /// Table format version number of the manifest as a string
     pub format_version: Option<TableFormatVersion>,
     /// Type of content files tracked by the manifest: “data” or “deletes”
@@ -2213,15 +2209,17 @@ pub struct TableMetadata {
 impl TableMetadata {
     /// Current partition spec.
     pub fn current_partition_spec(&self) -> Result<&PartitionSpec> {
-        self.partition_specs
-            .iter()
-            .find(|p| p.spec_id == self.default_spec_id)
-            .ok_or_else(|| {
-                Error::new(
-                    ErrorKind::IcebergDataInvalid,
-                    format!("Partition spec id {} not found!", self.default_spec_id),
-                )
-            })
+        self.partition_spec(self.default_spec_id).ok_or_else(|| {
+            Error::new(
+                ErrorKind::IcebergDataInvalid,
+                format!("Partition spec id {} not found!", self.default_spec_id),
+            )
+        })
+    }
+
+    /// Partition spec by id.
+    pub fn partition_spec(&self, spec_id: i32) -> Option<&PartitionSpec> {
+        self.partition_specs.iter().find(|p| p.spec_id == spec_id)
     }
 
     /// Current schema.

@@ -145,7 +145,7 @@ impl<'a> Transaction<'a> {
             metadata: ManifestMetadata {
                 schema: cur_metadata.current_schema()?.clone(),
                 schema_id: cur_metadata.current_schema_id,
-                partition_spec_id: cur_metadata.default_spec_id,
+                partition_spec: cur_metadata.current_partition_spec()?.clone(),
                 format_version: Some(cur_metadata.format_version),
                 content,
             },

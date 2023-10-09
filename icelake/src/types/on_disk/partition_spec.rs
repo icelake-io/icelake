@@ -6,6 +6,7 @@ use crate::Result;
 
 /// Parse schema from json bytes.
 pub fn parse_partition_spec(bs: &[u8]) -> Result<types::PartitionSpec> {
+    println!("parse_partition_spec: {:?}", String::from_utf8_lossy(bs));
     let t: PartitionSpec = serde_json::from_slice(bs)?;
     t.try_into()
 }
@@ -19,6 +20,13 @@ pub fn serialize_partition_spec(spec: &types::PartitionSpec) -> Result<String> {
 pub fn serialize_partition_spec_fields(spec: &types::PartitionSpec) -> Result<String> {
     let t = PartitionSpec::try_from(spec)?;
     Ok(serde_json::to_string(&t.fields)?)
+}
+
+pub fn parse_partition_spec_fields(bs: &[u8]) -> Result<Vec<types::PartitionField>> {
+    let t: Vec<PartitionField> = serde_json::from_slice(bs)?;
+    t.into_iter()
+        .map(types::PartitionField::try_from)
+        .collect::<Result<Vec<types::PartitionField>>>()
 }
 
 #[derive(Serialize, Deserialize)]

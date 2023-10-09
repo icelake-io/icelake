@@ -222,7 +222,7 @@ impl Value {
         }
     }
 
-    pub fn into_memory(self, ty: Any) -> Result<Option<in_memory::AnyValue>, Error> {
+    pub fn into_memory(self, ty: &Any) -> Result<Option<in_memory::AnyValue>, Error> {
         let invalid_err = || {
             Error::new(
                 ErrorKind::IcebergDataInvalid,
@@ -316,12 +316,12 @@ impl Value {
             Value::Bytes(_) => Err(invalid_err()),
             Value::List(v) => match ty {
                 Any::List(ty) => {
-                    let ty = ty.element_type;
+                    let ty = &ty.element_type;
                     Ok(Some(in_memory::AnyValue::List(
                         v.into_iter()
                             .map(|v| {
                                 if let Some(v) = v {
-                                    v.into_memory(*ty.clone())
+                                    v.into_memory(ty)
                                 } else {
                                     Ok(None)
                                 }
@@ -354,8 +354,8 @@ impl Value {
                                 .ok_or_else(invalid_err)?
                                 .1
                                 .clone();
-                            let key = key.into_memory(*key_ty.clone())?.ok_or_else(invalid_err)?;
-                            let value = value.into_memory(*value_ty.clone())?;
+                            let key = key.into_memory(key_ty)?.ok_or_else(invalid_err)?;
+                            let value = value.into_memory(value_ty)?;
                             keys.push(key);
                             values.push(value);
                         } else {
@@ -371,7 +371,7 @@ impl Value {
                 Any::Primitive(Primitive::Fixed(len)) => {
                     let bytes: Vec<u8> =
                         v.into_iter().map(|v| v.unwrap().as_long() as u8).collect();
-                    if bytes.len() as u64 > len {
+                    if bytes.len() as u64 > *len {
                         return Err(invalid_err());
                     }
                     Ok(Some(AnyValue::Primitive(PrimitiveValue::Fixed(bytes))))
@@ -384,7 +384,7 @@ impl Value {
                         v.into_iter().map(|v| v.unwrap().as_long() as u8).collect();
                     let bytes: [u8; 16] = bytes.try_into().map_err(|_| invalid_err())?;
                     let mantissa: i128 = i128::from_be_bytes(bytes);
-                    let decimal = Decimal::from_i128_with_scale(mantissa, scale as u32);
+                    let decimal = Decimal::from_i128_with_scale(mantissa, *scale as u32);
                     Ok(Some(AnyValue::Primitive(PrimitiveValue::Decimal(decimal))))
                 }
                 _ => Err(invalid_err()),
@@ -396,12 +396,8 @@ impl Value {
                     let mut keys = Vec::with_capacity(v.len());
                     let mut values = Vec::with_capacity(v.len());
                     for (k, v) in v {
-                        keys.push(k.into_memory(*key_type.clone())?.ok_or_else(invalid_err)?);
-                        values.push(
-                            v.map(|v| v.into_memory(*value_type.clone()))
-                                .transpose()?
-                                .flatten(),
-                        );
+                        keys.push(k.into_memory(key_type)?.ok_or_else(invalid_err)?);
+                        values.push(v.map(|v| v.into_memory(value_type)).transpose()?.flatten());
                     }
                     Ok(Some(in_memory::AnyValue::Map { keys, values }))
                 } else {
@@ -418,7 +414,7 @@ impl Value {
                         let field = struct_ty
                             .lookup_field_by_name(field_name.as_str())
                             .ok_or_else(invalid_err)?;
-                        let value = value.into_memory(field.field_type.clone())?;
+                        let value = value.into_memory(&field.field_type)?;
                         builder.add_field(field.id, value)?;
                     }
                     Ok(Some(in_memory::AnyValue::Struct(builder.build()?)))
@@ -427,7 +423,7 @@ impl Value {
                     let mut keys = Vec::with_capacity(required.len());
                     let mut values = Vec::with_capacity(required.len());
                     for (k, v) in required {
-                        let value = v.into_memory(*map_ty.value_type.clone())?;
+                        let value = v.into_memory(&map_ty.value_type)?;
                         keys.push(AnyValue::Primitive(PrimitiveValue::String(k)));
                         values.push(value);
                     }
@@ -931,7 +927,7 @@ mod test {
         let struct_type = types::Any::Struct(struct_type);
         for value in reader {
             let value = apache_avro::from_value::<Value>(&value.unwrap()).unwrap();
-            let value = value.into_memory(struct_type.clone()).unwrap();
+            let value = value.into_memory(&struct_type).unwrap();
             assert_eq!(value.unwrap(), ori_any_value);
         }
     }
@@ -957,7 +953,7 @@ mod test {
         // Read value
         let any_value = serde_json::from_value::<Value>(value)
             .unwrap()
-            .into_memory(types::Any::Struct(struct_type))
+            .into_memory(&types::Any::Struct(struct_type))
             .unwrap()
             .unwrap();
         assert_eq!(any_value, ori_any_value);
