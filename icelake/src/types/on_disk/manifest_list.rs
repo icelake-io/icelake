@@ -181,7 +181,7 @@ pub(crate) struct ManifestListWriter {
     // Output path relative to operator root.
     output_path: String,
     snapshot_id: i64,
-    parent_snapshot_id: i64,
+    parent_snapshot_id: Option<i64>,
     sequence_number: i64,
 }
 
@@ -190,7 +190,7 @@ impl ManifestListWriter {
         op: Operator,
         output_path: String,
         snapshot_id: i64,
-        parent_snapshot_id: i64,
+        parent_snapshot_id: Option<i64>,
         sequence_number: i64,
     ) -> Self {
         Self {
@@ -224,7 +224,10 @@ impl ManifestListWriter {
         writer.add_user_metadata("snapshot-id".to_string(), &self.snapshot_id.to_string())?;
         writer.add_user_metadata(
             "parent-snapshot-id".to_string(),
-            &self.parent_snapshot_id.to_string(),
+            &self
+                .parent_snapshot_id
+                .map(|id| id.to_string())
+                .unwrap_or("null".to_string()),
         )?;
         writer.add_user_metadata(
             "sequence-number".to_string(),
@@ -353,7 +356,7 @@ mod tests {
             Operator::new(builder).unwrap().finish()
         };
 
-        let writer = ManifestListWriter::new(operator, filename.to_string(), 0, 0, 0);
+        let writer = ManifestListWriter::new(operator, filename.to_string(), 0, Some(0), 0);
         writer.write(manifest_file.clone()).await.unwrap();
 
         let restored_manifest_file =
