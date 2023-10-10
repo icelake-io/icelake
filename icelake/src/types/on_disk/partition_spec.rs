@@ -6,7 +6,6 @@ use crate::Result;
 
 /// Parse schema from json bytes.
 pub fn parse_partition_spec(bs: &[u8]) -> Result<types::PartitionSpec> {
-    println!("parse_partition_spec: {:?}", String::from_utf8_lossy(bs));
     let t: PartitionSpec = serde_json::from_slice(bs)?;
     t.try_into()
 }
