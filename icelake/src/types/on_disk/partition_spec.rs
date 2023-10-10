@@ -21,6 +21,13 @@ pub fn serialize_partition_spec_fields(spec: &types::PartitionSpec) -> Result<St
     Ok(serde_json::to_string(&t.fields)?)
 }
 
+pub fn parse_partition_spec_fields(bs: &[u8]) -> Result<Vec<types::PartitionField>> {
+    let t: Vec<PartitionField> = serde_json::from_slice(bs)?;
+    t.into_iter()
+        .map(types::PartitionField::try_from)
+        .collect::<Result<Vec<types::PartitionField>>>()
+}
+
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct PartitionSpec {
