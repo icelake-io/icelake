@@ -244,7 +244,7 @@ impl<'a> Transaction<'a> {
                 ctx.io.clone(),
                 manifest_list_path.clone(),
                 next_snapshot_id,
-                cur_snapshot_id,
+                Some(cur_snapshot_id),
                 next_snapshot_id,
             )
             .write(manifest_list)
