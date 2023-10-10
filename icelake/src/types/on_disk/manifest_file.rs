@@ -1,6 +1,7 @@
 use std::cmp::min;
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::Arc;
 
 use apache_avro::{from_value, Schema as AvroSchema};
 use apache_avro::{to_value, Reader};
@@ -10,11 +11,12 @@ use serde_with::serde_as;
 use serde_with::Bytes;
 
 use super::parse_schema;
+use super::partition_spec::parse_partition_spec_fields;
 use super::value::Value;
 use crate::types::on_disk::partition_spec::serialize_partition_spec_fields;
 use crate::types::on_disk::schema::serialize_schema;
 use crate::types::to_avro::to_avro_schema;
-use crate::types::{self, StructValue};
+use crate::types::{self, Any, AnyValue, PartitionSpec, StructValue};
 use crate::types::{DataContentType, ManifestContentType, ManifestListEntry, UNASSIGNED_SEQ_NUM};
 use crate::types::{ManifestStatus, TableFormatVersion};
 use crate::Error;
@@ -50,21 +52,33 @@ pub fn parse_manifest_file(bs: &[u8]) -> Result<types::ManifestFile> {
                 }
             }
         },
-        partition_spec_id: {
-            match meta.get("partition-spec-id") {
-                None => 0,
-                Some(v) => {
-                    let v = String::from_utf8_lossy(v);
-                    v.parse().map_err(|err| {
-                        Error::new(
-                            ErrorKind::IcebergDataInvalid,
-                            format!("partition-spec-id {:?} is invalid", v),
-                        )
-                        .set_source(err)
-                    })?
+        partition_spec: PartitionSpec {
+            spec_id: {
+                match meta.get("partition-spec-id") {
+                    None => 0,
+                    Some(v) => {
+                        let v = String::from_utf8_lossy(v);
+                        v.parse().map_err(|err| {
+                            Error::new(
+                                ErrorKind::IcebergDataInvalid,
+                                format!("partition-spec-id {:?} is invalid", v),
+                            )
+                            .set_source(err)
+                        })?
+                    }
                 }
-            }
+            },
+            fields: match meta.get("partition-spec") {
+                None => {
+                    return Err(Error::new(
+                        ErrorKind::IcebergDataInvalid,
+                        "partition-spec is required in manifest metadata but not found",
+                    ))
+                }
+                Some(v) => parse_partition_spec_fields(v)?,
+            },
         },
+
         format_version: {
             meta.get("format-version")
                 .map(|v| {
@@ -91,13 +105,15 @@ pub fn parse_manifest_file(bs: &[u8]) -> Result<types::ManifestFile> {
         },
     };
 
+    let partition_type = Any::Struct(Arc::new(
+        metadata.partition_spec.partition_type(&metadata.schema)?,
+    ));
+
     // Parse manifest entries
     let mut entries = Vec::<types::ManifestEntry>::new();
     for value in reader {
         let v = value?;
-        // # TODO
-        // Read partition spec.
-        entries.push(from_value::<ManifestEntry>(&v)?.into_memory(None)?);
+        entries.push(from_value::<ManifestEntry>(&v)?.into_memory(&partition_type)?);
     }
 
     Ok(types::ManifestFile { metadata, entries })
@@ -123,7 +139,7 @@ pub fn data_file_from_json(
     let data_file = serde_json::from_value::<DataFile>(value).map_err(|e| {
         Error::new(ErrorKind::Unexpected, "Failed to parse data file from json").set_source(e)
     })?;
-    data_file.into_memory(Some(partition_type))
+    data_file.into_memory(&partition_type)
 }
 
 #[derive(Serialize, Deserialize)]
@@ -137,7 +153,7 @@ struct ManifestEntry {
 }
 
 impl ManifestEntry {
-    pub fn into_memory(self, partition_type: Option<types::Any>) -> Result<types::ManifestEntry> {
+    pub fn into_memory(self, partition_type: &types::Any) -> Result<types::ManifestEntry> {
         Ok(types::ManifestEntry {
             status: types::ManifestStatus::try_from(self.status as u8)?,
             snapshot_id: self.snapshot_id,
@@ -190,20 +206,18 @@ struct DataFile {
 }
 
 impl DataFile {
-    pub fn into_memory(self, partition_type: Option<types::Any>) -> Result<types::DataFile> {
-        let partition_value = if let Some(partition_type) = partition_type {
-            if let Some(value) = self.partition.into_memory(partition_type)? {
-                if let types::AnyValue::Struct(value) = value {
-                    value
-                } else {
-                    unreachable!()
-                }
-            } else {
-                StructValue::default()
+    pub fn into_memory(self, partition_type: &types::Any) -> Result<types::DataFile> {
+        let partition_value = match self.partition.into_memory(partition_type)? {
+            Some(AnyValue::Struct(s)) => s,
+            Some(_) => {
+                return Err(Error::new(
+                    ErrorKind::Unexpected,
+                    "partition value is not struct",
+                ));
             }
-        } else {
-            StructValue::default()
+            None => StructValue::default(),
         };
+
         Ok(types::DataFile {
             content: DataContentType::try_from(self.content as u8)?,
             file_path: self.file_path,
@@ -355,7 +369,7 @@ impl ManifestWriter {
 
     pub async fn write(mut self, manifest: types::ManifestFile) -> Result<ManifestListEntry> {
         assert_eq!(
-            self.partition_spec.spec_id, manifest.metadata.partition_spec_id,
+            self.partition_spec.spec_id, manifest.metadata.partition_spec.spec_id,
             "Partition spec id not match!"
         );
         // A place holder for avro schema since avro writer needs its reference.
@@ -424,7 +438,7 @@ impl ManifestWriter {
         Ok(ManifestListEntry {
             manifest_path: format!("{}/{}", self.table_location, &self.output_path),
             manifest_length: length as i64,
-            partition_spec_id: manifest.metadata.partition_spec_id,
+            partition_spec_id: manifest.metadata.partition_spec.spec_id,
             content: manifest.metadata.content,
             sequence_number: self.seq_num,
             min_sequence_number: self.min_seq_num.unwrap_or(UNASSIGNED_SEQ_NUM),
@@ -559,7 +573,10 @@ mod tests {
                     ],)
                 ),
                 schema_id: 0,
-                partition_spec_id: 0,
+                partition_spec: types::PartitionSpec {
+                    spec_id: 0,
+                    fields: vec![],
+                },
                 format_version: Some(TableFormatVersion::V1),
                 content: types::ManifestContentType::Data,
             }
@@ -604,7 +621,10 @@ mod tests {
                     ]),
                 ),
                 schema_id: 0,
-                partition_spec_id: 1,
+                partition_spec: types::PartitionSpec {
+                    spec_id: 1,
+                    fields: vec![],
+                },
                 format_version: Some(TableFormatVersion::V2),
                 content: types::ManifestContentType::Data,
             },
@@ -656,7 +676,7 @@ mod tests {
         };
 
         let partition_spec = types::PartitionSpec {
-            spec_id: manifest_file.metadata.partition_spec_id,
+            spec_id: manifest_file.metadata.partition_spec.spec_id,
             fields: vec![],
         };
 

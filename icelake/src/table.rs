@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::config::{TableConfig, TableConfigRef};
-use crate::types::{Any, DataFile, PartitionSplitter, Snapshot, TableMetadata};
+use crate::types::{Any, DataFile, PartitionSplitter, Schema, Snapshot, TableMetadata};
 use crate::{types, Error, ErrorKind};
 
 pub(crate) const META_ROOT_PATH: &str = "metadata";
@@ -313,6 +313,22 @@ impl Table {
         let current_schema = self.current_table_metadata().current_schema()?;
         Ok(Any::Struct(Arc::new(
             current_partition_spec.partition_type(current_schema)?,
+        )))
+    }
+
+    pub fn partition_type_of(&self, partition_spec_id: i32, schema: &Schema) -> Result<Any> {
+        let partition_spec = self
+            .current_table_metadata()
+            .partition_spec(partition_spec_id)
+            .ok_or_else(|| {
+                Error::new(
+                    ErrorKind::Unexpected,
+                    format!("Partition spec id {} not found!", partition_spec_id),
+                )
+            })?;
+
+        Ok(Any::Struct(Arc::new(
+            partition_spec.partition_type(schema)?,
         )))
     }
 
