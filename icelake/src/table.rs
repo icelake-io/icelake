@@ -83,12 +83,12 @@ pub struct Table {
     op: Operator,
     table_name: TableIdentifier,
 
-    table_metadata: HashMap<i64, types::TableMetadata>,
+    table_metadata: HashMap<String, types::TableMetadata>,
 
-    /// `0` means the version is not loaded yet.
+    /// `None` means the version is not loaded yet.
     ///
-    /// We use table's `last-updated-ms` to represent the version.
-    current_version: i64,
+    /// We use table's current metadata file location to represent the version.
+    current_version: Option<String>,
     current_location: String,
     /// It's different from `current_version` in that it's the `v[version number]` in metadata file.
     current_table_version: i64,
@@ -106,16 +106,16 @@ pub struct TableBuilder {
     op: Operator,
     name: TableIdentifier,
     catalog: CatalogRef,
-    metadatas: Vec<TableMetadata>,
-    current_version: Option<i64>,
+    metadatas: HashMap<String, TableMetadata>,
+    current_version: Option<String>,
     current_table_version: Option<i64>,
     table_config: Option<TableConfigRef>,
 }
 
 impl TableBuilder {
     /// Add metadata
-    pub fn add_metadata(mut self, metadata: TableMetadata) -> Self {
-        self.metadatas.push(metadata);
+    pub fn add_metadata(mut self, location: String, metadata: TableMetadata) -> Self {
+        self.metadatas.insert(location, metadata);
         self
     }
 
@@ -126,8 +126,8 @@ impl TableBuilder {
     }
 
     /// Set current version.
-    pub fn with_current_version(mut self, version: i64) -> Self {
-        self.current_version = Some(version);
+    pub fn with_current_version(mut self, location: String) -> Self {
+        self.current_version = Some(location);
         self
     }
 
@@ -139,18 +139,14 @@ impl TableBuilder {
 
     /// Build table
     pub fn build(self) -> Result<Table> {
-        let table_metadata: HashMap<i64, TableMetadata> = self
-            .metadatas
-            .into_iter()
-            .map(|v| (v.last_updated_ms, v))
-            .collect();
+        let table_metadata: HashMap<String, TableMetadata> = self.metadatas;
 
         let current_version = match self.current_version {
             Some(v) => v,
             None => table_metadata
-                .values()
-                .map(|v| v.last_updated_ms)
-                .max()
+                .iter()
+                .max_by_key(|v| v.1.last_sequence_number)
+                .map(|v| v.0.clone())
                 .ok_or_else(|| {
                     Error::new(
                         ErrorKind::IcebergDataInvalid,
@@ -177,7 +173,7 @@ impl TableBuilder {
             op: self.op,
             table_name: self.name,
             table_metadata,
-            current_version,
+            current_version: Some(current_version),
             current_location,
             current_table_version: self.current_table_version.unwrap_or(0),
             task_id: AtomicUsize::new(0),
@@ -195,13 +191,16 @@ impl Table {
         op: Operator,
         catalog: CatalogRef,
         metadata: TableMetadata,
+        metadata_location: String,
         table_name: TableIdentifier,
     ) -> TableBuilder {
+        let mut metadatas = HashMap::new();
+        metadatas.insert(metadata_location, metadata);
         TableBuilder {
             op,
             name: table_name,
             catalog,
-            metadatas: vec![metadata],
+            metadatas,
             current_version: None,
             current_table_version: None,
             table_config: None,
@@ -220,14 +219,16 @@ impl Table {
 
     /// Fetch current table metadata.
     pub fn current_table_metadata(&self) -> &types::TableMetadata {
-        assert!(
-            self.current_version != 0,
-            "table current version must be valid"
-        );
+        let current_version = self.current_version.as_ref().expect("table must be loaded");
 
         self.table_metadata
-            .get(&self.current_version)
+            .get(current_version)
             .expect("table metadata of current version must be exist")
+    }
+
+    /// Fetch current table metadata location
+    pub fn current_metadata_location(&self) -> &str {
+        self.current_version.as_ref().expect("table must be loaded")
     }
 
     pub(crate) fn current_table_version(&self) -> i64 {
@@ -240,16 +241,7 @@ impl Table {
     ///
     /// Currently, we just return all data files of the current version.
     pub async fn current_data_files(&self) -> Result<Vec<types::DataFile>> {
-        assert!(
-            self.current_version != 0,
-            "table current version must be valid"
-        );
-
-        let meta = self
-            .table_metadata
-            .get(&self.current_version)
-            .expect("table metadata of current version must be exist");
-
+        let meta = self.current_table_metadata();
         let current_snapshot_id = meta.current_snapshot_id.ok_or(Error::new(
             crate::ErrorKind::IcebergDataInvalid,
             "current snapshot id is empty",

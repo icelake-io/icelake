@@ -100,10 +100,14 @@ impl Catalog for RestCatalog {
             .build()?;
         let table_op = iceberg_io_args.create()?;
 
-        Ok(
-            Table::builder_from_catalog(table_op, self.clone(), table_metadata, table_name.clone())
-                .build()?,
+        Ok(Table::builder_from_catalog(
+            table_op,
+            self.clone(),
+            table_metadata,
+            metadata_location,
+            table_name.clone(),
         )
+        .build()?)
     }
 
     /// Update table.
@@ -141,6 +145,7 @@ impl Catalog for RestCatalog {
             table_op,
             self.clone(),
             table_metadata,
+            response.metadata_location,
             update_table.table_name.clone(),
         )
         .build()?)

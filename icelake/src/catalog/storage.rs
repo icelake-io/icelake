@@ -330,11 +330,16 @@ impl<O: OperatorCreator> Catalog for StorageCatalog<O> {
         let metadata = self.read_table_metadata(&path).await?;
         let table_op = self.table_operator(&table_path)?;
 
-        Ok(
-            Table::builder_from_catalog(table_op, self.clone(), metadata, table.clone())
-                .with_current_table_version(cur_table_version as i64)
-                .build()?,
+        let metadata_location = format!("{}/{}", self.warehouse, path);
+        Ok(Table::builder_from_catalog(
+            table_op,
+            self.clone(),
+            metadata,
+            metadata_location,
+            table.clone(),
         )
+        .with_current_table_version(cur_table_version as i64)
+        .build()?)
     }
 
     async fn update_table(self: Arc<Self>, table_update: &UpdateTable) -> Result<Table> {
