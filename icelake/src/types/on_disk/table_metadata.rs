@@ -47,7 +47,7 @@ pub(crate) struct TableMetadata {
     metadata_log: Option<Vec<MetadataLog>>,
     sort_orders: Vec<SortOrder>,
     default_sort_order_id: i32,
-    refs: HashMap<String, SnapshotReference>,
+    refs: Option<HashMap<String, SnapshotReference>>,
 }
 
 impl TryFrom<TableMetadata> for types::TableMetadata {
@@ -113,12 +113,15 @@ impl TryFrom<TableMetadata> for types::TableMetadata {
             sort_orders.push(sort_order.try_into()?);
         }
 
-        let refs = {
-            let mut refs = HashMap::with_capacity(v.refs.len());
-            for (k, v) in v.refs {
-                refs.insert(k, v.try_into()?);
+        let refs = match v.refs {
+            Some(rs) => {
+                let mut refs = HashMap::with_capacity(rs.len());
+                for (k, v) in rs {
+                    refs.insert(k, v.try_into()?);
+                }
+                refs
             }
-            refs
+            None => HashMap::default(),
         };
 
         Ok(types::TableMetadata {
@@ -201,11 +204,13 @@ impl TryFrom<types::TableMetadata> for TableMetadata {
                 .map(SortOrder::try_from)
                 .collect::<Result<Vec<SortOrder>>>()?,
             default_sort_order_id: value.default_sort_order_id,
-            refs: value
-                .refs
-                .into_iter()
-                .map(|e| SnapshotReference::try_from(e.1).map(|s| (e.0, s)))
-                .collect::<Result<HashMap<String, SnapshotReference>>>()?,
+            refs: Some(
+                value
+                    .refs
+                    .into_iter()
+                    .map(|e| SnapshotReference::try_from(e.1).map(|s| (e.0, s)))
+                    .collect::<Result<HashMap<String, SnapshotReference>>>()?,
+            ),
         })
     }
 }
