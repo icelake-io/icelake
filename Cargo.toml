@@ -11,15 +11,15 @@ resolver = "2"
 anyhow = "1"
 async-trait = "0.1"
 apache-avro = { version = "0.15", features = ["derive"] }
-arrow-array = { version = ">=46" }
-arrow-schema = { version = ">=46" }
-arrow-select = { version = ">=46" }
-arrow-row = { version = ">=46" }
-arrow-buffer = { version = ">=46" }
-arrow-arith = { version = ">=46" }
-arrow-csv = { version = ">=46" }
-arrow-cast = { version = ">=46" }
-arrow-ord = { version = ">=46" }
+arrow-array = { version = ">=48" }
+arrow-schema = { version = ">=48" }
+arrow-select = { version = ">=48" }
+arrow-row = { version = ">=48" }
+arrow-buffer = { version = ">=48" }
+arrow-arith = { version = ">=48" }
+arrow-csv = { version = ">=48" }
+arrow-cast = { version = ">=48" }
+arrow-ord = { version = ">=48" }
 bytes = "1"
 opendal = { version = ">=0.40", features = ["layers-prometheus"] }
 uuid = { version = "1", features = ["v4"] }

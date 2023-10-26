@@ -215,7 +215,7 @@ impl<F: FnMut(TableScanBuilder) -> TableScan> ScanTestCase<F> {
         .unwrap();
 
         let csv_reader = ReaderBuilder::new(schema.clone())
-            .has_header(false)
+            .with_header(false)
             .build(file)
             .unwrap();
 
