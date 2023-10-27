@@ -274,7 +274,7 @@ impl Default for ParquetWriterConfig {
     fn default() -> Self {
         let parquet_writer_properties = WriterProperties::default();
         Self {
-            enable_bloom_filter: true,
+            enable_bloom_filter: false,
             created_by: None,
             compression: Compression::SNAPPY,
             max_row_group_size: parquet_writer_properties.max_row_group_size(),

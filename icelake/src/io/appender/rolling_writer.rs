@@ -1,5 +1,6 @@
 //! A module provide `RollingWriter`.
 use arrow_array::RecordBatch;
+use arrow_cast::cast;
 use async_trait::async_trait;
 use parquet::file::properties::{WriterProperties, WriterVersion};
 use std::sync::Arc;
@@ -8,9 +9,9 @@ use crate::io::location_generator::FileLocationGenerator;
 use crate::io::parquet::ParquetWriter;
 
 use crate::types::DataFileBuilder;
-use crate::Result;
 use crate::{config::TableConfigRef, io::parquet::ParquetWriterBuilder};
-use arrow_schema::SchemaRef;
+use crate::{Error, Result};
+use arrow_schema::{DataType, SchemaRef};
 use opendal::Operator;
 
 use super::FileAppender;
@@ -116,6 +117,44 @@ impl RollingWriter {
         self.current_location = location;
         Ok(())
     }
+
+    // Try to cast the batch to compatitble with the schema of this writer.
+    // It only try to do the simple cast to avoid the performance cost:
+    // - timestamp with different timezone
+    fn try_cast_batch(&self, batch: RecordBatch) -> Result<RecordBatch> {
+        let mut need_cast = false;
+        let mut columns = batch.columns().to_vec();
+        for (idx, (actual_field, expect_field)) in batch
+            .schema()
+            .fields()
+            .iter()
+            .zip(self.arrow_schema.fields())
+            .enumerate()
+        {
+            match (actual_field.data_type(), expect_field.data_type()) {
+                (
+                    DataType::Timestamp(actual_unit, actual_tz),
+                    DataType::Timestamp(expect_unit, expect_tz),
+                ) => {
+                    if actual_unit == expect_unit && actual_tz != expect_tz {
+                        need_cast = true;
+                        let array =
+                            cast(&columns[idx], expect_field.data_type()).map_err(|err| {
+                                Error::new(crate::ErrorKind::ArrowError, err.to_string())
+                            })?;
+                        columns[idx] = array;
+                    }
+                }
+                _ => continue,
+            }
+        }
+        if need_cast {
+            RecordBatch::try_new(self.arrow_schema.clone(), columns)
+                .map_err(|err| Error::new(crate::ErrorKind::IcebergDataInvalid, err.to_string()))
+        } else {
+            Ok(batch)
+        }
+    }
 }
 
 // unsafe impl Sync for RollingWriter {}
@@ -124,6 +163,7 @@ impl RollingWriter {
 impl FileAppender for RollingWriter {
     /// Write a record batch. The `DataFileWriter` will create a new file when the current row num is greater than `target_file_row_num`.
     async fn write(&mut self, batch: RecordBatch) -> Result<()> {
+        let batch = self.try_cast_batch(batch)?;
         self.current_writer
             .as_mut()
             .expect("Should not be none here")

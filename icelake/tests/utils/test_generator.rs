@@ -39,7 +39,7 @@ impl TestCase {
         let schema = Arc::new(Self::parse_schema(toml_content.table_schema));
 
         let csv_reader = ReaderBuilder::new(schema.clone())
-            .has_header(false)
+            .with_header(false)
             .build(toml_content.data.as_bytes())
             .unwrap();
         let write_data = csv_reader.map(|r| r.unwrap()).collect::<Vec<RecordBatch>>();
