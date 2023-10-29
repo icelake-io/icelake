@@ -2611,9 +2611,12 @@ impl ToString for TableFormatVersion {
 mod test {
     use apache_avro::{schema, types::Value};
 
-    use crate::types::{Field, PrimitiveValue, Struct, StructValueBuilder};
+    use crate::{
+        transaction::Operation,
+        types::{Field, PrimitiveValue, Struct, StructValueBuilder},
+    };
 
-    use super::AnyValue;
+    use super::{AnyValue, DataFile, SnapshotSummary, StructValue};
 
     #[test]
     fn test_struct_to_avro() {
@@ -2709,5 +2712,100 @@ mod test {
         assert_eq!(struct_type2.lookup_field(2).unwrap().name, "b");
         assert_eq!(struct_type2.lookup_field(3).unwrap().name, "c");
         assert_eq!(struct_type2.lookup_field(4).unwrap().name, "d");
+    }
+
+    #[test]
+    fn test_snapshot_summary() {
+        let (data_op, pos_delete_op, eq_delete_op) = {
+            let data_file = DataFile {
+                content: super::DataContentType::Data,
+                file_path: String::new(),
+                file_format: super::DataFileFormat::Parquet,
+                partition: StructValue::default(),
+                record_count: 10,
+                file_size_in_bytes: 100,
+                column_sizes: None,
+                value_counts: None,
+                null_value_counts: None,
+                nan_value_counts: None,
+                distinct_counts: None,
+                lower_bounds: None,
+                upper_bounds: None,
+                key_metadata: None,
+                split_offsets: None,
+                equality_ids: None,
+                sort_order_id: None,
+            };
+            let data_file_op = Operation::AppendDataFile(data_file.clone());
+            let pos_delete_file_op = {
+                let mut data_file = data_file.clone();
+                data_file.content = super::DataContentType::PostionDeletes;
+                Operation::AppendDeleteFile(data_file)
+            };
+            let eq_delete_file_op = {
+                let mut data_file = data_file;
+                data_file.content = super::DataContentType::EqualityDeletes;
+                Operation::AppendDeleteFile(data_file)
+            };
+            (data_file_op, pos_delete_file_op, eq_delete_file_op)
+        };
+
+        // add data file
+        let mut builder = SnapshotSummary::builder();
+        builder.update(&data_op);
+        let summary_1 = builder.merge(&SnapshotSummary::default(), false);
+        assert_eq!(summary_1.operation, "append");
+        assert_eq!(summary_1.added_data_files, 1);
+        assert_eq!(summary_1.total_data_fiels, 1);
+        assert_eq!(summary_1.added_records, 10);
+        assert_eq!(summary_1.total_records, 10);
+        assert_eq!(summary_1.added_files_size, 100);
+        assert_eq!(summary_1.total_files_size, 100);
+
+        // add position delete file
+        // add eq delete file
+        let mut builder = SnapshotSummary::builder();
+        builder.update(&pos_delete_op);
+        builder.update(&eq_delete_op);
+        let summary_2 = builder.merge(&summary_1, false);
+        assert_eq!(summary_2.operation, "delete");
+        assert_eq!(summary_2.added_data_files, 0);
+        assert_eq!(summary_2.total_data_fiels, 1);
+        assert_eq!(summary_2.added_delete_files, 2);
+        assert_eq!(summary_2.added_position_delete_files, 1);
+        assert_eq!(summary_2.added_equality_delete_files, 1);
+        assert_eq!(summary_2.total_delete_files, 2);
+        assert_eq!(summary_2.added_records, 0);
+        assert_eq!(summary_2.total_records, 10);
+        assert_eq!(summary_2.added_position_deletes, 10);
+        assert_eq!(summary_2.total_position_deletes, 10);
+        assert_eq!(summary_2.added_equality_deletes, 10);
+        assert_eq!(summary_2.total_equality_deletes, 10);
+        assert_eq!(summary_2.added_files_size, 200);
+        assert_eq!(summary_2.total_files_size, 300);
+
+        // add data file
+        // add position delete file
+        // add eq delete file
+        let mut builder = SnapshotSummary::builder();
+        builder.update(&data_op);
+        builder.update(&pos_delete_op);
+        builder.update(&eq_delete_op);
+        let summary_3 = builder.merge(&summary_2, false);
+        assert_eq!(summary_3.operation, "overwrite");
+        assert_eq!(summary_3.added_data_files, 1);
+        assert_eq!(summary_3.total_data_fiels, 2);
+        assert_eq!(summary_3.added_delete_files, 2);
+        assert_eq!(summary_3.added_position_delete_files, 1);
+        assert_eq!(summary_3.added_equality_delete_files, 1);
+        assert_eq!(summary_3.total_delete_files, 4);
+        assert_eq!(summary_3.added_records, 10);
+        assert_eq!(summary_3.total_records, 20);
+        assert_eq!(summary_3.added_position_deletes, 10);
+        assert_eq!(summary_3.total_position_deletes, 20);
+        assert_eq!(summary_3.added_equality_deletes, 10);
+        assert_eq!(summary_3.total_equality_deletes, 20);
+        assert_eq!(summary_3.added_files_size, 300);
+        assert_eq!(summary_3.total_files_size, 600);
     }
 }
