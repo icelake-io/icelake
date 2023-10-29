@@ -1,7 +1,6 @@
 use crate::{types::in_memory, Error, ErrorKind};
 use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, Utc};
 use in_memory::{Any, AnyValue, Primitive, PrimitiveValue, StructValue};
-use rust_decimal::Decimal;
 use serde::{
     de::Visitor,
     ser::{SerializeMap, SerializeSeq, SerializeStruct},
@@ -205,9 +204,7 @@ impl Value {
             in_memory::PrimitiveValue::Long(v) => Self::Long(v),
             in_memory::PrimitiveValue::Float(v) => Self::Float(v.0),
             in_memory::PrimitiveValue::Double(v) => Self::Double(v.0),
-            in_memory::PrimitiveValue::Decimal(v) => {
-                Self::Bytes(v.mantissa().to_be_bytes().to_vec())
-            }
+            in_memory::PrimitiveValue::Decimal(v) => Self::Bytes(v.to_be_bytes().to_vec()),
             in_memory::PrimitiveValue::Date(v) => Self::Int(v.num_days_from_ce()),
             in_memory::PrimitiveValue::Time(v) => Self::Long(
                 NaiveDateTime::new(NaiveDate::from_ymd_opt(1970, 1, 1).unwrap(), v)
@@ -378,14 +375,13 @@ impl Value {
                 }
                 Any::Primitive(Primitive::Decimal {
                     precision: _,
-                    scale,
+                    scale: _,
                 }) => {
                     let bytes: Vec<u8> =
                         v.into_iter().map(|v| v.unwrap().as_long() as u8).collect();
                     let bytes: [u8; 16] = bytes.try_into().map_err(|_| invalid_err())?;
                     let mantissa: i128 = i128::from_be_bytes(bytes);
-                    let decimal = Decimal::from_i128_with_scale(mantissa, *scale as u32);
-                    Ok(Some(AnyValue::Primitive(PrimitiveValue::Decimal(decimal))))
+                    Ok(Some(AnyValue::Primitive(PrimitiveValue::Decimal(mantissa))))
                 }
                 _ => Err(invalid_err()),
             },
@@ -498,7 +494,6 @@ mod test {
     use std::sync::Arc;
 
     use chrono::{NaiveDate, NaiveDateTime};
-    use rust_decimal::Decimal;
 
     use crate::types::{
         self, to_avro::to_avro_schema, AnyValue, List, Map, PrimitiveValue, Schema, Struct,
@@ -882,12 +877,7 @@ mod test {
             )
             .unwrap();
         builder
-            .add_field(
-                12,
-                Some(AnyValue::Primitive(PrimitiveValue::Decimal(Decimal::new(
-                    2222, 5,
-                )))),
-            )
+            .add_field(12, Some(AnyValue::Primitive(PrimitiveValue::Decimal(2222))))
             .unwrap();
         builder
             .add_field(

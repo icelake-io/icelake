@@ -532,7 +532,7 @@ fn parse_json_value_to_decimal(value: serde_json::Value) -> Result<types::AnyVal
 
             // TODO: we should check the precision and scale here.
             Ok(types::AnyValue::Primitive(types::PrimitiveValue::Decimal(
-                d,
+                d.mantissa(),
             )))
         }
         _ => Err(Error::new(

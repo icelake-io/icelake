@@ -5,7 +5,7 @@ use crate::error::Result;
 use crate::types::{
     DataFile, DataFileFormat, ManifestContentType, ManifestEntry, ManifestFile, ManifestList,
     ManifestListEntry, ManifestListWriter, ManifestMetadata, ManifestStatus, ManifestWriter,
-    Snapshot, SnapshotReferenceType, TableMetadata, MAIN_BRANCH,
+    Snapshot, SnapshotReferenceType, SnapshotSummary, TableMetadata, MAIN_BRANCH,
 };
 use crate::Table;
 use opendal::Operator;
@@ -14,7 +14,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 
 /// Operation of a transaction.
-enum Operation {
+pub enum Operation {
     /// Append a new data file.
     AppendDataFile(DataFile),
     AppendDeleteFile(DataFile),
@@ -167,7 +167,9 @@ impl<'a> Transaction<'a> {
         let mut data_manifest_entries: Vec<ManifestEntry> = Vec::with_capacity(ops.len());
         let mut delete_manifest_entries: Vec<ManifestEntry> = Vec::with_capacity(ops.len());
 
+        let mut new_summary_buidler = SnapshotSummary::builder();
         for op in ops {
+            new_summary_buidler.update(&op);
             match op {
                 Operation::AppendDataFile(data_file) => {
                     let manifest_entry = ManifestEntry {
@@ -256,11 +258,20 @@ impl<'a> Transaction<'a> {
 
         let mut new_snapshot = match cur_metadata.current_snapshot()? {
             Some(cur_snapshot) => {
+                let new_snapshot_summary = new_summary_buidler.merge(&cur_snapshot.summary, false);
                 let mut new_snapshot = cur_snapshot.clone();
                 new_snapshot.parent_snapshot_id = Some(cur_snapshot.snapshot_id);
+                new_snapshot.summary = new_snapshot_summary;
                 new_snapshot
             }
-            None => Snapshot::default(),
+            None => {
+                let new_snapshot_summary =
+                    new_summary_buidler.merge(&SnapshotSummary::default(), false);
+                Snapshot {
+                    summary: new_snapshot_summary,
+                    ..Default::default()
+                }
+            }
         };
         new_snapshot.snapshot_id = next_snapshot_id;
         new_snapshot.sequence_number = next_seq_number;
@@ -269,7 +280,6 @@ impl<'a> Transaction<'a> {
         new_snapshot.manifest_list = manifest_list_path;
         new_snapshot.schema_id = Some(cur_metadata.current_schema_id as i64);
 
-        // TODO: Add operations
         Ok(new_snapshot)
     }
 }

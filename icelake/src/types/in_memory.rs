@@ -13,13 +13,13 @@ use chrono::{DateTime, Datelike};
 use opendal::Operator;
 use ordered_float::OrderedFloat;
 use parquet::format::FileMetaData;
-use rust_decimal::Decimal;
 use serde::ser::SerializeMap;
 use serde::ser::SerializeStruct;
 use serde::Serialize;
 use std::hash::Hash;
 use uuid::Uuid;
 
+use crate::transaction::Operation;
 use crate::types::parse_manifest_list;
 use crate::ErrorKind;
 use crate::Result;
@@ -204,7 +204,7 @@ pub enum PrimitiveValue {
     /// 64-bit IEEE 753 floating bit.
     Double(OrderedFloat<f64>),
     /// Fixed point decimal
-    Decimal(Decimal),
+    Decimal(i128),
     /// Calendar date without timezone or time
     Date(NaiveDate),
     /// Time of day without date or timezone.
@@ -256,9 +256,7 @@ impl Serialize for PrimitiveValue {
             PrimitiveValue::Long(value) => serializer.serialize_i64(*value),
             PrimitiveValue::Float(value) => serializer.serialize_f32(value.0),
             PrimitiveValue::Double(value) => serializer.serialize_f64(value.0),
-            PrimitiveValue::Decimal(value) => {
-                serializer.serialize_bytes(&value.mantissa().to_be_bytes())
-            }
+            PrimitiveValue::Decimal(value) => serializer.serialize_bytes(&value.to_be_bytes()),
             PrimitiveValue::Date(value) => serializer.serialize_i32(value.num_days_from_ce()),
             PrimitiveValue::Time(value) => serializer
                 .serialize_i64(NaiveDateTime::new(NaiveDate::default(), *value).timestamp_micros()),
@@ -1986,7 +1984,7 @@ pub struct Snapshot {
     ///   "total-equality-deletes" : "0"
     /// }
     /// ```
-    pub summary: HashMap<String, String>,
+    pub summary: SnapshotSummary,
     /// ID of the table’s current schema when the snapshot was created
     pub schema_id: Option<i64>,
 }
@@ -2003,6 +2001,253 @@ impl Snapshot {
         SnapshotLog {
             timestamp_ms: self.timestamp_ms,
             snapshot_id: self.snapshot_id,
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct SnapshotSummary {
+    /// The operation that created this snapshot.
+    /// append – Only data files were added and no files were removed.
+    /// replace – Data and delete files were added and removed without changing table data; i.e., compaction, changing the data file format, or relocating data files.
+    /// overwrite – Data and delete files were added and removed in a logical overwrite operation.
+    /// delete – Data files were removed and their contents logically deleted and/or delete files were added to delete rows.
+    operation: String,
+
+    /// file number metrics
+    added_data_files: i64,
+    total_data_fiels: i64,
+    added_delete_files: i64,
+    added_equality_delete_files: i64,
+    added_position_delete_files: i64,
+    total_delete_files: i64,
+
+    /// record number metrics
+    /// added data file records
+    added_records: i64,
+    /// totoal data file records
+    total_records: i64,
+    added_position_deletes: i64,
+    total_position_deletes: i64,
+    added_equality_deletes: i64,
+    total_equality_deletes: i64,
+
+    /// file size metrics
+    added_files_size: i64,
+    total_files_size: i64,
+}
+
+impl TryFrom<HashMap<String, String>> for SnapshotSummary {
+    type Error = Error;
+
+    fn try_from(mut value: HashMap<String, String>) -> std::result::Result<Self, Self::Error> {
+        #[inline]
+        fn remove_i64(
+            value: &mut HashMap<String, String>,
+            key: &str,
+        ) -> std::result::Result<i64, Error> {
+            Ok(value
+                .remove(key)
+                .map(|val| val.parse::<i64>())
+                .transpose()?
+                .unwrap_or_default())
+        }
+
+        Ok(Self {
+            operation: value.remove(Self::OPERATION).unwrap_or_default(),
+            added_data_files: remove_i64(&mut value, Self::ADDED_DATA_FILES)?,
+            total_data_fiels: remove_i64(&mut value, Self::TOTAL_DATA_FILES)?,
+            added_delete_files: remove_i64(&mut value, Self::ADDED_DELETE_FILES)?,
+            added_equality_delete_files: remove_i64(&mut value, Self::ADDED_EQUALITY_DELETE_FILES)?,
+            added_position_delete_files: remove_i64(&mut value, Self::ADDED_POSITION_DELETE_FILES)?,
+            total_delete_files: remove_i64(&mut value, Self::TOTAL_DELETE_FILES)?,
+            added_records: remove_i64(&mut value, Self::ADDED_RECORDS)?,
+            total_records: remove_i64(&mut value, Self::TOTAL_RECORDS)?,
+            added_position_deletes: remove_i64(&mut value, Self::ADDED_POSITION_DELETES)?,
+            total_position_deletes: remove_i64(&mut value, Self::TOTAL_POSITION_DELETES)?,
+            added_equality_deletes: remove_i64(&mut value, Self::ADDED_EQUALITY_DELETES)?,
+            total_equality_deletes: remove_i64(&mut value, Self::TOTAL_EQUALITY_DELETES)?,
+            added_files_size: remove_i64(&mut value, Self::ADDED_FILES_SIZE)?,
+            total_files_size: remove_i64(&mut value, Self::TOTAL_FILES_SIZE)?,
+        })
+    }
+}
+
+impl From<SnapshotSummary> for HashMap<String, String> {
+    fn from(value: SnapshotSummary) -> Self {
+        let mut m = HashMap::with_capacity(16);
+        m.insert(SnapshotSummary::OPERATION.to_string(), value.operation);
+        m.insert(
+            SnapshotSummary::ADDED_DATA_FILES.to_string(),
+            value.added_data_files.to_string(),
+        );
+        m.insert(
+            SnapshotSummary::TOTAL_DATA_FILES.to_string(),
+            value.total_data_fiels.to_string(),
+        );
+        m.insert(
+            SnapshotSummary::ADDED_DELETE_FILES.to_string(),
+            value.added_delete_files.to_string(),
+        );
+        m.insert(
+            SnapshotSummary::ADDED_EQUALITY_DELETE_FILES.to_string(),
+            value.added_equality_delete_files.to_string(),
+        );
+        m.insert(
+            SnapshotSummary::ADDED_POSITION_DELETE_FILES.to_string(),
+            value.added_position_delete_files.to_string(),
+        );
+        m.insert(
+            SnapshotSummary::TOTAL_DELETE_FILES.to_string(),
+            value.total_delete_files.to_string(),
+        );
+        m.insert(
+            SnapshotSummary::ADDED_RECORDS.to_string(),
+            value.added_records.to_string(),
+        );
+        m.insert(
+            SnapshotSummary::TOTAL_RECORDS.to_string(),
+            value.total_records.to_string(),
+        );
+        m.insert(
+            SnapshotSummary::ADDED_POSITION_DELETES.to_string(),
+            value.added_position_deletes.to_string(),
+        );
+        m.insert(
+            SnapshotSummary::TOTAL_POSITION_DELETES.to_string(),
+            value.total_position_deletes.to_string(),
+        );
+        m.insert(
+            SnapshotSummary::ADDED_EQUALITY_DELETES.to_string(),
+            value.added_equality_deletes.to_string(),
+        );
+        m.insert(
+            SnapshotSummary::TOTAL_EQUALITY_DELETES.to_string(),
+            value.total_equality_deletes.to_string(),
+        );
+        m.insert(
+            SnapshotSummary::ADDED_FILES_SIZE.to_string(),
+            value.added_files_size.to_string(),
+        );
+        m.insert(
+            SnapshotSummary::TOTAL_FILES_SIZE.to_string(),
+            value.total_files_size.to_string(),
+        );
+
+        m
+    }
+}
+
+impl SnapshotSummary {
+    const OPERATION: &'static str = "operation";
+    const SPARK_APP_ID: &'static str = "spark.app.id";
+    const ADDED_DATA_FILES: &'static str = "added-data-files";
+    const TOTAL_DATA_FILES: &'static str = "total-data-files";
+    const ADDED_DELETE_FILES: &'static str = "added-delete-files";
+    const ADDED_EQUALITY_DELETE_FILES: &'static str = "added-equality-delete-files";
+    const ADDED_POSITION_DELETE_FILES: &'static str = "added-position-delete-files";
+    const TOTAL_DELETE_FILES: &'static str = "total-delete-files";
+    const ADDED_RECORDS: &'static str = "added-records";
+    const TOTAL_RECORDS: &'static str = "total-records";
+    const ADDED_POSITION_DELETES: &'static str = "added-position-deletes";
+    const TOTAL_POSITION_DELETES: &'static str = "total-position-deletes";
+    const ADDED_EQUALITY_DELETES: &'static str = "added-equality-deletes";
+    const TOTAL_EQUALITY_DELETES: &'static str = "total-equality-deletes";
+    const ADDED_FILES_SIZE: &'static str = "added-files-size";
+    const TOTAL_FILES_SIZE: &'static str = "total-files-size";
+
+    pub fn builder() -> SnapshotSummaryBuilder {
+        SnapshotSummaryBuilder {
+            added_data_files: 0,
+            added_delete_files: 0,
+            added_equality_delete_files: 0,
+            added_position_delete_files: 0,
+
+            added_data_records: 0,
+            added_position_deletes_records: 0,
+            added_equality_deletes_records: 0,
+
+            added_files_size: 0,
+        }
+    }
+}
+
+pub struct SnapshotSummaryBuilder {
+    added_data_files: i64,
+    added_delete_files: i64,
+    added_equality_delete_files: i64,
+    added_position_delete_files: i64,
+
+    added_data_records: i64,
+    added_position_deletes_records: i64,
+    added_equality_deletes_records: i64,
+
+    added_files_size: i64,
+}
+
+impl SnapshotSummaryBuilder {
+    pub fn update(&mut self, op: &Operation) {
+        match op {
+            Operation::AppendDataFile(file) => {
+                self.added_data_files += 1;
+                self.added_data_records += file.record_count;
+                self.added_files_size += file.file_size_in_bytes;
+            }
+            Operation::AppendDeleteFile(file) => match file.content {
+                DataContentType::PostionDeletes => {
+                    self.added_delete_files += 1;
+                    self.added_position_delete_files += 1;
+                    self.added_position_deletes_records += file.record_count;
+                    self.added_files_size += file.file_size_in_bytes;
+                }
+                DataContentType::EqualityDeletes => {
+                    self.added_delete_files += 1;
+                    self.added_equality_delete_files += 1;
+                    self.added_equality_deletes_records += file.record_count;
+                    self.added_files_size += file.file_size_in_bytes;
+                }
+                DataContentType::Data => unreachable!(),
+            },
+        }
+    }
+
+    fn operation(&self) -> String {
+        if self.added_delete_files == 0 && self.added_data_files != 0 {
+            "append".to_string()
+        } else if self.added_delete_files != 0 && self.added_data_files != 0 {
+            "overwrite".to_string()
+        } else if self.added_delete_files != 0 && self.added_data_files == 0 {
+            "delete".to_string()
+        } else {
+            "append".to_string()
+        }
+    }
+
+    pub fn merge(self, last_summray: &SnapshotSummary, is_compact_op: bool) -> SnapshotSummary {
+        let operation = if is_compact_op {
+            "replace".to_string()
+        } else {
+            self.operation()
+        };
+
+        SnapshotSummary {
+            operation,
+            added_data_files: self.added_data_files,
+            total_data_fiels: last_summray.total_data_fiels + self.added_data_files,
+            added_delete_files: self.added_delete_files,
+            added_equality_delete_files: self.added_equality_delete_files,
+            added_position_delete_files: self.added_position_delete_files,
+            total_delete_files: last_summray.total_delete_files + self.added_delete_files,
+            added_records: self.added_data_records,
+            total_records: last_summray.total_records + self.added_data_records,
+            added_position_deletes: self.added_position_deletes_records,
+            total_position_deletes: last_summray.total_position_deletes
+                + self.added_position_deletes_records,
+            added_equality_deletes: self.added_equality_deletes_records,
+            total_equality_deletes: last_summray.total_equality_deletes
+                + self.added_equality_deletes_records,
+            added_files_size: self.added_files_size,
+            total_files_size: last_summray.total_files_size + self.added_files_size,
         }
     }
 }

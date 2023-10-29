@@ -37,7 +37,7 @@ impl TryFrom<Snapshot> for types::Snapshot {
             sequence_number: v.sequence_number,
             timestamp_ms: v.timestamp_ms,
             manifest_list: v.manifest_list,
-            summary: v.summary.unwrap_or_default(),
+            summary: v.summary.unwrap_or_default().try_into()?,
             schema_id: v.schema_id,
         })
     }
@@ -53,7 +53,7 @@ impl TryFrom<types::Snapshot> for Snapshot {
             sequence_number: value.sequence_number,
             timestamp_ms: value.timestamp_ms,
             manifest_list: value.manifest_list,
-            summary: Some(value.summary),
+            summary: Some(value.summary.into()),
             schema_id: value.schema_id,
         })
     }
@@ -112,7 +112,7 @@ mod tests {
                     m.insert("total-delete-files", "0");
                     m.insert("total-position-deletes", "0");
                     m.insert("total-equality-deletes", "0");
-                    m.into_iter().map(|(k,v)|(k.to_string(), v.to_string())).collect()
+                    m.into_iter().map(|(k,v)|(k.to_string(), v.to_string())).collect::<HashMap<_,_>>().try_into().unwrap()
                 },
                 schema_id: Some(0)
             }

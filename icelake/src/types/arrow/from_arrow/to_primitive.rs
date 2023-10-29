@@ -3,7 +3,6 @@ use crate::{types::PrimitiveValue, Error, ErrorKind};
 use arrow_schema::DataType;
 use arrow_schema::TimeUnit;
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
-use rust_decimal::Decimal;
 
 /// Help to convert arrow primitive value to iceberg primitive value.
 /// We implement this trait in the `ArrowPrimitiveType::Naive` type.
@@ -180,9 +179,7 @@ impl ToPrimitiveValue for i64 {
 impl ToPrimitiveValue for i128 {
     fn to_primitive(self, data_type: &DataType) -> Result<PrimitiveValue> {
         match data_type {
-            DataType::Decimal128(_, scale) => Ok(PrimitiveValue::Decimal(
-                Decimal::from_i128_with_scale(self, *scale as u32),
-            )),
+            DataType::Decimal128(_, _) => Ok(PrimitiveValue::Decimal(self)),
             _ => Err(Error::new(
                 ErrorKind::DataTypeUnsupported,
                 format!("Cannot convert i128 to {:?}", data_type),
