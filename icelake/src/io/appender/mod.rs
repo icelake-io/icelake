@@ -13,7 +13,7 @@ use crate::{config::TableConfigRef, types::DataFileBuilder};
 use arrow_array::RecordBatch;
 use async_trait::async_trait;
 
-use self::rolling_writer::RollingWriter;
+pub use self::rolling_writer::RollingWriter;
 
 use super::location_generator::FileLocationGenerator;
 
@@ -25,7 +25,7 @@ pub trait FileAppender: Send + 'static {
     async fn close(&mut self) -> Result<Vec<DataFileBuilder>>;
 }
 
-pub trait FileAppenderLayer<F: FileAppender>: Send + Sync {
+pub trait FileAppenderLayer<F: FileAppender>: Send {
     type R: FileAppender;
     fn layer(&self, appender: F) -> Self::R;
 

@@ -187,7 +187,7 @@ impl WriterPrometheusLayer {
     }
 }
 
-impl<F: FileAppender + Sync> FileAppenderLayer<F> for WriterPrometheusLayer {
+impl<F: FileAppender> FileAppenderLayer<F> for WriterPrometheusLayer {
     type R = PrometheusLayeredFileAppender<F>;
 
     fn layer(&self, appender: F) -> Self::R {
