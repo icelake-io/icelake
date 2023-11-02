@@ -400,7 +400,7 @@ mod tests {
                 sequence_number: 2,
                 timestamp_ms: 1686911671713,
                 manifest_list: "/opt/bitnami/spark/warehouse/db/table/1.avro".to_string(),
-                summary: HashMap::default(),
+                summary: HashMap::new(),
                 schema_id: Some(0),
             }]),
             snapshot_log: Some(vec![types::SnapshotLog {

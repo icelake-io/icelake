@@ -112,7 +112,7 @@ mod tests {
                     m.insert("total-delete-files", "0");
                     m.insert("total-position-deletes", "0");
                     m.insert("total-equality-deletes", "0");
-                    m.into_iter().map(|(k,v)|(k.to_string(), v.to_string())).collect()
+                    m.into_iter().map(|(k,v)|(k.to_string(), v.to_string())).collect::<HashMap<_,_>>()
                 },
                 schema_id: Some(0)
             }
