@@ -314,7 +314,6 @@ impl TryFrom<types::SnapshotReference> for SnapshotReference {
 
 #[cfg(test)]
 mod tests {
-    use crate::types::SnapshotSummary;
     use crate::types::TableFormatVersion;
     use std::env;
     use std::fs;
@@ -401,7 +400,7 @@ mod tests {
                 sequence_number: 2,
                 timestamp_ms: 1686911671713,
                 manifest_list: "/opt/bitnami/spark/warehouse/db/table/1.avro".to_string(),
-                summary: SnapshotSummary::default(),
+                summary: HashMap::new(),
                 schema_id: Some(0),
             }]),
             snapshot_log: Some(vec![types::SnapshotLog {

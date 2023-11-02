@@ -19,7 +19,6 @@ use serde::Serialize;
 use std::hash::Hash;
 use uuid::Uuid;
 
-use crate::transaction::Operation;
 use crate::types::parse_manifest_list;
 use crate::ErrorKind;
 use crate::Result;
@@ -1984,7 +1983,7 @@ pub struct Snapshot {
     ///   "total-equality-deletes" : "0"
     /// }
     /// ```
-    pub summary: SnapshotSummary,
+    pub summary: HashMap<String, String>,
     /// ID of the table’s current schema when the snapshot was created
     pub schema_id: Option<i64>,
 }
@@ -2005,140 +2004,21 @@ impl Snapshot {
     }
 }
 
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub struct SnapshotSummary {
-    /// The operation that created this snapshot.
-    /// append – Only data files were added and no files were removed.
-    /// replace – Data and delete files were added and removed without changing table data; i.e., compaction, changing the data file format, or relocating data files.
-    /// overwrite – Data and delete files were added and removed in a logical overwrite operation.
-    /// delete – Data files were removed and their contents logically deleted and/or delete files were added to delete rows.
-    operation: String,
-
-    /// file number metrics
+#[derive(Default)]
+pub struct SnapshotSummaryBuilder {
     added_data_files: i64,
-    total_data_fiels: i64,
     added_delete_files: i64,
     added_equality_delete_files: i64,
     added_position_delete_files: i64,
-    total_delete_files: i64,
 
-    /// record number metrics
-    /// added data file records
-    added_records: i64,
-    /// totoal data file records
-    total_records: i64,
-    added_position_deletes: i64,
-    total_position_deletes: i64,
-    added_equality_deletes: i64,
-    total_equality_deletes: i64,
+    added_data_records: i64,
+    added_position_deletes_records: i64,
+    added_equality_deletes_records: i64,
 
-    /// file size metrics
     added_files_size: i64,
-    total_files_size: i64,
 }
 
-impl TryFrom<HashMap<String, String>> for SnapshotSummary {
-    type Error = Error;
-
-    fn try_from(mut value: HashMap<String, String>) -> std::result::Result<Self, Self::Error> {
-        #[inline]
-        fn remove_i64(
-            value: &mut HashMap<String, String>,
-            key: &str,
-        ) -> std::result::Result<i64, Error> {
-            Ok(value
-                .remove(key)
-                .map(|val| val.parse::<i64>())
-                .transpose()?
-                .unwrap_or_default())
-        }
-
-        Ok(Self {
-            operation: value.remove(Self::OPERATION).unwrap_or_default(),
-            added_data_files: remove_i64(&mut value, Self::ADDED_DATA_FILES)?,
-            total_data_fiels: remove_i64(&mut value, Self::TOTAL_DATA_FILES)?,
-            added_delete_files: remove_i64(&mut value, Self::ADDED_DELETE_FILES)?,
-            added_equality_delete_files: remove_i64(&mut value, Self::ADDED_EQUALITY_DELETE_FILES)?,
-            added_position_delete_files: remove_i64(&mut value, Self::ADDED_POSITION_DELETE_FILES)?,
-            total_delete_files: remove_i64(&mut value, Self::TOTAL_DELETE_FILES)?,
-            added_records: remove_i64(&mut value, Self::ADDED_RECORDS)?,
-            total_records: remove_i64(&mut value, Self::TOTAL_RECORDS)?,
-            added_position_deletes: remove_i64(&mut value, Self::ADDED_POSITION_DELETES)?,
-            total_position_deletes: remove_i64(&mut value, Self::TOTAL_POSITION_DELETES)?,
-            added_equality_deletes: remove_i64(&mut value, Self::ADDED_EQUALITY_DELETES)?,
-            total_equality_deletes: remove_i64(&mut value, Self::TOTAL_EQUALITY_DELETES)?,
-            added_files_size: remove_i64(&mut value, Self::ADDED_FILES_SIZE)?,
-            total_files_size: remove_i64(&mut value, Self::TOTAL_FILES_SIZE)?,
-        })
-    }
-}
-
-impl From<SnapshotSummary> for HashMap<String, String> {
-    fn from(value: SnapshotSummary) -> Self {
-        let mut m = HashMap::with_capacity(16);
-        m.insert(SnapshotSummary::OPERATION.to_string(), value.operation);
-        m.insert(
-            SnapshotSummary::ADDED_DATA_FILES.to_string(),
-            value.added_data_files.to_string(),
-        );
-        m.insert(
-            SnapshotSummary::TOTAL_DATA_FILES.to_string(),
-            value.total_data_fiels.to_string(),
-        );
-        m.insert(
-            SnapshotSummary::ADDED_DELETE_FILES.to_string(),
-            value.added_delete_files.to_string(),
-        );
-        m.insert(
-            SnapshotSummary::ADDED_EQUALITY_DELETE_FILES.to_string(),
-            value.added_equality_delete_files.to_string(),
-        );
-        m.insert(
-            SnapshotSummary::ADDED_POSITION_DELETE_FILES.to_string(),
-            value.added_position_delete_files.to_string(),
-        );
-        m.insert(
-            SnapshotSummary::TOTAL_DELETE_FILES.to_string(),
-            value.total_delete_files.to_string(),
-        );
-        m.insert(
-            SnapshotSummary::ADDED_RECORDS.to_string(),
-            value.added_records.to_string(),
-        );
-        m.insert(
-            SnapshotSummary::TOTAL_RECORDS.to_string(),
-            value.total_records.to_string(),
-        );
-        m.insert(
-            SnapshotSummary::ADDED_POSITION_DELETES.to_string(),
-            value.added_position_deletes.to_string(),
-        );
-        m.insert(
-            SnapshotSummary::TOTAL_POSITION_DELETES.to_string(),
-            value.total_position_deletes.to_string(),
-        );
-        m.insert(
-            SnapshotSummary::ADDED_EQUALITY_DELETES.to_string(),
-            value.added_equality_deletes.to_string(),
-        );
-        m.insert(
-            SnapshotSummary::TOTAL_EQUALITY_DELETES.to_string(),
-            value.total_equality_deletes.to_string(),
-        );
-        m.insert(
-            SnapshotSummary::ADDED_FILES_SIZE.to_string(),
-            value.added_files_size.to_string(),
-        );
-        m.insert(
-            SnapshotSummary::TOTAL_FILES_SIZE.to_string(),
-            value.total_files_size.to_string(),
-        );
-
-        m
-    }
-}
-
-impl SnapshotSummary {
+impl SnapshotSummaryBuilder {
     const OPERATION: &'static str = "operation";
     const SPARK_APP_ID: &'static str = "spark.app.id";
     const ADDED_DATA_FILES: &'static str = "added-data-files";
@@ -2156,58 +2036,29 @@ impl SnapshotSummary {
     const ADDED_FILES_SIZE: &'static str = "added-files-size";
     const TOTAL_FILES_SIZE: &'static str = "total-files-size";
 
-    pub fn builder() -> SnapshotSummaryBuilder {
-        SnapshotSummaryBuilder {
-            added_data_files: 0,
-            added_delete_files: 0,
-            added_equality_delete_files: 0,
-            added_position_delete_files: 0,
-
-            added_data_records: 0,
-            added_position_deletes_records: 0,
-            added_equality_deletes_records: 0,
-
-            added_files_size: 0,
-        }
+    pub fn new() -> Self {
+        Default::default()
     }
-}
 
-pub struct SnapshotSummaryBuilder {
-    added_data_files: i64,
-    added_delete_files: i64,
-    added_equality_delete_files: i64,
-    added_position_delete_files: i64,
-
-    added_data_records: i64,
-    added_position_deletes_records: i64,
-    added_equality_deletes_records: i64,
-
-    added_files_size: i64,
-}
-
-impl SnapshotSummaryBuilder {
-    pub fn update(&mut self, op: &Operation) {
-        match op {
-            Operation::AppendDataFile(file) => {
+    pub fn add(&mut self, datafile: &DataFile) {
+        match datafile.content {
+            DataContentType::Data => {
                 self.added_data_files += 1;
-                self.added_data_records += file.record_count;
-                self.added_files_size += file.file_size_in_bytes;
+                self.added_data_records += datafile.record_count;
+                self.added_files_size += datafile.file_size_in_bytes;
             }
-            Operation::AppendDeleteFile(file) => match file.content {
-                DataContentType::PostionDeletes => {
-                    self.added_delete_files += 1;
-                    self.added_position_delete_files += 1;
-                    self.added_position_deletes_records += file.record_count;
-                    self.added_files_size += file.file_size_in_bytes;
-                }
-                DataContentType::EqualityDeletes => {
-                    self.added_delete_files += 1;
-                    self.added_equality_delete_files += 1;
-                    self.added_equality_deletes_records += file.record_count;
-                    self.added_files_size += file.file_size_in_bytes;
-                }
-                DataContentType::Data => unreachable!(),
-            },
+            DataContentType::PostionDeletes => {
+                self.added_delete_files += 1;
+                self.added_position_delete_files += 1;
+                self.added_position_deletes_records += datafile.record_count;
+                self.added_files_size += datafile.file_size_in_bytes;
+            }
+            DataContentType::EqualityDeletes => {
+                self.added_delete_files += 1;
+                self.added_equality_delete_files += 1;
+                self.added_equality_deletes_records += datafile.record_count;
+                self.added_files_size += datafile.file_size_in_bytes;
+            }
         }
     }
 
@@ -2223,32 +2074,113 @@ impl SnapshotSummaryBuilder {
         }
     }
 
-    pub fn merge(self, last_summray: &SnapshotSummary, is_compact_op: bool) -> SnapshotSummary {
+    pub fn merge(
+        self,
+        last_summary: &HashMap<String, String>,
+        is_compact_op: bool,
+    ) -> Result<HashMap<String, String>> {
         let operation = if is_compact_op {
             "replace".to_string()
         } else {
             self.operation()
         };
 
-        SnapshotSummary {
-            operation,
-            added_data_files: self.added_data_files,
-            total_data_fiels: last_summray.total_data_fiels + self.added_data_files,
-            added_delete_files: self.added_delete_files,
-            added_equality_delete_files: self.added_equality_delete_files,
-            added_position_delete_files: self.added_position_delete_files,
-            total_delete_files: last_summray.total_delete_files + self.added_delete_files,
-            added_records: self.added_data_records,
-            total_records: last_summray.total_records + self.added_data_records,
-            added_position_deletes: self.added_position_deletes_records,
-            total_position_deletes: last_summray.total_position_deletes
-                + self.added_position_deletes_records,
-            added_equality_deletes: self.added_equality_deletes_records,
-            total_equality_deletes: last_summray.total_equality_deletes
-                + self.added_equality_deletes_records,
-            added_files_size: self.added_files_size,
-            total_files_size: last_summray.total_files_size + self.added_files_size,
+        #[inline]
+        fn get_i64(value: &HashMap<String, String>, key: &str) -> std::result::Result<i64, Error> {
+            Ok(value
+                .get(key)
+                .map(|val| val.parse::<i64>())
+                .transpose()?
+                .unwrap_or_default())
         }
+
+        let added_data_files = self.added_data_files;
+        let total_data_files = {
+            let total_data_files = get_i64(last_summary, Self::TOTAL_DATA_FILES)?;
+            total_data_files + self.added_data_files
+        };
+        let added_delete_files = self.added_delete_files;
+        let added_equality_delete_files = self.added_equality_delete_files;
+        let added_position_delete_files = self.added_position_delete_files;
+        let total_delete_files = {
+            let total_delete_files = get_i64(last_summary, Self::TOTAL_DELETE_FILES)?;
+            total_delete_files + self.added_delete_files
+        };
+        let added_records = self.added_data_records;
+        let total_records = {
+            let total_records = get_i64(last_summary, Self::TOTAL_RECORDS)?;
+            total_records + self.added_data_records
+        };
+        let added_position_deletes = self.added_position_deletes_records;
+        let total_position_deletes = {
+            let total_position_deletes = get_i64(last_summary, Self::TOTAL_POSITION_DELETES)?;
+            total_position_deletes + self.added_position_deletes_records
+        };
+        let added_equality_deletes = self.added_equality_deletes_records;
+        let total_equality_deletes = {
+            let total_equality_deletes = get_i64(last_summary, Self::TOTAL_EQUALITY_DELETES)?;
+            total_equality_deletes + self.added_equality_deletes_records
+        };
+        let added_files_size = self.added_files_size;
+        let total_files_size = {
+            let total_files_size = get_i64(last_summary, Self::TOTAL_FILES_SIZE)?;
+            total_files_size + self.added_files_size
+        };
+
+        let mut m = HashMap::with_capacity(16);
+        m.insert(Self::OPERATION.to_string(), operation);
+        m.insert(
+            Self::ADDED_DATA_FILES.to_string(),
+            added_data_files.to_string(),
+        );
+        m.insert(
+            Self::TOTAL_DATA_FILES.to_string(),
+            total_data_files.to_string(),
+        );
+        m.insert(
+            Self::ADDED_DELETE_FILES.to_string(),
+            added_delete_files.to_string(),
+        );
+        m.insert(
+            Self::ADDED_EQUALITY_DELETE_FILES.to_string(),
+            added_equality_delete_files.to_string(),
+        );
+        m.insert(
+            Self::ADDED_POSITION_DELETE_FILES.to_string(),
+            added_position_delete_files.to_string(),
+        );
+        m.insert(
+            Self::TOTAL_DELETE_FILES.to_string(),
+            total_delete_files.to_string(),
+        );
+        m.insert(Self::ADDED_RECORDS.to_string(), added_records.to_string());
+        m.insert(Self::TOTAL_RECORDS.to_string(), total_records.to_string());
+        m.insert(
+            Self::ADDED_POSITION_DELETES.to_string(),
+            added_position_deletes.to_string(),
+        );
+        m.insert(
+            Self::TOTAL_POSITION_DELETES.to_string(),
+            total_position_deletes.to_string(),
+        );
+        m.insert(
+            Self::ADDED_EQUALITY_DELETES.to_string(),
+            added_equality_deletes.to_string(),
+        );
+        m.insert(
+            Self::TOTAL_EQUALITY_DELETES.to_string(),
+            total_equality_deletes.to_string(),
+        );
+        m.insert(
+            Self::ADDED_FILES_SIZE.to_string(),
+            added_files_size.to_string(),
+        );
+        m.insert(
+            Self::TOTAL_FILES_SIZE.to_string(),
+            total_files_size.to_string(),
+        );
+
+        Ok(m)
     }
 }
 
@@ -2610,13 +2542,12 @@ impl ToString for TableFormatVersion {
 #[cfg(test)]
 mod test {
     use apache_avro::{schema, types::Value};
+    use std::collections::HashMap;
 
-    use crate::{
-        transaction::Operation,
-        types::{Field, PrimitiveValue, Struct, StructValueBuilder},
-    };
+    use crate::types::SnapshotSummaryBuilder;
+    use crate::types::{Field, PrimitiveValue, Struct, StructValueBuilder};
 
-    use super::{AnyValue, DataFile, SnapshotSummary, StructValue};
+    use super::{AnyValue, DataFile, StructValue};
 
     #[test]
     fn test_struct_to_avro() {
@@ -2716,7 +2647,7 @@ mod test {
 
     #[test]
     fn test_snapshot_summary() {
-        let (data_op, pos_delete_op, eq_delete_op) = {
+        let (data_file, pos_delete_file, eq_delete_file) = {
             let data_file = DataFile {
                 content: super::DataContentType::Data,
                 file_path: String::new(),
@@ -2736,76 +2667,254 @@ mod test {
                 equality_ids: None,
                 sort_order_id: None,
             };
-            let data_file_op = Operation::AppendDataFile(data_file.clone());
-            let pos_delete_file_op = {
+            let pos_delete_file = {
                 let mut data_file = data_file.clone();
                 data_file.content = super::DataContentType::PostionDeletes;
-                Operation::AppendDeleteFile(data_file)
+                data_file
             };
-            let eq_delete_file_op = {
-                let mut data_file = data_file;
+            let eq_delete_file = {
+                let mut data_file = data_file.clone();
                 data_file.content = super::DataContentType::EqualityDeletes;
-                Operation::AppendDeleteFile(data_file)
+                data_file
             };
-            (data_file_op, pos_delete_file_op, eq_delete_file_op)
+            (data_file, pos_delete_file, eq_delete_file)
         };
 
         // add data file
-        let mut builder = SnapshotSummary::builder();
-        builder.update(&data_op);
-        let summary_1 = builder.merge(&SnapshotSummary::default(), false);
-        assert_eq!(summary_1.operation, "append");
-        assert_eq!(summary_1.added_data_files, 1);
-        assert_eq!(summary_1.total_data_fiels, 1);
-        assert_eq!(summary_1.added_records, 10);
-        assert_eq!(summary_1.total_records, 10);
-        assert_eq!(summary_1.added_files_size, 100);
-        assert_eq!(summary_1.total_files_size, 100);
+        let mut builder = SnapshotSummaryBuilder::new();
+        builder.add(&data_file);
+        let summary_1 = builder.merge(&HashMap::new(), false).unwrap();
+        assert_eq!(
+            summary_1.get(SnapshotSummaryBuilder::OPERATION).unwrap(),
+            "append"
+        );
+        assert_eq!(
+            summary_1
+                .get(SnapshotSummaryBuilder::ADDED_DATA_FILES)
+                .unwrap(),
+            "1"
+        );
+        assert_eq!(
+            summary_1
+                .get(SnapshotSummaryBuilder::TOTAL_DATA_FILES)
+                .unwrap(),
+            "1"
+        );
+        assert_eq!(
+            summary_1
+                .get(SnapshotSummaryBuilder::ADDED_RECORDS)
+                .unwrap(),
+            "10"
+        );
+        assert_eq!(
+            summary_1
+                .get(SnapshotSummaryBuilder::TOTAL_RECORDS)
+                .unwrap(),
+            "10"
+        );
+        assert_eq!(
+            summary_1
+                .get(SnapshotSummaryBuilder::ADDED_FILES_SIZE)
+                .unwrap(),
+            "100"
+        );
+        assert_eq!(
+            summary_1
+                .get(SnapshotSummaryBuilder::TOTAL_FILES_SIZE)
+                .unwrap(),
+            "100"
+        );
 
         // add position delete file
         // add eq delete file
-        let mut builder = SnapshotSummary::builder();
-        builder.update(&pos_delete_op);
-        builder.update(&eq_delete_op);
-        let summary_2 = builder.merge(&summary_1, false);
-        assert_eq!(summary_2.operation, "delete");
-        assert_eq!(summary_2.added_data_files, 0);
-        assert_eq!(summary_2.total_data_fiels, 1);
-        assert_eq!(summary_2.added_delete_files, 2);
-        assert_eq!(summary_2.added_position_delete_files, 1);
-        assert_eq!(summary_2.added_equality_delete_files, 1);
-        assert_eq!(summary_2.total_delete_files, 2);
-        assert_eq!(summary_2.added_records, 0);
-        assert_eq!(summary_2.total_records, 10);
-        assert_eq!(summary_2.added_position_deletes, 10);
-        assert_eq!(summary_2.total_position_deletes, 10);
-        assert_eq!(summary_2.added_equality_deletes, 10);
-        assert_eq!(summary_2.total_equality_deletes, 10);
-        assert_eq!(summary_2.added_files_size, 200);
-        assert_eq!(summary_2.total_files_size, 300);
+        let mut builder = SnapshotSummaryBuilder::new();
+        builder.add(&pos_delete_file);
+        builder.add(&eq_delete_file);
+        let summary_2 = builder.merge(&summary_1, false).unwrap();
+        assert_eq!(
+            summary_2.get(SnapshotSummaryBuilder::OPERATION).unwrap(),
+            "delete"
+        );
+        assert_eq!(
+            summary_2
+                .get(SnapshotSummaryBuilder::ADDED_DATA_FILES)
+                .unwrap(),
+            "0"
+        );
+        assert_eq!(
+            summary_2
+                .get(SnapshotSummaryBuilder::TOTAL_DATA_FILES)
+                .unwrap(),
+            "1"
+        );
+        assert_eq!(
+            summary_2
+                .get(SnapshotSummaryBuilder::ADDED_DELETE_FILES)
+                .unwrap(),
+            "2"
+        );
+        assert_eq!(
+            summary_2
+                .get(SnapshotSummaryBuilder::ADDED_POSITION_DELETE_FILES)
+                .unwrap(),
+            "1"
+        );
+        assert_eq!(
+            summary_2
+                .get(SnapshotSummaryBuilder::ADDED_EQUALITY_DELETE_FILES)
+                .unwrap(),
+            "1"
+        );
+        assert_eq!(
+            summary_2
+                .get(SnapshotSummaryBuilder::TOTAL_DELETE_FILES)
+                .unwrap(),
+            "2"
+        );
+        assert_eq!(
+            summary_2
+                .get(SnapshotSummaryBuilder::ADDED_RECORDS)
+                .unwrap(),
+            "0"
+        );
+        assert_eq!(
+            summary_2
+                .get(SnapshotSummaryBuilder::TOTAL_RECORDS)
+                .unwrap(),
+            "10"
+        );
+        assert_eq!(
+            summary_2
+                .get(SnapshotSummaryBuilder::ADDED_POSITION_DELETES)
+                .unwrap(),
+            "10"
+        );
+        assert_eq!(
+            summary_2
+                .get(SnapshotSummaryBuilder::TOTAL_POSITION_DELETES)
+                .unwrap(),
+            "10"
+        );
+        assert_eq!(
+            summary_2
+                .get(SnapshotSummaryBuilder::ADDED_EQUALITY_DELETES)
+                .unwrap(),
+            "10"
+        );
+        assert_eq!(
+            summary_2
+                .get(SnapshotSummaryBuilder::TOTAL_EQUALITY_DELETES)
+                .unwrap(),
+            "10"
+        );
+        assert_eq!(
+            summary_2
+                .get(SnapshotSummaryBuilder::ADDED_FILES_SIZE)
+                .unwrap(),
+            "200"
+        );
+        assert_eq!(
+            summary_2
+                .get(SnapshotSummaryBuilder::TOTAL_FILES_SIZE)
+                .unwrap(),
+            "300"
+        );
 
         // add data file
         // add position delete file
         // add eq delete file
-        let mut builder = SnapshotSummary::builder();
-        builder.update(&data_op);
-        builder.update(&pos_delete_op);
-        builder.update(&eq_delete_op);
-        let summary_3 = builder.merge(&summary_2, false);
-        assert_eq!(summary_3.operation, "overwrite");
-        assert_eq!(summary_3.added_data_files, 1);
-        assert_eq!(summary_3.total_data_fiels, 2);
-        assert_eq!(summary_3.added_delete_files, 2);
-        assert_eq!(summary_3.added_position_delete_files, 1);
-        assert_eq!(summary_3.added_equality_delete_files, 1);
-        assert_eq!(summary_3.total_delete_files, 4);
-        assert_eq!(summary_3.added_records, 10);
-        assert_eq!(summary_3.total_records, 20);
-        assert_eq!(summary_3.added_position_deletes, 10);
-        assert_eq!(summary_3.total_position_deletes, 20);
-        assert_eq!(summary_3.added_equality_deletes, 10);
-        assert_eq!(summary_3.total_equality_deletes, 20);
-        assert_eq!(summary_3.added_files_size, 300);
-        assert_eq!(summary_3.total_files_size, 600);
+        let mut builder = SnapshotSummaryBuilder::new();
+        builder.add(&data_file);
+        builder.add(&pos_delete_file);
+        builder.add(&eq_delete_file);
+        let summary_3 = builder.merge(&summary_2, false).unwrap();
+        assert_eq!(
+            summary_3.get(SnapshotSummaryBuilder::OPERATION).unwrap(),
+            "overwrite"
+        );
+        assert_eq!(
+            summary_3
+                .get(SnapshotSummaryBuilder::ADDED_DATA_FILES)
+                .unwrap(),
+            "1"
+        );
+        assert_eq!(
+            summary_3
+                .get(SnapshotSummaryBuilder::TOTAL_DATA_FILES)
+                .unwrap(),
+            "2"
+        );
+        assert_eq!(
+            summary_3
+                .get(SnapshotSummaryBuilder::ADDED_DELETE_FILES)
+                .unwrap(),
+            "2"
+        );
+        assert_eq!(
+            summary_3
+                .get(SnapshotSummaryBuilder::ADDED_POSITION_DELETE_FILES)
+                .unwrap(),
+            "1"
+        );
+        assert_eq!(
+            summary_3
+                .get(SnapshotSummaryBuilder::ADDED_EQUALITY_DELETE_FILES)
+                .unwrap(),
+            "1"
+        );
+        assert_eq!(
+            summary_3
+                .get(SnapshotSummaryBuilder::TOTAL_DELETE_FILES)
+                .unwrap(),
+            "4"
+        );
+        assert_eq!(
+            summary_3
+                .get(SnapshotSummaryBuilder::ADDED_RECORDS)
+                .unwrap(),
+            "10"
+        );
+        assert_eq!(
+            summary_3
+                .get(SnapshotSummaryBuilder::TOTAL_RECORDS)
+                .unwrap(),
+            "20"
+        );
+        assert_eq!(
+            summary_3
+                .get(SnapshotSummaryBuilder::ADDED_POSITION_DELETES)
+                .unwrap(),
+            "10"
+        );
+        assert_eq!(
+            summary_3
+                .get(SnapshotSummaryBuilder::TOTAL_POSITION_DELETES)
+                .unwrap(),
+            "20"
+        );
+        assert_eq!(
+            summary_3
+                .get(SnapshotSummaryBuilder::ADDED_EQUALITY_DELETES)
+                .unwrap(),
+            "10"
+        );
+        assert_eq!(
+            summary_3
+                .get(SnapshotSummaryBuilder::TOTAL_EQUALITY_DELETES)
+                .unwrap(),
+            "20"
+        );
+        assert_eq!(
+            summary_3
+                .get(SnapshotSummaryBuilder::ADDED_FILES_SIZE)
+                .unwrap(),
+            "300"
+        );
+        assert_eq!(
+            summary_3
+                .get(SnapshotSummaryBuilder::TOTAL_FILES_SIZE)
+                .unwrap(),
+            "600"
+        );
     }
 }
