@@ -3,7 +3,7 @@
 use arrow_array::RecordBatch;
 use async_trait::async_trait;
 use prometheus::{
-    core::{AtomicI64, AtomicU64, GenericCounter, GenericGauge},
+    core::{AtomicU64, GenericCounter},
     Histogram,
 };
 
@@ -39,25 +39,13 @@ impl<F: FileAppender> FileAppenderLayer<F> for WriterPrometheusLayer {
 pub struct FileAppenderMetrics {
     write_qps: GenericCounter<AtomicU64>,
     write_latency: Histogram,
-    flush_qps: GenericCounter<AtomicU64>,
-    flush_latency: Histogram,
-    in_memory_data_file_num: GenericGauge<AtomicI64>,
 }
 
 impl FileAppenderMetrics {
-    pub fn new(
-        write_qps: GenericCounter<AtomicU64>,
-        write_latency: Histogram,
-        flush_qps: GenericCounter<AtomicU64>,
-        flush_latency: Histogram,
-        in_memory_data_file_num: GenericGauge<AtomicI64>,
-    ) -> Self {
+    pub fn new(write_qps: GenericCounter<AtomicU64>, write_latency: Histogram) -> Self {
         Self {
             write_qps,
             write_latency,
-            flush_qps,
-            flush_latency,
-            in_memory_data_file_num,
         }
     }
 }
