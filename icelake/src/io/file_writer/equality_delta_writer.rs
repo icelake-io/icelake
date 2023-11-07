@@ -1,11 +1,12 @@
 //! This module provide the `EqualityDeltaWriter`.
+use crate::config::TableConfigRef;
+use crate::io::location_generator::FileLocationGenerator;
 use crate::io::DefaultFileAppender;
 use crate::io::FileAppenderBuilder;
 use crate::io::FileAppenderLayer;
 use crate::types::DataFile;
 use crate::types::StructValue;
 use crate::types::COLUMN_ID_META_KEY;
-use crate::{config::TableConfigRef, io::location_generator::FileLocationGenerator};
 use crate::{Error, ErrorKind, Result};
 use arrow_array::builder::BooleanBuilder;
 use arrow_array::Int32Array;
@@ -14,7 +15,6 @@ use arrow_ord::partition::partition;
 use arrow_row::{OwnedRow, RowConverter, Rows, SortField};
 use arrow_schema::SchemaRef;
 use arrow_select::filter;
-use opendal::Operator;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -46,30 +46,28 @@ pub struct DeltaWriterResult {
 /// this writer, it will not delete it.
 pub struct EqualityDeltaWriter<L: FileAppenderLayer<DefaultFileAppender>> {
     data_file_writer: DataFileWriter<L::R>,
-    sorted_pos_delete_writer: SortedPositionDeleteWriter,
+    sorted_pos_delete_writer: SortedPositionDeleteWriter<L>,
     eq_delete_writer: EqualityDeleteWriter<L::R>,
     inserted_rows: HashMap<OwnedRow, PathOffset>,
     row_converter: RowConverter,
     unique_column_idx: Vec<usize>,
-    file_appender_factory: FileAppenderBuilder<L>,
 }
 
 pub struct EqDeltaWriterMetrics {
-    buffer_path_offset_count: usize,
-    sorted_pos_delete_cache_count: usize,
+    _buffer_path_offset_count: usize,
+    _sorted_pos_delete_cache_count: usize,
 }
 
 impl<L: FileAppenderLayer<DefaultFileAppender>> EqualityDeltaWriter<L> {
     /// Create a new `EqualityDeltaWriter`.
     #[allow(clippy::too_many_arguments)]
     pub async fn try_new(
-        operator: Operator,
-        table_location: String,
-        delete_location_generator: Arc<FileLocationGenerator>,
         arrow_schema: SchemaRef,
         table_config: TableConfigRef,
         unique_column_ids: Vec<usize>,
         file_appender_factory: FileAppenderBuilder<L>,
+        data_location_generator: Arc<FileLocationGenerator>,
+        delete_location_generator: Arc<FileLocationGenerator>,
     ) -> Result<Self> {
         // Convert column id into corresponding index.
         let mut unique_column_idx = Vec::with_capacity(unique_column_ids.len());
@@ -124,31 +122,32 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> EqualityDeltaWriter<L> {
 
         Ok(Self {
             data_file_writer: DataFileWriter::try_new(
-                file_appender_factory.build(arrow_schema.clone()).await?,
+                file_appender_factory
+                    .build(arrow_schema.clone(), data_location_generator)
+                    .await?,
             )?,
-            sorted_pos_delete_writer: SortedPositionDeleteWriter::new(
-                operator.clone(),
-                table_location.clone(),
-                delete_location_generator.clone(),
-                table_config.clone(),
-            ),
             eq_delete_writer: new_eq_delete_writer(
                 arrow_schema.clone(),
                 unique_column_ids,
+                delete_location_generator.clone(),
                 &file_appender_factory,
             )
             .await?,
+            sorted_pos_delete_writer: SortedPositionDeleteWriter::new(
+                table_config.clone(),
+                file_appender_factory,
+                delete_location_generator,
+            ),
             inserted_rows: HashMap::new(),
             row_converter,
             unique_column_idx,
-            file_appender_factory,
         })
     }
 
     pub fn current_metrics(&self) -> EqDeltaWriterMetrics {
         EqDeltaWriterMetrics {
-            buffer_path_offset_count: self.inserted_rows.len(),
-            sorted_pos_delete_cache_count: self.sorted_pos_delete_writer.record_num,
+            _buffer_path_offset_count: self.inserted_rows.len(),
+            _sorted_pos_delete_cache_count: self.sorted_pos_delete_writer.record_num,
         }
     }
     /// Delta write will write and delete the row automatically according to the ops.
@@ -208,11 +207,7 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> EqualityDeltaWriter<L> {
             );
             if let Some(previous_row_offset) = previous_row_offset {
                 self.sorted_pos_delete_writer
-                    .delete(
-                        previous_row_offset.path,
-                        previous_row_offset.offset as i64,
-                        &self.file_appender_factory,
-                    )
+                    .delete(previous_row_offset.path, previous_row_offset.offset as i64)
                     .await?;
             }
         }
@@ -229,11 +224,7 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> EqualityDeltaWriter<L> {
         for row in rows.iter() {
             if let Some(previous_row_offset) = self.inserted_rows.remove(&row.owned()) {
                 self.sorted_pos_delete_writer
-                    .delete(
-                        previous_row_offset.path,
-                        previous_row_offset.offset as i64,
-                        &self.file_appender_factory,
-                    )
+                    .delete(previous_row_offset.path, previous_row_offset.offset as i64)
                     .await?;
                 delete_row.append_value(false);
             } else {
@@ -266,7 +257,7 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> EqualityDeltaWriter<L> {
             .collect();
         let pos_delete = self
             .sorted_pos_delete_writer
-            .close(&self.file_appender_factory)
+            .close()
             .await?
             .into_iter()
             .map(|builder| {

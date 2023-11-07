@@ -3,22 +3,21 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::config::TableConfigRef;
-use crate::io::location_generator::FileLocationGenerator;
-use crate::io::{DefaultFileAppender, FileAppender, FileAppenderBuilder, FileAppenderLayer};
+use crate::io::{
+    location_generator, DefaultFileAppender, FileAppender, FileAppenderBuilder, FileAppenderLayer,
+};
 use crate::types::{Any, DataFileBuilder, Field, Primitive, Schema};
 use crate::{types::Struct, Result};
 use crate::{Error, ErrorKind};
 use arrow_array::{ArrayRef, Int64Array, RecordBatch, StringArray};
 use arrow_schema::SchemaRef;
-use opendal::Operator;
 
 /// A PositionDeleteWriter used to write position delete, it will sort the incoming delete by file_path and pos.
-pub struct SortedPositionDeleteWriter {
-    operator: Operator,
-    table_location: String,
-    location_generator: Arc<FileLocationGenerator>,
+pub struct SortedPositionDeleteWriter<L: FileAppenderLayer<DefaultFileAppender>> {
     table_config: TableConfigRef,
     schema: SchemaRef,
+    file_appender_factory: FileAppenderBuilder<L>,
+    location_generator: Arc<location_generator::FileLocationGenerator>,
 
     delete_cache: BTreeMap<String, Vec<i64>>,
     pub(super) record_num: usize,
@@ -26,20 +25,18 @@ pub struct SortedPositionDeleteWriter {
     result: Vec<DataFileBuilder>,
 }
 
-impl SortedPositionDeleteWriter {
+impl<L: FileAppenderLayer<DefaultFileAppender>> SortedPositionDeleteWriter<L> {
     /// Create a new `SortedPositionDeleteWriter`.
     pub fn new(
-        operator: Operator,
-        table_location: String,
-        location_generator: Arc<FileLocationGenerator>,
         table_config: TableConfigRef,
+        file_appender_factory: FileAppenderBuilder<L>,
+        location_generator: Arc<location_generator::FileLocationGenerator>,
     ) -> Self {
         Self {
-            operator,
-            table_location,
-            location_generator,
             table_config,
             delete_cache: BTreeMap::new(),
+            file_appender_factory,
+            location_generator,
             record_num: 0,
             schema: arrow_schema_of(None).unwrap(),
             result: vec![],
@@ -50,12 +47,7 @@ impl SortedPositionDeleteWriter {
     ///
     /// #TODO
     /// - support delete with row
-    pub async fn delete<L: FileAppenderLayer<DefaultFileAppender>>(
-        &mut self,
-        file_path: String,
-        pos: i64,
-        file_appender_factory: &FileAppenderBuilder<L>,
-    ) -> Result<()> {
+    pub async fn delete(&mut self, file_path: String, pos: i64) -> Result<()> {
         self.record_num += 1;
         let delete_list = self.delete_cache.entry(file_path).or_default();
         delete_list.push(pos);
@@ -66,15 +58,18 @@ impl SortedPositionDeleteWriter {
                 .sorted_delete_position_writer
                 .max_record_num
         {
-            self.flush(file_appender_factory.build(self.schema.clone()).await?)
-                .await?;
+            self.flush().await?;
         }
 
         Ok(())
     }
 
     /// Write the delete cache into delete file.
-    async fn flush(&mut self, file_appender: impl FileAppender) -> Result<()> {
+    async fn flush(&mut self) -> Result<()> {
+        let file_appender = self
+            .file_appender_factory
+            .build(self.schema.clone(), self.location_generator.clone())
+            .await?;
         let mut writer = PositionDeleteWriter::try_new(None, file_appender)?;
         let delete_cache = std::mem::take(&mut self.delete_cache);
         for (file_path, mut delete_vec) in delete_cache.into_iter() {
@@ -87,13 +82,9 @@ impl SortedPositionDeleteWriter {
     }
 
     /// Complte the write and return the list of `DataFileBuilder` as result.
-    pub async fn close<L: FileAppenderLayer<DefaultFileAppender>>(
-        mut self,
-        file_appender_factory: &FileAppenderBuilder<L>,
-    ) -> Result<Vec<DataFileBuilder>> {
+    pub async fn close(mut self) -> Result<Vec<DataFileBuilder>> {
         if self.record_num > 0 {
-            self.flush(file_appender_factory.build(self.schema.clone()).await?)
-                .await?;
+            self.flush().await?;
         }
         Ok(self.result)
     }

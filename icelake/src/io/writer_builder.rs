@@ -6,11 +6,11 @@ use crate::{config::TableConfigRef, types::TableMetadata};
 use arrow_schema::SchemaRef;
 use opendal::Operator;
 
+use super::append_only_writer::AppendOnlyWriter;
 use super::file_writer::{
     new_eq_delete_writer, EqualityDeleteWriter, EqualityDeltaWriter, SortedPositionDeleteWriter,
 };
 use super::location_generator::FileLocationGenerator;
-use super::task_writer::TaskWriter;
 use super::{
     new_file_appender_builder, ChainedFileAppenderLayer, DefaultFileAppender, EmptyLayer,
     FileAppenderBuilder, FileAppenderLayer,
@@ -53,12 +53,6 @@ pub async fn new_writer_builder(
     let file_appender_builder = new_file_appender_builder(
         operator.clone(),
         table_location.clone(),
-        Arc::new(FileLocationGenerator::try_new_for_data_file(
-            &table_metadata,
-            0,
-            task_id,
-            None,
-        )?),
         table_config.clone(),
     );
 
@@ -109,20 +103,33 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> WriterBuilder<L> {
         }
     }
 
-    /// Build a `PositionDeleteWriter`.
-    pub async fn build_sorted_position_delete_writer(self) -> Result<SortedPositionDeleteWriter> {
-        let location_generator = FileLocationGenerator::try_new_for_delete_file(
+    fn delete_location_generator(&self) -> Result<FileLocationGenerator> {
+        FileLocationGenerator::try_new_for_delete_file(
             &self.table_metadata,
             self.partition_id,
             self.task_id,
-            self.suffix,
-        )?
-        .into();
+            self.suffix.clone(),
+        )
+    }
+
+    fn data_location_generator(&self) -> Result<FileLocationGenerator> {
+        FileLocationGenerator::try_new_for_data_file(
+            &self.table_metadata,
+            self.partition_id,
+            self.task_id,
+            self.suffix.clone(),
+        )
+    }
+
+    /// Build a `PositionDeleteWriter`.
+    pub async fn build_sorted_position_delete_writer(
+        self,
+    ) -> Result<SortedPositionDeleteWriter<L>> {
+        let delete_location_generator = self.delete_location_generator()?.into();
         Ok(SortedPositionDeleteWriter::new(
-            self.operator,
-            self.table_location,
-            location_generator,
             self.table_config,
+            self.file_appender_builder,
+            delete_location_generator,
         ))
     }
 
@@ -131,9 +138,11 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> WriterBuilder<L> {
         self,
         equality_ids: Vec<usize>,
     ) -> Result<EqualityDeleteWriter<L::R>> {
+        let delete_location_generator = self.delete_location_generator()?.into();
         new_eq_delete_writer(
             self.cur_arrow_schema,
             equality_ids,
+            delete_location_generator,
             &self.file_appender_builder,
         )
         .await
@@ -144,34 +153,25 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> WriterBuilder<L> {
         self,
         unique_column_ids: Vec<usize>,
     ) -> Result<EqualityDeltaWriter<L>> {
-        let delete_location_generator = FileLocationGenerator::try_new_for_delete_file(
-            &self.table_metadata,
-            self.partition_id,
-            self.task_id,
-            self.suffix,
-        )?
-        .into();
+        let data_location_generator = self.data_location_generator()?.into();
+        let delete_location_generator = self.delete_location_generator()?.into();
         EqualityDeltaWriter::try_new(
-            self.operator,
-            self.table_location,
-            delete_location_generator,
             self.cur_arrow_schema,
             self.table_config,
             unique_column_ids,
             self.file_appender_builder,
+            data_location_generator,
+            delete_location_generator,
         )
         .await
     }
 
-    pub async fn build_task_writer(self) -> Result<TaskWriter<L>> {
-        TaskWriter::try_new(
+    pub async fn build_append_only_writer(self) -> Result<AppendOnlyWriter<L>> {
+        let data_location_generator = self.data_location_generator()?.into();
+        AppendOnlyWriter::try_new(
             self.table_metadata,
-            self.operator,
-            self.partition_id,
-            self.task_id,
-            self.suffix,
-            self.table_config,
             self.file_appender_builder,
+            data_location_generator,
         )
         .await
     }

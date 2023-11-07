@@ -1,5 +1,6 @@
 //! This module defines catalog api for icelake.
 
+#![allow(dead_code)]
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 

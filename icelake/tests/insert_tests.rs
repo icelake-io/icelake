@@ -160,7 +160,7 @@ impl TestFixture {
             .writer_builder()
             .await
             .unwrap()
-            .build_task_writer()
+            .build_append_only_writer()
             .await
             .unwrap();
 

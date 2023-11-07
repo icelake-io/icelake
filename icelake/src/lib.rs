@@ -3,7 +3,7 @@
 
 // Make sure all our public APIs have docs.
 // #![deny(missing_docs)]
-#![allow(dead_code)]
+// #![allow(dead_code)]
 
 mod table;
 pub use table::*;

@@ -98,10 +98,9 @@ mod test {
             new_file_appender_builder(
                 op.clone(),
                 "/tmp/table".to_string(),
-                location_generator.into(),
                 Arc::new(TableConfig::default()),
             )
-            .build(to_write.schema())
+            .build(to_write.schema(), location_generator.into())
             .await?,
         )?;
 
