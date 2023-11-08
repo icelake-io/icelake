@@ -28,7 +28,7 @@ use std::sync::Arc;
 /// data file writer.
 pub enum AppendOnlyWriter<L: FileAppenderLayer<DefaultFileAppender>> {
     /// Unpartitioned task writer
-    Unpartitioned(UnpartitionedAppendOnlyWriter<L::R>),
+    Unpartitioned(DataFileWriter<L::R>),
     /// Partitioned task writer
     Partitioned(PartitionedAppendOnlyWriter<L>),
 }
@@ -51,7 +51,7 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> AppendOnlyWriter<L> {
         })?);
 
         if current_partition_spec.is_unpartitioned() {
-            Ok(Self::Unpartitioned(UnpartitionedAppendOnlyWriter::try_new(
+            Ok(Self::Unpartitioned(DataFileWriter::try_new(
                 file_appender_factory
                     .build(arrow_schema, location_generator)
                     .await?,
@@ -75,7 +75,7 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> AppendOnlyWriter<L> {
     /// Write a record batch.
     pub async fn write(&mut self, batch: &RecordBatch) -> Result<()> {
         match self {
-            AppendOnlyWriter::Unpartitioned(writer) => writer.write(batch).await,
+            AppendOnlyWriter::Unpartitioned(writer) => writer.write(batch.clone()).await,
             AppendOnlyWriter::Partitioned(writer) => writer.write(batch).await,
         }
     }
@@ -83,45 +83,14 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> AppendOnlyWriter<L> {
     /// Close the writer and return the data files.
     pub async fn close(self) -> Result<Vec<DataFile>> {
         match self {
-            AppendOnlyWriter::Unpartitioned(writer) => writer.close().await,
+            AppendOnlyWriter::Unpartitioned(writer) => Ok(writer
+                .close()
+                .await?
+                .into_iter()
+                .map(|x| x.build())
+                .collect()),
             AppendOnlyWriter::Partitioned(writer) => writer.close().await,
         }
-    }
-}
-
-/// Unpartitioned append only writer
-pub struct UnpartitionedAppendOnlyWriter<F: FileAppender> {
-    data_file_writer: DataFileWriter<F>,
-}
-
-impl<F: FileAppender> UnpartitionedAppendOnlyWriter<F> {
-    /// Create a new `TaskWriter`.
-    pub fn try_new(writer: F) -> Result<Self> {
-        Ok(Self {
-            data_file_writer: DataFileWriter::try_new(writer)?,
-        })
-    }
-
-    /// Write a record batch using data file writer.
-    pub async fn write(&mut self, batch: &RecordBatch) -> Result<()> {
-        self.data_file_writer.write(batch.clone()).await
-    }
-
-    /// Complete the write and return the data files.
-    /// It didn't mean the write take effect in table.
-    /// To make the write take effect, you should commit the data file using transaction api.
-    ///
-    /// # Note
-    ///
-    /// For unpartitioned table, the key of the result map is default partition key.
-    pub async fn close(self) -> Result<Vec<DataFile>> {
-        Ok(self
-            .data_file_writer
-            .close()
-            .await?
-            .into_iter()
-            .map(|x| x.build())
-            .collect())
     }
 }
 
