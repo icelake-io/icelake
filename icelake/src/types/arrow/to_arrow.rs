@@ -114,7 +114,7 @@ impl TryFrom<types::Primitive> for ArrowDataType {
                 Ok(ArrowDataType::Decimal128(precision, scale as i8))
             }
             types::Primitive::Date => Ok(ArrowDataType::Date32),
-            types::Primitive::Time => Ok(ArrowDataType::Time32(TimeUnit::Microsecond)),
+            types::Primitive::Time => Ok(ArrowDataType::Time64(TimeUnit::Microsecond)),
             types::Primitive::Timestamp => {
                 Ok(ArrowDataType::Timestamp(TimeUnit::Microsecond, None))
             }
