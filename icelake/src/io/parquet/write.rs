@@ -81,7 +81,7 @@ pub struct ParquetWriter {
 impl ParquetWriter {
     /// Write data into the file.
     ///
-    /// Note: It will not guarantee to take effect imediately.
+    /// Note: It will not guarantee to take effect immediately.
     pub async fn write(&mut self, data: &RecordBatch) -> Result<()> {
         self.writer.write(data).await?;
         Ok(())

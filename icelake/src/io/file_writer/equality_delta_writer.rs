@@ -38,7 +38,7 @@ pub struct DeltaWriterResult {
 
 /// `EqualityDeltaWriter` is same as: https://github.com/apache/iceberg/blob/2e1ec5fde9e6fecfbc0883465a585a1dacb58c05/core/src/main/java/org/apache/iceberg/io/BaseTaskWriter.java#L108
 ///
-/// EqualityDeltaWriter will gurantee that there is only one row with the unique columns value written. When
+/// EqualityDeltaWriter will guarantee that there is only one row with the unique columns value written. When
 /// insert a row with the same unique columns value, it will delete the previous row.
 ///
 /// NOTE:
@@ -191,7 +191,7 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> EqualityDeltaWriter<L> {
     }
 
     /// Write the batch.
-    /// 1. If a row wtih the same unique column is not written, then insert it.
+    /// 1. If a row with the same unique column is not written, then insert it.
     /// 2. If a row with the same unique column is written, then delete the previous row and insert the new row.
     pub async fn write(&mut self, batch: RecordBatch) -> Result<()> {
         let rows = self.extract_unique_column(&batch)?;

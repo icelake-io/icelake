@@ -444,7 +444,7 @@ impl From<StructValue> for AnyValue {
 
 impl StructValue {
     /// Create a iterator to read the field in order of (field_id, field_value, field_name,
-    /// field_requiered).
+    /// field_required).
     pub fn iter(&self) -> impl Iterator<Item = (i32, Option<&AnyValue>, &str, bool)> {
         self.null_bitmap
             .iter()
@@ -480,18 +480,18 @@ impl Serialize for StructValue {
 
 impl Hash for StructValue {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        for (id, value, name, requierd) in self.iter() {
+        for (id, value, name, required) in self.iter() {
             id.hash(state);
             value.hash(state);
             name.hash(state);
-            requierd.hash(state);
+            required.hash(state);
         }
     }
 }
 
 /// A builder to build a struct value. Buidler will guaranteed that the StructValue is valid for the Struct.
 pub struct StructValueBuilder {
-    fileds: HashMap<i32, Option<AnyValue>>,
+    fields: HashMap<i32, Option<AnyValue>>,
     type_info: Arc<Struct>,
 }
 
@@ -499,7 +499,7 @@ impl StructValueBuilder {
     /// Create a new builder.
     pub fn new(type_info: Arc<Struct>) -> Self {
         Self {
-            fileds: HashMap::with_capacity(type_info.len()),
+            fields: HashMap::with_capacity(type_info.len()),
             type_info,
         }
     }
@@ -534,17 +534,17 @@ impl StructValueBuilder {
         // TODO: Check the field type is consistent.
         // TODO: Check the duplication of field.
 
-        self.fileds.insert(field_id, field_value);
+        self.fields.insert(field_id, field_value);
         Ok(())
     }
 
     /// Build the struct value.
     pub fn build(mut self) -> Result<StructValue> {
-        let mut field_values = Vec::with_capacity(self.fileds.len());
-        let mut null_bitmap = BitVec::with_capacity(self.fileds.len());
+        let mut field_values = Vec::with_capacity(self.fields.len());
+        let mut null_bitmap = BitVec::with_capacity(self.fields.len());
 
         for field in self.type_info.fields.iter() {
-            let field_value = self.fileds.remove(&field.id).ok_or_else(|| {
+            let field_value = self.fields.remove(&field.id).ok_or_else(|| {
                 Error::new(
                     ErrorKind::IcebergDataInvalid,
                     format!("Field {} is required", field.name),
@@ -1524,7 +1524,7 @@ impl DataFileBuilder {
             )
         };
 
-        // equality_ids is requierd when content is EqualityDeletes.
+        // equality_ids is required when content is EqualityDeletes.
         if self.content.unwrap() == DataContentType::EqualityDeletes {
             assert!(self.equality_ids.is_some());
         }
@@ -1709,8 +1709,6 @@ mod datafile {
         Field::required(104, "file_size_in_bytes", Any::Primitive(Primitive::Long))
             .with_comment("Total file size in bytes")
     });
-    pub static BLOCK_SIZE: Lazy<Field> =
-        Lazy::new(|| Field::required(105, "block_size_in_bytes", Any::Primitive(Primitive::Long)));
     pub static COLUMN_SIZES: Lazy<Field> = Lazy::new(|| {
         Field::optional(
             108,
@@ -1827,10 +1825,6 @@ mod datafile {
         Field::optional(140, "sort_order_id", Any::Primitive(Primitive::Int))
             .with_comment("Sort order ID")
     });
-    pub static SPEC_ID: Lazy<Field> = Lazy::new(|| {
-        Field::optional(141, "spec_id", Any::Primitive(Primitive::Int))
-            .with_comment("Partition spec ID")
-    });
 }
 
 impl DataFile {
@@ -1877,7 +1871,7 @@ pub enum DataContentType {
     /// value: 0
     Data = 0,
     /// value: 1
-    PostionDeletes = 1,
+    PositionDeletes = 1,
     /// value: 2
     EqualityDeletes = 2,
 }
@@ -1888,7 +1882,7 @@ impl TryFrom<u8> for DataContentType {
     fn try_from(v: u8) -> Result<DataContentType> {
         match v {
             0 => Ok(DataContentType::Data),
-            1 => Ok(DataContentType::PostionDeletes),
+            1 => Ok(DataContentType::PositionDeletes),
             2 => Ok(DataContentType::EqualityDeletes),
             _ => Err(Error::new(
                 ErrorKind::IcebergDataInvalid,
@@ -2020,7 +2014,6 @@ pub struct SnapshotSummaryBuilder {
 
 impl SnapshotSummaryBuilder {
     const OPERATION: &'static str = "operation";
-    const SPARK_APP_ID: &'static str = "spark.app.id";
     const ADDED_DATA_FILES: &'static str = "added-data-files";
     const TOTAL_DATA_FILES: &'static str = "total-data-files";
     const ADDED_DELETE_FILES: &'static str = "added-delete-files";
@@ -2047,7 +2040,7 @@ impl SnapshotSummaryBuilder {
                 self.added_data_records += datafile.record_count;
                 self.added_files_size += datafile.file_size_in_bytes;
             }
-            DataContentType::PostionDeletes => {
+            DataContentType::PositionDeletes => {
                 self.added_delete_files += 1;
                 self.added_position_delete_files += 1;
                 self.added_position_deletes_records += datafile.record_count;
@@ -2249,9 +2242,9 @@ impl SnapshotReference {
 /// Type of the reference
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum SnapshotReferenceType {
-    /// Tag is used to reference to a specfic tag.
+    /// Tag is used to reference to a specific tag.
     Tag,
-    /// Branch is used to reference to a specfic branch, like `master`.
+    /// Branch is used to reference to a specific branch, like `master`.
     Branch,
 }
 
@@ -2669,7 +2662,7 @@ mod test {
             };
             let pos_delete_file = {
                 let mut data_file = data_file.clone();
-                data_file.content = super::DataContentType::PostionDeletes;
+                data_file.content = super::DataContentType::PositionDeletes;
                 data_file
             };
             let eq_delete_file = {

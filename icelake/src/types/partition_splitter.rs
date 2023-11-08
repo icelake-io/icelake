@@ -10,7 +10,7 @@ use arrow_row::{OwnedRow, RowConverter, SortField};
 use arrow_schema::{DataType, FieldRef, Fields, SchemaRef};
 use arrow_select::filter::filter_record_batch;
 
-/// `PartitionSplitter` is used to splite a given record according partition value.
+/// `PartitionSplitter` is used to split a given record according partition value.
 pub struct PartitionSplitter {
     field_infos: Vec<PartitionFieldComputeInfo>,
     partition_type: Any,
@@ -217,7 +217,7 @@ impl PartitionSplitter {
 
     /// Convert the `PartitionKey` to `PartitionValue`
     ///
-    /// The reason we seperate them is to save memmory cost, when in write process, we only need to
+    /// The reason we separate them is to save memory cost, when in write process, we only need to
     /// keep the `PartitionKey`. It's effiect to used in Hash. When write complete, we can use it to convert `PartitionKey` to
     /// `PartitionValue` to store it in `DataFile`.
     pub fn convert_key_to_value(&self, key: PartitionKey) -> Result<StructValue> {

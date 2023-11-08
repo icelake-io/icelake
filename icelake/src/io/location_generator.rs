@@ -30,26 +30,26 @@ pub struct FileLocationGenerator {
 impl FileLocationGenerator {
     /// Create a file location generator for data file.
     pub fn try_new_for_data_file(
-        table_metatdata: &TableMetadata,
+        table_metadata: &TableMetadata,
         partition_id: usize,
         task_id: usize,
         suffix: Option<String>,
     ) -> Result<Self> {
-        Self::try_new(table_metatdata, partition_id, task_id, suffix, false)
+        Self::try_new(table_metadata, partition_id, task_id, suffix, false)
     }
 
     /// Create a file location generator for delete file.
     pub fn try_new_for_delete_file(
-        table_metatdata: &TableMetadata,
+        table_metadata: &TableMetadata,
         partition_id: usize,
         task_id: usize,
         suffix: Option<String>,
     ) -> Result<Self> {
-        Self::try_new(table_metatdata, partition_id, task_id, suffix, true)
+        Self::try_new(table_metadata, partition_id, task_id, suffix, true)
     }
 
     fn try_new(
-        table_metatdata: &TableMetadata,
+        table_metadata: &TableMetadata,
         partition_id: usize,
         task_id: usize,
         suffix: Option<String>,
@@ -58,7 +58,7 @@ impl FileLocationGenerator {
         let operation_id = Uuid::new_v4().to_string();
 
         let file_format = DataFileFormat::from_str(
-            &table_metatdata
+            &table_metadata
                 .properties
                 .as_ref()
                 .and_then(|prop| prop.get(DEFAULT_FILE_FORMAT))
@@ -68,8 +68,8 @@ impl FileLocationGenerator {
         .unwrap_or(DataFileFormat::Parquet);
 
         let data_rel_location = {
-            let base_location = &table_metatdata.location;
-            let data_location = table_metatdata.properties.as_ref().and_then(|prop| {
+            let base_location = &table_metadata.location;
+            let data_location = table_metadata.properties.as_ref().and_then(|prop| {
                 prop.get(WRITE_DATA_LOCATION)
                     .or(prop.get(WRITE_FOLDER_STORAGE_LOCATION))
                     .cloned()

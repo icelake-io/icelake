@@ -124,7 +124,7 @@ fn arrow_schema_of(row_type: Option<Arc<Struct>>) -> Result<SchemaRef> {
 /// - Sorting by pos allows filtering rows while scanning, to avoid keeping deletes in memory.
 /// - They're belong to partition.
 ///
-/// But PositionDeleteWriter will not gurantee and check above. It is the caller's responsibility to gurantee them.
+/// But PositionDeleteWriter will not guarantee and check above. It is the caller's responsibility to guarantee them.
 pub struct PositionDeleteWriter<F: FileAppender> {
     schema: SchemaRef,
     inner_writer: F,
@@ -175,7 +175,7 @@ impl<F: FileAppender> PositionDeleteWriter<F> {
             .close()
             .await?
             .into_iter()
-            .map(|builder| builder.with_content(crate::types::DataContentType::PostionDeletes))
+            .map(|builder| builder.with_content(crate::types::DataContentType::PositionDeletes))
             .collect())
     }
 }

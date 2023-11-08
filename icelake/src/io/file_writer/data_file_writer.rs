@@ -9,7 +9,7 @@ use arrow_array::RecordBatch;
 /// When complete, it will return a list of `DataFile`.
 ///
 /// # NOTE
-/// This writer will not gurantee the writen data is within one spec/partition. It is the caller's responsibility to make sure the data is within one spec/partition.
+/// This writer will not guarantee the written data is within one spec/partition. It is the caller's responsibility to make sure the data is within one spec/partition.
 pub struct DataFileWriter<F: FileAppender> {
     inner_writer: F,
 }

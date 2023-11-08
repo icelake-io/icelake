@@ -132,9 +132,9 @@ impl Catalog for PrometheusLayeredCatalog {
     }
 
     /// Update table.
-    async fn update_table(self: Arc<Self>, udpate_table: &UpdateTable) -> Result<Table> {
+    async fn update_table(self: Arc<Self>, update_table: &UpdateTable) -> Result<Table> {
         self.metrics.update_table_qps.inc();
         let _ = self.metrics.update_table_latency.start_timer();
-        self.inner.clone().update_table(udpate_table).await
+        self.inner.clone().update_table(update_table).await
     }
 }

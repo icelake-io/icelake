@@ -2,7 +2,6 @@
 //! table writer used directly by the compute engine.
 use super::file_writer::DataFileWriter;
 use super::DefaultFileAppender;
-use super::FileAppender;
 use super::FileAppenderBuilder;
 use super::FileAppenderLayer;
 use crate::error::Result;

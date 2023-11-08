@@ -1,8 +1,5 @@
 //! Types will provide the definition of iceberg in-memory data types and
 //! functions to parse from on-disk files.
-
-#![allow(dead_code)]
-
 mod in_memory;
 pub use in_memory::*;
 

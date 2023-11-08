@@ -19,7 +19,7 @@ pub struct TestCase {
 }
 
 #[derive(Deserialize, Debug)]
-struct TomlConent {
+struct TomlContent {
     pub schema_name: String,
     pub table_name: String,
     pub create_table_sql: String,
@@ -33,7 +33,7 @@ impl TestCase {
     pub fn parse<R: Read>(mut buf: R) -> Self {
         let mut content = String::new();
         buf.read_to_string(&mut content).unwrap();
-        let toml_content: TomlConent = toml::from_str(&content).unwrap();
+        let toml_content: TomlContent = toml::from_str(&content).unwrap();
 
         // Parse write data
         let schema = Arc::new(Self::parse_schema(toml_content.table_schema));

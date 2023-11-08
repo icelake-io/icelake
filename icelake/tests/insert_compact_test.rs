@@ -266,6 +266,6 @@ fn main() {
         }
     }
 
-    // Run all tests and exit the application appropriatly.
+    // Run all tests and exit the application appropriately.
     libtest_mimic::run(&args, tests).exit();
 }

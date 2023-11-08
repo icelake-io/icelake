@@ -209,7 +209,7 @@ impl From<parquet::errors::ParquetError> for Error {
 
 impl From<std::time::SystemTimeError> for Error {
     fn from(v: std::time::SystemTimeError) -> Self {
-        Self::new(ErrorKind::Unexpected, "handling system time errror").set_source(v)
+        Self::new(ErrorKind::Unexpected, "handling system time error").set_source(v)
     }
 }
 
