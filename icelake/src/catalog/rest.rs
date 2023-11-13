@@ -77,7 +77,7 @@ impl Catalog for RestCatalog {
                 |status| match status {
                     StatusCode::NOT_FOUND => Some(Error::new(
                         ErrorKind::IcebergDataInvalid,
-                        format!("Talbe {table_name} not found!"),
+                        format!("Table {table_name} not found!"),
                     )),
                     _ => None,
                 },
@@ -195,7 +195,7 @@ impl RestCatalog {
                     Err(Error::new(
                         ErrorKind::Unexpected,
                         format!(
-                            "Faile to execute http request, status code: {other}, message: {text}"
+                            "Fail to execute http request, status code: {other}, message: {text}"
                         ),
                     ))
                 }
@@ -326,7 +326,7 @@ mod _models {
     use serde::{Deserialize, Serialize};
 
     use crate::{
-        catalog::{self, MetadataUpdate, UpdateRquirement},
+        catalog::{self, MetadataUpdate, UpdateRequirement},
         table,
         types::{SnapshotSerDe, TableMetadataSerDe},
         Error,
@@ -423,10 +423,10 @@ mod _models {
         pub(super) default_sort_order_id: Option<i32>,
     }
 
-    impl From<&UpdateRquirement> for TableRequirement {
-        fn from(value: &UpdateRquirement) -> Self {
+    impl From<&UpdateRequirement> for TableRequirement {
+        fn from(value: &UpdateRequirement) -> Self {
             match value {
-                UpdateRquirement::AssertTableDoesNotExist => Self {
+                UpdateRequirement::AssertTableDoesNotExist => Self {
                     typ: "assert-create".to_string(),
                     r#ref: None,
                     uuid: None,
@@ -437,7 +437,7 @@ mod _models {
                     default_spec_id: None,
                     default_sort_order_id: None,
                 },
-                UpdateRquirement::AssertTableUUID(uuid) => Self {
+                UpdateRequirement::AssertTableUUID(uuid) => Self {
                     typ: "assert-table-uuid".to_string(),
                     r#ref: None,
                     uuid: Some(uuid.to_string()),
@@ -448,7 +448,7 @@ mod _models {
                     default_spec_id: None,
                     default_sort_order_id: None,
                 },
-                UpdateRquirement::AssertRefSnapshotID { name, snapshot_id } => Self {
+                UpdateRequirement::AssertRefSnapshotID { name, snapshot_id } => Self {
                     typ: "assert-ref-snapshot-id".to_string(),
                     r#ref: Some(name.clone()),
                     uuid: None,
@@ -459,7 +459,7 @@ mod _models {
                     default_spec_id: None,
                     default_sort_order_id: None,
                 },
-                UpdateRquirement::AssertLastAssignedFieldId {
+                UpdateRequirement::AssertLastAssignedFieldId {
                     last_assigned_field_id,
                 } => Self {
                     typ: "assert-last-assigned-field-id".to_string(),
@@ -472,7 +472,7 @@ mod _models {
                     default_spec_id: None,
                     default_sort_order_id: None,
                 },
-                UpdateRquirement::AssertCurrentSchemaID { schema_id } => Self {
+                UpdateRequirement::AssertCurrentSchemaID { schema_id } => Self {
                     typ: "assert-current-schema-id".to_string(),
                     r#ref: None,
                     uuid: None,
@@ -483,7 +483,7 @@ mod _models {
                     default_spec_id: None,
                     default_sort_order_id: None,
                 },
-                UpdateRquirement::AssertLastAssignedPartitionId {
+                UpdateRequirement::AssertLastAssignedPartitionId {
                     last_assigned_partition_id,
                 } => Self {
                     typ: "assert-last-assigned-partition-id".to_string(),
@@ -496,7 +496,7 @@ mod _models {
                     default_spec_id: None,
                     default_sort_order_id: None,
                 },
-                UpdateRquirement::AssertDefaultSpecID { spec_id } => Self {
+                UpdateRequirement::AssertDefaultSpecID { spec_id } => Self {
                     typ: "assert-default-spec-id".to_string(),
                     r#ref: None,
                     uuid: None,
@@ -507,7 +507,7 @@ mod _models {
                     default_spec_id: Some(*spec_id),
                     default_sort_order_id: None,
                 },
-                UpdateRquirement::AssertDefaultSortOrderID { sort_order_id } => Self {
+                UpdateRequirement::AssertDefaultSortOrderID { sort_order_id } => Self {
                     typ: "assert-default-sort-order-id".to_string(),
                     r#ref: None,
                     uuid: None,

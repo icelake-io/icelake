@@ -81,7 +81,6 @@ pub struct FileAppenderBuilder<L: FileAppenderLayer<DefaultFileAppender>> {
     // Underlying file appender builder
     operator: Operator,
     table_location: String,
-    location_generator: Arc<FileLocationGenerator>,
     table_config: TableConfigRef,
 
     layer: L,
@@ -90,13 +89,11 @@ pub struct FileAppenderBuilder<L: FileAppenderLayer<DefaultFileAppender>> {
 pub fn new_file_appender_builder(
     operator: Operator,
     table_location: String,
-    location_generator: Arc<FileLocationGenerator>,
     table_config: TableConfigRef,
 ) -> FileAppenderBuilder<EmptyLayer> {
     FileAppenderBuilder {
         operator,
         table_location,
-        location_generator,
         table_config,
 
         layer: EmptyLayer,
@@ -111,17 +108,20 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> FileAppenderBuilder<L> {
         FileAppenderBuilder {
             operator: self.operator,
             table_location: self.table_location,
-            location_generator: self.location_generator,
             table_config: self.table_config,
             layer: self.layer.chain(layer),
         }
     }
 
-    pub async fn build(&self, schema: SchemaRef) -> Result<L::R> {
+    pub async fn build(
+        &self,
+        schema: SchemaRef,
+        location_generator: Arc<FileLocationGenerator>,
+    ) -> Result<L::R> {
         let inner = RollingWriter::try_new(
             self.operator.clone(),
             self.table_location.clone(),
-            self.location_generator.clone(),
+            location_generator,
             schema,
             self.table_config.clone(),
         )

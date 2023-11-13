@@ -45,8 +45,6 @@ pub trait OperatorCreator: Send + Sync + 'static {
 pub struct IcebergTableIoArgs {
     scheme: Scheme,
     args: HashMap<String, String>,
-
-    op: Operator,
 }
 
 impl IcebergTableIoArgs {
@@ -117,12 +115,9 @@ impl IcebergTableIoArgsBuilder {
 
     /// Build arg.
     pub fn build(self) -> Result<IcebergTableIoArgs> {
-        let op = Operator::via_map(self.scheme, self.args.clone())?;
-
         Ok(IcebergTableIoArgs {
             scheme: self.scheme,
             args: self.args,
-            op,
         })
     }
 }

@@ -122,7 +122,7 @@ pub trait Catalog: Send + Sync {
     }
 
     /// Update table.
-    async fn update_table(self: Arc<Self>, _udpate_table: &UpdateTable) -> Result<Table> {
+    async fn update_table(self: Arc<Self>, _update_table: &UpdateTable) -> Result<Table> {
         Err(Error::new(
             ErrorKind::IcebergFeatureUnsupported,
             format!("update_table is not supported by {}", self.name()),
@@ -130,9 +130,9 @@ pub trait Catalog: Send + Sync {
     }
 }
 
-/// Update table requirments
+/// Update table requirements
 #[derive(Debug, Clone, EnumDisplay)]
-pub enum UpdateRquirement {
+pub enum UpdateRequirement {
     /// Requirest table exists.
     AssertTableDoesNotExist,
     /// Requirest current table's uuid .
@@ -171,11 +171,11 @@ pub enum UpdateRquirement {
     },
 }
 
-impl UpdateRquirement {
+impl UpdateRequirement {
     fn check(&self, table_metadata: &TableMetadata) -> bool {
         match self {
-            UpdateRquirement::AssertTableDoesNotExist => false,
-            UpdateRquirement::AssertTableUUID(uuid) => {
+            UpdateRequirement::AssertTableDoesNotExist => false,
+            UpdateRequirement::AssertTableUUID(uuid) => {
                 table_metadata.table_uuid == uuid.to_string()
             }
             _ => todo!(),
@@ -206,12 +206,12 @@ pub enum MetadataUpdate {
     AddPartitionSpec {
         /// Spec id
         spec_id: i32,
-        /// Partiton fields
+        /// Partition fields
         fields: Vec<PartitionField>,
     },
-    /// Set default partiton spec.
-    SetDefaultPartitonSpec {
-        /// Partiton spec id
+    /// Set default partition spec.
+    SetDefaultPartitionSpec {
+        /// partition spec id
         spec_id: i32,
     },
     /// Add sort order.
@@ -219,7 +219,7 @@ pub enum MetadataUpdate {
         /// Sort order
         sort_order: SortOrder,
     },
-    /// Set defaut sort order
+    /// Set default sort order
     SetDefaultSortOrder {
         /// Sort order id
         sort_order_id: i32,
@@ -303,7 +303,7 @@ impl MetadataUpdate {
 /// Update table request.
 pub struct UpdateTable {
     table_name: TableIdentifier,
-    requirements: Vec<UpdateRquirement>,
+    requirements: Vec<UpdateRequirement>,
     updates: Vec<MetadataUpdate>,
 }
 
@@ -325,7 +325,7 @@ impl UpdateTableBuilder {
     /// Add requirements.
     pub fn add_requirements(
         &mut self,
-        requirements: impl IntoIterator<Item = UpdateRquirement>,
+        requirements: impl IntoIterator<Item = UpdateRequirement>,
     ) -> &mut Self {
         self.0.requirements.extend(requirements);
         self
@@ -368,7 +368,7 @@ pub struct BaseCatalogConfig {
 /// - [`CATALOG_TYPE`]: Type of catalog, must be one of `storage`, `rest`.
 /// - [`CATALOG_NAME`]: Name of catalog.
 ///
-/// ## Catalog specifig configuration.
+/// ## Catalog specific configuration.
 ///
 /// Catalog specific configurations are prefixed with `iceberg.catalog.<catalog name>`.
 /// For example, if catalog name is `demo`, then all catalog specific configuration keys must be prefixed with `iceberg.catalog.demo.`.:

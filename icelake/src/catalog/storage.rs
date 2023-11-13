@@ -23,16 +23,8 @@ use super::{
 use crate::catalog::{OperatorCreator, CATALOG_CONFIG_PREFIX};
 use crate::error::Result;
 
-/// Configuration for storage config.
-pub struct StorageCatalogConfig<O: OperatorCreator> {
-    warehouse: String,
-    base_catalog_config: BaseCatalogConfig,
-    op_args: O,
-}
-
 /// File system catalog.
 pub struct StorageCatalog<O: OperatorCreator> {
-    warehouse: String,
     catalog_config: BaseCatalogConfig,
 
     operator_creator: O,
@@ -40,9 +32,8 @@ pub struct StorageCatalog<O: OperatorCreator> {
 
 impl<O: OperatorCreator> StorageCatalog<O> {
     /// Create a new storage catalog with given warehouse and operator creator.
-    pub fn new(warehouse: &str, operator_creator: O) -> Self {
+    pub fn new(operator_creator: O) -> Self {
         StorageCatalog {
-            warehouse: warehouse.to_string(),
             catalog_config: BaseCatalogConfig {
                 name: "storage".to_string(),
                 ..Default::default()
@@ -52,13 +43,8 @@ impl<O: OperatorCreator> StorageCatalog<O> {
     }
 
     /// Create a new storage catalog with given catalog config.
-    pub fn with_catalog_config(
-        warehouse: &str,
-        operator_creator: O,
-        catalog_config: BaseCatalogConfig,
-    ) -> Self {
+    pub fn with_catalog_config(operator_creator: O, catalog_config: BaseCatalogConfig) -> Self {
         StorageCatalog {
-            warehouse: warehouse.to_string(),
             catalog_config,
             operator_creator,
         }
@@ -132,7 +118,7 @@ impl<O: OperatorCreator> StorageCatalog<O> {
     ///
     /// The returned paths are sorted by name.
     ///
-    /// TODO: we can imporve this by only fetch the latest metadata.
+    /// TODO: we can improve this by only fetch the latest metadata.
     ///
     /// `table_path`: relative path of table dir under warehouse root.
     async fn list_table_metadata_paths(&self, table_path: &str) -> Result<Vec<String>> {
@@ -241,10 +227,6 @@ impl<O: OperatorCreator> StorageCatalog<O> {
         .await?;
 
         Ok(())
-    }
-
-    fn table_metadata_path(&self, table_path: &str, metadata_filename: &str) -> String {
-        format!("{table_path}/metadata/{metadata_filename}")
     }
 
     async fn rename(op: &Operator, src_path: &str, dest_path: &str) -> Result<()> {
@@ -391,11 +373,7 @@ impl IcebergStorageCatalog {
             .with_args(base_config.table_io_configs.iter())
             .build()?;
 
-        Ok(StorageCatalog::with_catalog_config(
-            warehouse,
-            op,
-            base_config,
-        ))
+        Ok(StorageCatalog::with_catalog_config(op, base_config))
     }
 
     /// Load table from path.

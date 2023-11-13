@@ -2,7 +2,10 @@
 use std::sync::Arc;
 
 use crate::{
-    io::{DefaultFileAppender, FileAppender, FileAppenderBuilder, FileAppenderLayer},
+    io::{
+        location_generator, DefaultFileAppender, FileAppender, FileAppenderBuilder,
+        FileAppenderLayer,
+    },
     types::{DataFileBuilder, COLUMN_ID_META_KEY},
     Error, ErrorKind, Result,
 };
@@ -21,6 +24,7 @@ pub struct EqualityDeleteWriter<F: FileAppender> {
 pub async fn new_eq_delete_writer<L: FileAppenderLayer<DefaultFileAppender>>(
     arrow_schema: SchemaRef,
     equality_ids: Vec<usize>,
+    location_generator: Arc<location_generator::FileLocationGenerator>,
     factory: &FileAppenderBuilder<L>,
 ) -> Result<EqualityDeleteWriter<L::R>> {
     let mut col_id_idx = vec![];
@@ -51,7 +55,7 @@ pub async fn new_eq_delete_writer<L: FileAppenderLayer<DefaultFileAppender>>(
     })?);
 
     Ok(EqualityDeleteWriter {
-        inner_writer: factory.build(delete_schema).await?,
+        inner_writer: factory.build(delete_schema, location_generator).await?,
         equality_ids,
         col_id_idx,
     })

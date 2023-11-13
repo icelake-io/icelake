@@ -165,7 +165,7 @@ impl TestFixture {
                 .writer_builder()
                 .await
                 .unwrap()
-                .build_task_writer()
+                .build_append_only_writer()
                 .await
                 .unwrap();
 
@@ -266,6 +266,6 @@ fn main() {
         }
     }
 
-    // Run all tests and exit the application appropriatly.
+    // Run all tests and exit the application appropriately.
     libtest_mimic::run(&args, tests).exit();
 }

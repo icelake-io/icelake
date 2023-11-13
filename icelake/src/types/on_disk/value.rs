@@ -490,6 +490,7 @@ impl From<StructValue> for Value {
     }
 }
 
+#[cfg(test)]
 mod test {
     use std::sync::Arc;
 

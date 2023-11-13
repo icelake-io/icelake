@@ -10,12 +10,6 @@ pub fn parse_partition_spec(bs: &[u8]) -> Result<types::PartitionSpec> {
     t.try_into()
 }
 
-/// Serialize partition spec to json bytes.
-pub fn serialize_partition_spec(spec: &types::PartitionSpec) -> Result<String> {
-    let t = PartitionSpec::try_from(spec)?;
-    Ok(serde_json::to_string(&t)?)
-}
-
 pub fn serialize_partition_spec_fields(spec: &types::PartitionSpec) -> Result<String> {
     let t = PartitionSpec::try_from(spec)?;
     Ok(serde_json::to_string(&t.fields)?)
@@ -110,7 +104,9 @@ mod tests {
         let parsed = parse_partition_spec(json.as_bytes()).unwrap();
         assert_eq!(expected_partition_spec, parsed);
 
-        let serialized_json = serialize_partition_spec(&expected_partition_spec).unwrap();
+        let serialized_json =
+            serde_json::to_string(&PartitionSpec::try_from(&expected_partition_spec).unwrap())
+                .unwrap();
         let parsed = parse_partition_spec(serialized_json.as_bytes()).unwrap();
         assert_eq!(expected_partition_spec, parsed);
 

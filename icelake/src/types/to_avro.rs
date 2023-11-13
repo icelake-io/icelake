@@ -93,7 +93,7 @@ impl<'a> TryFrom<&'a Field> for AvroRecordField {
 /// this name is "r+ field_id", so we wrap Any with field_id to deal with this case.
 struct AnyWithFieldId<'a, 'b> {
     any: &'a Any,
-    /// We need to guaranteed that there is only one record use thi field_id. Otherwise there will
+    /// We need to guaranteed that there is only one record use this field_id. Otherwise there will
     /// be dulplicate name in AvroSchema. So we use Option to make sure that there is only one
     /// record take it.
     ///
