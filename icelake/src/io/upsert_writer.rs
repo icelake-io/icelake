@@ -119,10 +119,6 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> UpsertWriter<L> {
         Ok(())
     }
 
-    pub async fn current_write_metrics() -> Result<()> {
-        todo!()
-    }
-
     pub async fn close(self) -> Result<Vec<DeltaWriterResult>> {
         match self {
             UpsertWriter::Unpartitioned(writer) => Ok(vec![writer.close(None).await?]),
