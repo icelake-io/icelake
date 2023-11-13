@@ -43,7 +43,7 @@ pub trait FileAppenderLayer<F: FileAppender>: Send + Clone {
 }
 
 pub type DefaultFileAppender = RollingWriter;
-pub type DefaultFileAppenderLayer<R> = dyn FileAppenderLayer<DefaultFileAppender, R = R>;
+pub type DefaultFileAppenderLayer = dyn FileAppenderLayer<DefaultFileAppender>;
 
 #[derive(Clone)]
 pub struct EmptyLayer;
