@@ -11,3 +11,6 @@ pub mod writer_builder;
 pub use appender::*;
 mod scan;
 pub use scan::*;
+
+mod upsert_writer;
+pub use upsert_writer::*;

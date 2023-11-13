@@ -8,7 +8,6 @@ use crate::error::Result;
 use crate::io::location_generator::FileLocationGenerator;
 use crate::types::Any;
 use crate::types::PartitionKey;
-use crate::types::PartitionSpec;
 use crate::types::PartitionSplitter;
 use crate::types::{DataFile, TableMetadata};
 use arrow_array::RecordBatch;
@@ -41,7 +40,6 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> AppendOnlyWriter<L> {
     ) -> Result<Self> {
         let current_schema = table_metadata.current_schema()?;
         let current_partition_spec = table_metadata.current_partition_spec()?;
-
         let arrow_schema = Arc::new(current_schema.clone().try_into().map_err(|e| {
             crate::error::Error::new(
                 crate::ErrorKind::IcebergDataInvalid,
@@ -56,16 +54,19 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> AppendOnlyWriter<L> {
                     .await?,
             )?))
         } else {
-            let partition_type = Any::Struct(
-                current_partition_spec
-                    .partition_type(current_schema)?
-                    .into(),
-            );
+            let partition_splitter = PartitionSplitter::try_new(
+                current_partition_spec,
+                &arrow_schema,
+                Any::Struct(
+                    current_partition_spec
+                        .partition_type(current_schema)?
+                        .into(),
+                ),
+            )?;
             Ok(Self::Partitioned(PartitionedAppendOnlyWriter::try_new(
                 arrow_schema,
                 location_generator,
-                current_partition_spec,
-                partition_type,
+                partition_splitter,
                 file_appender_factory,
             )?))
         }
@@ -109,20 +110,15 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> PartitionedAppendOnlyWriter<L> {
     pub fn try_new(
         schema: ArrowSchemaRef,
         location_generator: Arc<FileLocationGenerator>,
-        partition_spec: &PartitionSpec,
-        partition_type: Any,
+        partition_splitter: PartitionSplitter,
         file_appender_factory: FileAppenderBuilder<L>,
     ) -> Result<Self> {
         Ok(Self {
             location_generator,
             writers: HashMap::new(),
-            partition_splitter: PartitionSplitter::try_new(
-                partition_spec,
-                &schema,
-                partition_type,
-            )?,
-            schema,
+            partition_splitter,
             file_appender_factory,
+            schema,
         })
     }
 

@@ -25,7 +25,7 @@ pub trait FileAppender: Send + 'static {
     async fn close(&mut self) -> Result<Vec<DataFileBuilder>>;
 }
 
-pub trait FileAppenderLayer<F: FileAppender>: Send {
+pub trait FileAppenderLayer<F: FileAppender>: Send + Clone {
     type R: FileAppender;
     fn layer(&self, appender: F) -> Self::R;
 
@@ -43,8 +43,9 @@ pub trait FileAppenderLayer<F: FileAppender>: Send {
 }
 
 pub type DefaultFileAppender = RollingWriter;
-pub type DefaultFileAppenderLayer<R> = dyn FileAppenderLayer<DefaultFileAppender, R = R>;
+pub type DefaultFileAppenderLayer = dyn FileAppenderLayer<DefaultFileAppender>;
 
+#[derive(Clone)]
 pub struct EmptyLayer;
 
 impl<F: FileAppender> FileAppenderLayer<F> for EmptyLayer {
@@ -65,6 +66,18 @@ where
     cur: L2,
 }
 
+impl<L1: FileAppenderLayer<F1>, F1: FileAppender, L2: FileAppenderLayer<L1::R>> Clone
+    for ChainedFileAppenderLayer<L1, F1, L2>
+{
+    fn clone(&self) -> Self {
+        Self {
+            prev: self.prev.clone(),
+            _f1: self._f1,
+            cur: self.cur.clone(),
+        }
+    }
+}
+
 impl<L1, F1, L2> FileAppenderLayer<F1> for ChainedFileAppenderLayer<L1, F1, L2>
 where
     L1: FileAppenderLayer<F1>,
@@ -77,6 +90,7 @@ where
     }
 }
 
+#[derive(Clone)]
 pub struct FileAppenderBuilder<L: FileAppenderLayer<DefaultFileAppender>> {
     // Underlying file appender builder
     operator: Operator,
