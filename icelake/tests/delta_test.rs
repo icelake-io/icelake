@@ -3,9 +3,8 @@ use std::{collections::HashMap, sync::Arc};
 use arrow_array::{ArrayRef, Int64Array, RecordBatch};
 use arrow_schema::SchemaRef;
 use arrow_select::concat::concat_batches;
-use icelake::io::file_writer::EqualityDeltaWriter;
-use icelake::io::{DefaultFileAppender, FileAppenderLayer};
-use icelake::types::{AnyValue, Field, Struct, StructValue, StructValueBuilder};
+use icelake::io::{DefaultFileAppender, FileAppenderLayer, UpsertWriter};
+use icelake::types::{AnyValue, Field, Struct, StructValueBuilder};
 use icelake::{catalog::load_catalog, transaction::Transaction, Table, TableIdentifier};
 mod utils;
 use tokio::runtime::Builder;
@@ -17,7 +16,6 @@ pub struct DeltaTest {
     docker_compose: DockerCompose,
     poetry: Poetry,
     catalog_configs: HashMap<String, String>,
-    partition_value: StructValue,
 }
 
 impl DeltaTest {
@@ -89,7 +87,6 @@ impl DeltaTest {
                 Some(AnyValue::Primitive(icelake::types::PrimitiveValue::Long(1))),
             )
             .unwrap();
-        let partition_value = builder.build().unwrap();
         Self {
             docker_compose,
             poetry,
@@ -97,7 +94,6 @@ impl DeltaTest {
                 .iter()
                 .map(|(k, v)| (k.to_string(), v.to_string()))
                 .collect(),
-            partition_value,
         }
     }
 
@@ -153,7 +149,7 @@ impl DeltaTest {
     async fn write_and_delete_with_delta(
         &self,
         table: &Table,
-        delta_writer: &mut EqualityDeltaWriter<impl FileAppenderLayer<DefaultFileAppender>>,
+        delta_writer: &mut UpsertWriter<impl FileAppenderLayer<DefaultFileAppender>>,
         write: Option<Vec<ArrayRef>>,
         delete: Option<Vec<ArrayRef>>,
     ) {
@@ -182,18 +178,15 @@ impl DeltaTest {
         }
 
         let batch = concat_batches(&schema, batches.iter()).unwrap();
-        delta_writer.delta_write(ops, batch).await.unwrap();
+        delta_writer.write(ops, &batch).await.unwrap();
     }
 
     async fn commit_writer(
         &self,
         table: &mut Table,
-        delta_writer: EqualityDeltaWriter<impl FileAppenderLayer<DefaultFileAppender>>,
+        delta_writer: UpsertWriter<impl FileAppenderLayer<DefaultFileAppender>>,
     ) {
-        let mut result = delta_writer
-            .close(Some(self.partition_value.clone()))
-            .await
-            .unwrap();
+        let mut result = delta_writer.close().await.unwrap().remove(0);
 
         // Commit table transaction
         {
@@ -232,7 +225,7 @@ impl DeltaTest {
             .writer_builder()
             .await
             .unwrap()
-            .build_equality_delta_writer(vec![1, 2])
+            .build_upsert_writer(vec![1, 2])
             .await
             .unwrap();
 
@@ -297,7 +290,7 @@ impl DeltaTest {
             .writer_builder()
             .await
             .unwrap()
-            .build_equality_delta_writer(vec![1, 2])
+            .build_upsert_writer(vec![1, 2])
             .await
             .unwrap();
 
@@ -319,7 +312,7 @@ impl DeltaTest {
             .writer_builder()
             .await
             .unwrap()
-            .build_equality_delta_writer(vec![1, 2])
+            .build_upsert_writer(vec![1, 2])
             .await
             .unwrap();
 

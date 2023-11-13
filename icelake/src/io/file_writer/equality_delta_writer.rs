@@ -9,9 +9,7 @@ use crate::types::StructValue;
 use crate::types::COLUMN_ID_META_KEY;
 use crate::{Error, ErrorKind, Result};
 use arrow_array::builder::BooleanBuilder;
-use arrow_array::Int32Array;
 use arrow_array::RecordBatch;
-use arrow_ord::partition::partition;
 use arrow_row::{OwnedRow, RowConverter, Rows, SortField};
 use arrow_schema::SchemaRef;
 use arrow_select::filter;
@@ -54,8 +52,8 @@ pub struct EqualityDeltaWriter<L: FileAppenderLayer<DefaultFileAppender>> {
 }
 
 pub struct EqDeltaWriterMetrics {
-    _buffer_path_offset_count: usize,
-    _sorted_pos_delete_cache_count: usize,
+    pub buffer_path_offset_count: usize,
+    pub sorted_pos_delete_cache_count: usize,
 }
 
 impl<L: FileAppenderLayer<DefaultFileAppender>> EqualityDeltaWriter<L> {
@@ -146,48 +144,9 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> EqualityDeltaWriter<L> {
 
     pub fn current_metrics(&self) -> EqDeltaWriterMetrics {
         EqDeltaWriterMetrics {
-            _buffer_path_offset_count: self.inserted_rows.len(),
-            _sorted_pos_delete_cache_count: self.sorted_pos_delete_writer.record_num,
+            buffer_path_offset_count: self.inserted_rows.len(),
+            sorted_pos_delete_cache_count: self.sorted_pos_delete_writer.record_num,
         }
-    }
-    /// Delta write will write and delete the row automatically according to the ops.
-    /// 1. If op == 1, write the row.
-    /// 2. If op == 2, delete the row.
-    /// This interface will batch the row automatically. E.g.
-    /// ```ignore
-    /// | ops | batch |
-    /// |  1  |  "a"  |
-    /// |  1  |  "b"  |
-    /// |  2  |  "c"  |
-    /// |  2  |  "d"  |
-    /// ```
-    /// It will write "a" and "b" together.
-    /// It will delete "c" and "d" together.
-    pub async fn delta_write(&mut self, ops: Vec<i32>, batch: RecordBatch) -> Result<()> {
-        let ops_array = Arc::new(Int32Array::from(ops));
-        let partitions = partition(&[ops_array.clone()]).map_err(|err| {
-            Error::new(
-                ErrorKind::ArrowError,
-                format!("Failed to partition ops, error: {}", err),
-            )
-        })?;
-        for range in partitions.ranges() {
-            let batch = batch.slice(range.start, range.end - range.start);
-            match ops_array.value(range.start) {
-                // Insert
-                1 => self.write(batch).await?,
-                // Delete
-                2 => self.delete(batch).await?,
-                op => {
-                    return Err(Error::new(
-                        ErrorKind::IcebergDataInvalid,
-                        format!("Invalid ops: {op}"),
-                    ))
-                }
-            }
-        }
-
-        Ok(())
     }
 
     /// Write the batch.

@@ -13,7 +13,7 @@ use super::file_writer::{
 use super::location_generator::FileLocationGenerator;
 use super::{
     new_file_appender_builder, ChainedFileAppenderLayer, DefaultFileAppender, EmptyLayer,
-    FileAppenderBuilder, FileAppenderLayer,
+    FileAppenderBuilder, FileAppenderLayer, UpsertWriter,
 };
 
 /// `WriterBuilder` used to create kinds of writer.
@@ -172,6 +172,23 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> WriterBuilder<L> {
             self.table_metadata,
             self.file_appender_builder,
             data_location_generator,
+        )
+        .await
+    }
+
+    pub async fn build_upsert_writer(
+        self,
+        unique_column_ids: Vec<usize>,
+    ) -> Result<UpsertWriter<L>> {
+        let data_location_generator = self.data_location_generator()?.into();
+        let delete_location_generator = self.delete_location_generator()?.into();
+        UpsertWriter::try_new(
+            self.table_metadata,
+            self.table_config,
+            unique_column_ids,
+            self.file_appender_builder,
+            data_location_generator,
+            delete_location_generator,
         )
         .await
     }
