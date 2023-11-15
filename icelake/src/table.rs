@@ -7,12 +7,15 @@ use crate::catalog::CatalogRef;
 use crate::error::Result;
 use crate::io::writer_builder::{new_writer_builder, WriterBuilder};
 use crate::io::{EmptyLayer, TableScanBuilder};
+use itertools::Itertools;
 use opendal::Operator;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::config::{TableConfig, TableConfigRef};
-use crate::types::{Any, DataFile, PartitionSplitter, Schema, Snapshot, TableMetadata};
+use crate::types::{
+    Any, ColumnExtractor, DataFile, PartitionSplitter, Schema, Snapshot, TableMetadata,
+};
 use crate::{types, Error, ErrorKind};
 
 pub(crate) const META_ROOT_PATH: &str = "metadata";
@@ -347,6 +350,12 @@ impl Table {
                 format!("Can't convert iceberg schema to arrow schema: {}", e),
             )
         })?);
+        let column_ids = current_partition_spec
+            .fields
+            .iter()
+            .map(|field| field.source_column_id as usize)
+            .collect_vec();
+        let (col_extractor, _) = ColumnExtractor::new(&arrow_schema, &column_ids)?;
 
         let partition_type = Any::Struct(
             current_partition_spec
@@ -354,8 +363,8 @@ impl Table {
                 .into(),
         );
         Ok(Some(PartitionSplitter::try_new(
+            col_extractor,
             current_partition_spec,
-            &arrow_schema,
             partition_type,
         )?))
     }

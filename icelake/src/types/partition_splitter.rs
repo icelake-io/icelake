@@ -114,21 +114,15 @@ impl From<OwnedRow> for PartitionKey {
 impl PartitionSplitter {
     /// Create a new `PartitionSplitter`.
     pub fn try_new(
+        col_extractor: ColumnExtractor,
         partition_spec: &PartitionSpec,
-        batch_schema: &SchemaRef,
         partition_type: Any,
     ) -> Result<Self> {
-        let column_ids = partition_spec
-            .fields
-            .iter()
-            .map(|field| field.source_column_id as usize)
-            .collect_vec();
         let transforms = partition_spec
             .fields
             .iter()
             .map(|field| create_transform_function(&field.transform))
             .try_collect()?;
-        let (col_extractor, _) = ColumnExtractor::new(batch_schema, &column_ids)?;
 
         let arrow_partition_type_fields =
             if let DataType::Struct(fields) = partition_type.clone().try_into()? {

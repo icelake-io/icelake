@@ -7,11 +7,13 @@ use super::FileAppenderLayer;
 use crate::error::Result;
 use crate::io::location_generator::FileLocationGenerator;
 use crate::types::Any;
+use crate::types::ColumnExtractor;
 use crate::types::PartitionKey;
 use crate::types::PartitionSplitter;
 use crate::types::{DataFile, TableMetadata};
 use arrow_array::RecordBatch;
 use arrow_schema::SchemaRef as ArrowSchemaRef;
+use itertools::Itertools;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -54,9 +56,15 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> AppendOnlyWriter<L> {
                     .await?,
             )?))
         } else {
+            let column_ids = current_partition_spec
+                .fields
+                .iter()
+                .map(|field| field.source_column_id as usize)
+                .collect_vec();
+            let (col_extractor, _) = ColumnExtractor::new(&arrow_schema, &column_ids)?;
             let partition_splitter = PartitionSplitter::try_new(
+                col_extractor,
                 current_partition_spec,
-                &arrow_schema,
                 Any::Struct(
                     current_partition_spec
                         .partition_type(current_schema)?
