@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    types::{Any, ColumnExtractor, PartitionKey},
+    types::{Any, FieldProjector, PartitionKey},
     ErrorKind, Result,
 };
 use arrow_array::{Int32Array, RecordBatch};
@@ -69,7 +69,7 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> UpsertWriter<L> {
                 .iter()
                 .map(|field| field.source_column_id as usize)
                 .collect_vec();
-            let (col_extractor, _) = ColumnExtractor::new(&arrow_schema, &column_ids)?;
+            let (col_extractor, _) = FieldProjector::new(&arrow_schema, &column_ids)?;
             let partition_splitter = PartitionSplitter::try_new(
                 col_extractor,
                 current_partition_spec,

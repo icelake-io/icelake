@@ -7,7 +7,7 @@ use super::FileAppenderLayer;
 use crate::error::Result;
 use crate::io::location_generator::FileLocationGenerator;
 use crate::types::Any;
-use crate::types::ColumnExtractor;
+use crate::types::FieldProjector;
 use crate::types::PartitionKey;
 use crate::types::PartitionSplitter;
 use crate::types::{DataFile, TableMetadata};
@@ -61,7 +61,7 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> AppendOnlyWriter<L> {
                 .iter()
                 .map(|field| field.source_column_id as usize)
                 .collect_vec();
-            let (col_extractor, _) = ColumnExtractor::new(&arrow_schema, &column_ids)?;
+            let (col_extractor, _) = FieldProjector::new(&arrow_schema, &column_ids)?;
             let partition_splitter = PartitionSplitter::try_new(
                 col_extractor,
                 current_partition_spec,

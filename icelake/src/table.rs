@@ -14,7 +14,7 @@ use url::Url;
 
 use crate::config::{TableConfig, TableConfigRef};
 use crate::types::{
-    Any, ColumnExtractor, DataFile, PartitionSplitter, Schema, Snapshot, TableMetadata,
+    Any, DataFile, FieldProjector, PartitionSplitter, Schema, Snapshot, TableMetadata,
 };
 use crate::{types, Error, ErrorKind};
 
@@ -355,7 +355,7 @@ impl Table {
             .iter()
             .map(|field| field.source_column_id as usize)
             .collect_vec();
-        let (col_extractor, _) = ColumnExtractor::new(&arrow_schema, &column_ids)?;
+        let (col_extractor, _) = FieldProjector::new(&arrow_schema, &column_ids)?;
 
         let partition_type = Any::Struct(
             current_partition_spec

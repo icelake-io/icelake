@@ -4,8 +4,8 @@ use crate::io::location_generator::FileLocationGenerator;
 use crate::io::DefaultFileAppender;
 use crate::io::FileAppenderBuilder;
 use crate::io::FileAppenderLayer;
-use crate::types::ColumnExtractor;
 use crate::types::DataFile;
+use crate::types::FieldProjector;
 use crate::types::StructValue;
 use crate::{Error, ErrorKind, Result};
 use arrow_array::builder::BooleanBuilder;
@@ -48,7 +48,7 @@ pub struct EqualityDeltaWriter<L: FileAppenderLayer<DefaultFileAppender>> {
     eq_delete_writer: EqualityDeleteWriter<L::R>,
     inserted_rows: HashMap<OwnedRow, PathOffset>,
     row_converter: RowConverter,
-    col_extractor: ColumnExtractor,
+    col_extractor: FieldProjector,
 }
 
 pub struct EqDeltaWriterMetrics {
@@ -68,7 +68,7 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> EqualityDeltaWriter<L> {
         delete_location_generator: Arc<FileLocationGenerator>,
     ) -> Result<Self> {
         let (col_extractor, unique_col_schema) =
-            ColumnExtractor::new(&arrow_schema, &unique_column_ids)?;
+            FieldProjector::new(&arrow_schema, &unique_column_ids)?;
 
         // Create the row converter for unique columns.
         let row_converter = RowConverter::new(
@@ -212,7 +212,7 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> EqualityDeltaWriter<L> {
 
     fn extract_unique_column(&mut self, batch: &RecordBatch) -> Result<Rows> {
         self.row_converter
-            .convert_columns(&self.col_extractor.extract(batch))
+            .convert_columns(&self.col_extractor.project(batch))
             .map_err(|err| {
                 Error::new(
                     ErrorKind::ArrowError,

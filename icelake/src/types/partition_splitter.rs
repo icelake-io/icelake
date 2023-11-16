@@ -12,12 +12,12 @@ use arrow_schema::{DataType, FieldRef, Fields, SchemaRef};
 use arrow_select::filter::filter_record_batch;
 use itertools::Itertools;
 
-/// Help to extract column from RecordBatch according to the column ids.
-pub struct ColumnExtractor {
+/// Help to project specific field from `RecordBatch`` according to the column id.
+pub struct FieldProjector {
     index_vec_vec: Vec<Vec<usize>>,
 }
 
-impl ColumnExtractor {
+impl FieldProjector {
     pub fn new(batch_schema: &SchemaRef, column_ids: &[usize]) -> Result<(Self, SchemaRef)> {
         let mut index_vec_vec = Vec::with_capacity(column_ids.len());
         let mut fields = Vec::with_capacity(column_ids.len());
@@ -68,7 +68,7 @@ impl ColumnExtractor {
         None
     }
 
-    pub fn extract(&self, batch: &RecordBatch) -> Vec<ArrayRef> {
+    pub fn project(&self, batch: &RecordBatch) -> Vec<ArrayRef> {
         self.index_vec_vec
             .iter()
             .map(|index_vec| Self::get_column_by_index_vec(batch, index_vec))
@@ -90,9 +90,9 @@ impl ColumnExtractor {
     }
 }
 
-/// `PartitionSplitter` is used to split a given record according partition spec
+/// `PartitionSplitter` is used to separate a given `RecordBatch`` according partition spec.
 pub struct PartitionSplitter {
-    col_extractor: ColumnExtractor,
+    col_extractor: FieldProjector,
     transforms: Vec<BoxedTransformFunction>,
     row_converter: RowConverter,
     arrow_partition_type_fields: Fields,
@@ -114,7 +114,7 @@ impl From<OwnedRow> for PartitionKey {
 impl PartitionSplitter {
     /// Create a new `PartitionSplitter`.
     pub fn try_new(
-        col_extractor: ColumnExtractor,
+        col_extractor: FieldProjector,
         partition_spec: &PartitionSpec,
         partition_type: Any,
     ) -> Result<Self> {
@@ -145,13 +145,13 @@ impl PartitionSplitter {
     }
 
     /// This function do two things:
-    /// 1. Partition the batch by partition spec.
-    /// 2. Create the partition value.
+    /// 1. Separate the batch by partition spec.
+    /// 2. Compute the partition value.
     pub fn split_by_partition(
         &mut self,
         batch: &RecordBatch,
     ) -> Result<HashMap<PartitionKey, RecordBatch>> {
-        let arrays = self.col_extractor.extract(batch);
+        let arrays = self.col_extractor.project(batch);
         let value_array = Arc::new(StructArray::new(
             self.arrow_partition_type_fields.clone(),
             arrays
