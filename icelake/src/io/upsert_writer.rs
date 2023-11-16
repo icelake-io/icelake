@@ -4,11 +4,12 @@ use std::{
 };
 
 use crate::{
-    types::{Any, PartitionKey},
+    types::{Any, FieldProjector, PartitionKey},
     ErrorKind, Result,
 };
 use arrow_array::{Int32Array, RecordBatch};
 use arrow_schema::SchemaRef;
+use itertools::Itertools;
 
 use crate::{
     config::TableConfigRef,
@@ -63,9 +64,15 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> UpsertWriter<L> {
                 .await?,
             ))
         } else {
+            let column_ids = current_partition_spec
+                .fields
+                .iter()
+                .map(|field| field.source_column_id as usize)
+                .collect_vec();
+            let (col_extractor, _) = FieldProjector::new(&arrow_schema, &column_ids)?;
             let partition_splitter = PartitionSplitter::try_new(
+                col_extractor,
                 current_partition_spec,
-                &arrow_schema,
                 Any::Struct(
                     current_partition_spec
                         .partition_type(current_schema)?

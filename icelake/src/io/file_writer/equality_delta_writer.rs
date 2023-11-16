@@ -5,8 +5,8 @@ use crate::io::DefaultFileAppender;
 use crate::io::FileAppenderBuilder;
 use crate::io::FileAppenderLayer;
 use crate::types::DataFile;
+use crate::types::FieldProjector;
 use crate::types::StructValue;
-use crate::types::COLUMN_ID_META_KEY;
 use crate::{Error, ErrorKind, Result};
 use arrow_array::builder::BooleanBuilder;
 use arrow_array::RecordBatch;
@@ -48,7 +48,7 @@ pub struct EqualityDeltaWriter<L: FileAppenderLayer<DefaultFileAppender>> {
     eq_delete_writer: EqualityDeleteWriter<L::R>,
     inserted_rows: HashMap<OwnedRow, PathOffset>,
     row_converter: RowConverter,
-    unique_column_idx: Vec<usize>,
+    col_extractor: FieldProjector,
 }
 
 pub struct EqDeltaWriterMetrics {
@@ -67,43 +67,10 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> EqualityDeltaWriter<L> {
         data_location_generator: Arc<FileLocationGenerator>,
         delete_location_generator: Arc<FileLocationGenerator>,
     ) -> Result<Self> {
-        // Convert column id into corresponding index.
-        let mut unique_column_idx = Vec::with_capacity(unique_column_ids.len());
-        for &id in unique_column_ids.iter() {
-            let res = arrow_schema
-                .fields
-                .iter()
-                .enumerate()
-                .find(|(_, f)| {
-                    f.metadata()
-                        .get(COLUMN_ID_META_KEY)
-                        .unwrap()
-                        .parse::<usize>()
-                        .unwrap()
-                        == id
-                })
-                .ok_or_else(|| {
-                    Error::new(
-                        ErrorKind::IcebergDataInvalid,
-                        format!(
-                            "Failed to find column with id: {} in schema {:?}",
-                            id, arrow_schema
-                        ),
-                    )
-                })?;
-            unique_column_idx.push(res.0);
-        }
+        let (col_extractor, unique_col_schema) =
+            FieldProjector::new(&arrow_schema, &unique_column_ids)?;
 
         // Create the row converter for unique columns.
-        let unique_col_schema = arrow_schema.project(&unique_column_idx).map_err(|err| {
-            Error::new(
-                ErrorKind::ArrowError,
-                format!(
-                    "Failed to project schema with equality ids: {:?}, error: {}",
-                    unique_column_idx, err
-                ),
-            )
-        })?;
         let row_converter = RowConverter::new(
             unique_col_schema
                 .fields()
@@ -138,7 +105,7 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> EqualityDeltaWriter<L> {
             ),
             inserted_rows: HashMap::new(),
             row_converter,
-            unique_column_idx,
+            col_extractor,
         })
     }
 
@@ -244,17 +211,8 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> EqualityDeltaWriter<L> {
     }
 
     fn extract_unique_column(&mut self, batch: &RecordBatch) -> Result<Rows> {
-        let batch_with_unique_column = batch.project(&self.unique_column_idx).map_err(|err| {
-            Error::new(
-                ErrorKind::ArrowError,
-                format!(
-                    "Failed to project record batch with index: {:?}, error: {}",
-                    self.unique_column_idx, err
-                ),
-            )
-        })?;
         self.row_converter
-            .convert_columns(batch_with_unique_column.columns())
+            .convert_columns(&self.col_extractor.project(batch))
             .map_err(|err| {
                 Error::new(
                     ErrorKind::ArrowError,
