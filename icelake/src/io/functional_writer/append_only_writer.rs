@@ -1,11 +1,11 @@
 //! task_writer module provide a task writer for writing data in a table.
 //! table writer used directly by the compute engine.
-use super::file_writer::DataFileWriter;
-use super::DefaultFileAppender;
-use super::FileAppenderBuilder;
-use super::FileAppenderLayer;
 use crate::error::Result;
 use crate::io::location_generator::FileLocationGenerator;
+use crate::io::DataFileWriter;
+use crate::io::DefaultFileAppender;
+use crate::io::FileAppenderBuilder;
+use crate::io::FileAppenderLayer;
 use crate::types::Any;
 use crate::types::FieldProjector;
 use crate::types::PartitionKey;
@@ -61,7 +61,7 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> AppendOnlyWriter<L> {
                 .iter()
                 .map(|field| field.source_column_id as usize)
                 .collect_vec();
-            let (col_extractor, _) = FieldProjector::new(&arrow_schema, &column_ids)?;
+            let (col_extractor, _) = FieldProjector::new(arrow_schema.fields(), &column_ids)?;
             let partition_splitter = PartitionSplitter::try_new(
                 col_extractor,
                 current_partition_spec,

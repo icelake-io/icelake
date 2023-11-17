@@ -61,9 +61,9 @@ impl RollingWriter {
     }
 
     fn should_split(&self) -> bool {
-        self.current_row_num % self.table_config.datafile_writer.rows_per_file == 0
+        self.current_row_num % self.table_config.rolling_writer.rows_per_file == 0
             && self.current_writer.as_ref().unwrap().get_written_size()
-                >= self.table_config.datafile_writer.target_file_size_in_bytes
+                >= self.table_config.rolling_writer.target_file_size_in_bytes
     }
 
     async fn close_current_writer(&mut self) -> Result<()> {

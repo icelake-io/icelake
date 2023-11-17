@@ -8,7 +8,7 @@ use crate::{types::struct_to_anyvalue_array_with_type, Error, ErrorKind, Result}
 use arrow_array::{Array, ArrayRef, BooleanArray, RecordBatch, StructArray};
 use arrow_cast::cast;
 use arrow_row::{OwnedRow, RowConverter, SortField};
-use arrow_schema::{DataType, FieldRef, Fields, SchemaRef};
+use arrow_schema::{DataType, FieldRef, Fields};
 use arrow_select::filter::filter_record_batch;
 use itertools::Itertools;
 
@@ -18,14 +18,12 @@ pub struct FieldProjector {
 }
 
 impl FieldProjector {
-    pub fn new(batch_schema: &SchemaRef, column_ids: &[usize]) -> Result<(Self, SchemaRef)> {
+    pub fn new(batch_fields: &Fields, column_ids: &[usize]) -> Result<(Self, Fields)> {
         let mut index_vec_vec = Vec::with_capacity(column_ids.len());
         let mut fields = Vec::with_capacity(column_ids.len());
         for &id in column_ids {
             let mut index_vec = vec![];
-            if let Some(field) =
-                Self::fetch_column_index(batch_schema.fields(), &mut index_vec, id as i64)
-            {
+            if let Some(field) = Self::fetch_column_index(batch_fields, &mut index_vec, id as i64) {
                 fields.push(field.clone());
                 index_vec_vec.push(index_vec);
             } else {
@@ -35,10 +33,7 @@ impl FieldProjector {
                 ));
             }
         }
-        Ok((
-            Self { index_vec_vec },
-            Arc::new(arrow_schema::Schema::new(Fields::from_iter(fields))),
-        ))
+        Ok((Self { index_vec_vec }, Fields::from_iter(fields)))
     }
 
     fn fetch_column_index(
@@ -68,16 +63,16 @@ impl FieldProjector {
         None
     }
 
-    pub fn project(&self, batch: &RecordBatch) -> Vec<ArrayRef> {
+    pub fn project(&self, batch: &[ArrayRef]) -> Vec<ArrayRef> {
         self.index_vec_vec
             .iter()
             .map(|index_vec| Self::get_column_by_index_vec(batch, index_vec))
             .collect_vec()
     }
 
-    fn get_column_by_index_vec(batch: &RecordBatch, index_vec: &[usize]) -> ArrayRef {
+    fn get_column_by_index_vec(batch: &[ArrayRef], index_vec: &[usize]) -> ArrayRef {
         let mut rev_iterator = index_vec.iter().rev();
-        let mut array = batch.column(*rev_iterator.next().unwrap()).clone();
+        let mut array = batch[*rev_iterator.next().unwrap()].clone();
         for idx in rev_iterator {
             array = array
                 .as_any()
@@ -151,7 +146,7 @@ impl PartitionSplitter {
         &mut self,
         batch: &RecordBatch,
     ) -> Result<HashMap<PartitionKey, RecordBatch>> {
-        let arrays = self.col_extractor.project(batch);
+        let arrays = self.col_extractor.project(batch.columns());
         let value_array = Arc::new(StructArray::new(
             self.arrow_partition_type_fields.clone(),
             arrays

@@ -344,18 +344,19 @@ impl Table {
         }
 
         let current_schema = self.current_table_metadata().current_schema()?;
-        let arrow_schema = Arc::new(current_schema.clone().try_into().map_err(|e| {
-            crate::error::Error::new(
-                crate::ErrorKind::IcebergDataInvalid,
-                format!("Can't convert iceberg schema to arrow schema: {}", e),
-            )
-        })?);
+        let arrow_schema: arrow_schema::Schema =
+            current_schema.clone().try_into().map_err(|e| {
+                crate::error::Error::new(
+                    crate::ErrorKind::IcebergDataInvalid,
+                    format!("Can't convert iceberg schema to arrow schema: {}", e),
+                )
+            })?;
         let column_ids = current_partition_spec
             .fields
             .iter()
             .map(|field| field.source_column_id as usize)
             .collect_vec();
-        let (col_extractor, _) = FieldProjector::new(&arrow_schema, &column_ids)?;
+        let (col_extractor, _) = FieldProjector::new(arrow_schema.fields(), &column_ids)?;
 
         let partition_type = Any::Struct(
             current_partition_spec

@@ -16,21 +16,21 @@ pub struct TableConfig {
     /// Parquet writer configuration.
     pub parquet_writer: ParquetWriterConfig,
     /// Datafile configuration
-    pub datafile_writer: DataFileWriterConfig,
+    pub rolling_writer: RollingWriterConfig,
     /// Sorted Delete Position writer configuration.
     pub sorted_delete_position_writer: SortedDeletePositionWriterConfig,
 }
 
 /// Data file writer configuration.
 #[derive(PartialEq, Eq, Debug)]
-pub struct DataFileWriterConfig {
+pub struct RollingWriterConfig {
     /// data file writer will keep row number of a data file as a multiple of this value.
     pub rows_per_file: usize,
     /// data file writer will keep file size of a data file bigger than this value.
     pub target_file_size_in_bytes: u64,
 }
 
-impl Default for DataFileWriterConfig {
+impl Default for RollingWriterConfig {
     fn default() -> Self {
         Self {
             rows_per_file: 1000,
@@ -165,7 +165,7 @@ impl TryFrom<&'_ HashMap<String, String>> for TableConfig {
                 .set_source(e)
             })?
             .iter()
-            .for_each(|v| config.datafile_writer.rows_per_file = *v);
+            .for_each(|v| config.rolling_writer.rows_per_file = *v);
 
         value
             .get("iceberg.table.datafile.target_file_size_in_bytes")
@@ -179,7 +179,7 @@ impl TryFrom<&'_ HashMap<String, String>> for TableConfig {
                 .set_source(e)
             })?
             .iter()
-            .for_each(|v| config.datafile_writer.target_file_size_in_bytes = *v);
+            .for_each(|v| config.rolling_writer.target_file_size_in_bytes = *v);
 
         value
             .get("iceberg.table.sorted_delete_position_writer.max_record_num")
@@ -301,7 +301,7 @@ mod tests {
                 write_batch_size: 8888,
                 data_page_size: 7,
             },
-            datafile_writer: Default::default(),
+            rolling_writer: Default::default(),
             sorted_delete_position_writer: Default::default(),
         };
 

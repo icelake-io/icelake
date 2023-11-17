@@ -20,7 +20,7 @@ pub struct SortedPositionDeleteWriter<L: FileAppenderLayer<DefaultFileAppender>>
     location_generator: Arc<location_generator::FileLocationGenerator>,
 
     delete_cache: BTreeMap<String, Vec<i64>>,
-    pub(super) record_num: usize,
+    record_num: usize,
 
     result: Vec<DataFileBuilder>,
 }
@@ -87,6 +87,10 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> SortedPositionDeleteWriter<L> {
             self.flush().await?;
         }
         Ok(self.result)
+    }
+
+    pub fn current_record_num(&self) -> usize {
+        self.record_num
     }
 }
 

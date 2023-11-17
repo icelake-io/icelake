@@ -1,9 +1,13 @@
 //! This module provide the `EqualityDeltaWriter`.
 use crate::config::TableConfigRef;
 use crate::io::location_generator::FileLocationGenerator;
+use crate::io::new_eq_delete_writer;
+use crate::io::DataFileWriter;
 use crate::io::DefaultFileAppender;
+use crate::io::EqualityDeleteWriter;
 use crate::io::FileAppenderBuilder;
 use crate::io::FileAppenderLayer;
+use crate::io::SortedPositionDeleteWriter;
 use crate::types::DataFile;
 use crate::types::FieldProjector;
 use crate::types::StructValue;
@@ -15,9 +19,6 @@ use arrow_schema::SchemaRef;
 use arrow_select::filter;
 use std::collections::HashMap;
 use std::sync::Arc;
-
-use super::new_eq_delete_writer;
-use super::{DataFileWriter, EqualityDeleteWriter, SortedPositionDeleteWriter};
 
 struct PathOffset {
     pub path: String,
@@ -67,13 +68,12 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> EqualityDeltaWriter<L> {
         data_location_generator: Arc<FileLocationGenerator>,
         delete_location_generator: Arc<FileLocationGenerator>,
     ) -> Result<Self> {
-        let (col_extractor, unique_col_schema) =
-            FieldProjector::new(&arrow_schema, &unique_column_ids)?;
+        let (col_extractor, unique_col_fields) =
+            FieldProjector::new(arrow_schema.fields(), &unique_column_ids)?;
 
         // Create the row converter for unique columns.
         let row_converter = RowConverter::new(
-            unique_col_schema
-                .fields()
+            unique_col_fields
                 .iter()
                 .map(|f| SortField::new(f.data_type().clone()))
                 .collect(),
@@ -112,7 +112,7 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> EqualityDeltaWriter<L> {
     pub fn current_metrics(&self) -> EqDeltaWriterMetrics {
         EqDeltaWriterMetrics {
             buffer_path_offset_count: self.inserted_rows.len(),
-            sorted_pos_delete_cache_count: self.sorted_pos_delete_writer.record_num,
+            sorted_pos_delete_cache_count: self.sorted_pos_delete_writer.current_record_num(),
         }
     }
 
@@ -212,7 +212,7 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> EqualityDeltaWriter<L> {
 
     fn extract_unique_column(&mut self, batch: &RecordBatch) -> Result<Rows> {
         self.row_converter
-            .convert_columns(&self.col_extractor.project(batch))
+            .convert_columns(&self.col_extractor.project(batch.columns()))
             .map_err(|err| {
                 Error::new(
                     ErrorKind::ArrowError,
