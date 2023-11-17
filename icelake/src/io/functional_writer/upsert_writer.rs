@@ -4,6 +4,10 @@ use std::{
 };
 
 use crate::{
+    io::{
+        location_generator::FileLocationGenerator, DefaultFileAppender, FileAppenderBuilder,
+        FileAppenderLayer,
+    },
     types::{Any, FieldProjector, PartitionKey},
     ErrorKind, Result,
 };
@@ -17,12 +21,9 @@ use crate::{
     Error,
 };
 
-use super::{
-    file_writer::{DeltaWriterResult, EqualityDeltaWriter},
-    location_generator::FileLocationGenerator,
-    DefaultFileAppender, FileAppenderBuilder, FileAppenderLayer,
-};
 use arrow_ord::partition::partition;
+
+use super::{DeltaWriterResult, EqualityDeltaWriter};
 
 pub enum UpsertWriter<L: FileAppenderLayer<DefaultFileAppender>> {
     Unpartitioned(EqualityDeltaWriter<L>),
@@ -69,7 +70,7 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> UpsertWriter<L> {
                 .iter()
                 .map(|field| field.source_column_id as usize)
                 .collect_vec();
-            let (col_extractor, _) = FieldProjector::new(&arrow_schema, &column_ids)?;
+            let (col_extractor, _) = FieldProjector::new(arrow_schema.fields(), &column_ids)?;
             let partition_splitter = PartitionSplitter::try_new(
                 col_extractor,
                 current_partition_spec,

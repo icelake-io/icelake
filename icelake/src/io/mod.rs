@@ -2,15 +2,15 @@
 //! sources.
 #![warn(dead_code)]
 
-pub mod append_only_writer;
 mod appender;
-pub mod file_writer;
-pub mod location_generator;
-pub mod parquet;
-pub mod writer_builder;
 pub use appender::*;
-mod scan;
-pub use scan::*;
+pub mod file_writer;
+pub use file_writer::*;
+pub mod functional_writer;
+pub mod location_generator;
+pub use functional_writer::*;
 
-mod upsert_writer;
-pub use upsert_writer::*;
+pub mod parquet;
+mod scan;
+pub mod writer_builder;
+pub use scan::*;

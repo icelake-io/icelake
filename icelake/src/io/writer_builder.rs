@@ -6,14 +6,11 @@ use crate::{config::TableConfigRef, types::TableMetadata};
 use arrow_schema::SchemaRef;
 use opendal::Operator;
 
-use super::append_only_writer::AppendOnlyWriter;
-use super::file_writer::{
-    new_eq_delete_writer, EqualityDeleteWriter, EqualityDeltaWriter, SortedPositionDeleteWriter,
-};
+use super::file_writer::{new_eq_delete_writer, EqualityDeleteWriter, SortedPositionDeleteWriter};
 use super::location_generator::FileLocationGenerator;
 use super::{
-    new_file_appender_builder, ChainedFileAppenderLayer, DefaultFileAppender, EmptyLayer,
-    FileAppenderBuilder, FileAppenderLayer, UpsertWriter,
+    new_file_appender_builder, AppendOnlyWriter, ChainedFileAppenderLayer, DefaultFileAppender,
+    EmptyLayer, EqualityDeltaWriter, FileAppenderBuilder, FileAppenderLayer, UpsertWriter,
 };
 
 /// `WriterBuilder` used to create kinds of writer.
