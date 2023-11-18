@@ -26,9 +26,10 @@ pub struct RollingWriter {
     location_generator: Arc<FileLocationGenerator>,
     arrow_schema: SchemaRef,
 
+    /// To avoid async new, the current writer will be laze created util the first write. So use `Option` here.
+    /// But most of the time, the current writer will not be none.
     current_writer: Option<ParquetWriter>,
     current_row_num: usize,
-    /// `current_location` used to clean up the file when no row is written to it.
     current_location: String,
 
     result: Vec<DataFileBuilder>,
@@ -38,26 +39,24 @@ pub struct RollingWriter {
 
 impl RollingWriter {
     /// Create a new `DataFileWriter`.
-    pub async fn try_new(
+    pub fn try_new(
         operator: Operator,
         table_location: String,
         location_generator: Arc<FileLocationGenerator>,
         arrow_schema: SchemaRef,
         table_config: TableConfigRef,
     ) -> Result<Self> {
-        let mut writer = Self {
+        Ok(Self {
             operator,
             table_location,
+            current_location: location_generator.generate_name(),
             location_generator,
             arrow_schema,
             current_writer: None,
             current_row_num: 0,
-            current_location: String::new(),
             result: vec![],
             table_config,
-        };
-        writer.open_new_writer().await?;
-        Ok(writer)
+        })
     }
 
     fn should_split(&self) -> bool {
@@ -66,8 +65,12 @@ impl RollingWriter {
                 >= self.table_config.rolling_writer.target_file_size_in_bytes
     }
 
-    async fn close_current_writer(&mut self) -> Result<()> {
-        let current_writer = self.current_writer.take().expect("Should not be none here");
+    async fn prepare_new_writer(&mut self) -> Result<()> {
+        // close current writer
+        let current_writer = self
+            .current_writer
+            .take()
+            .expect("Call this when current writer is not none");
         let (meta_data, written_size) = current_writer.close().await?;
 
         // Check if this file is empty
@@ -79,10 +82,17 @@ impl RollingWriter {
             return Ok(());
         }
 
+        // reset status
+        let ori_location = std::mem::replace(
+            &mut self.current_location,
+            self.location_generator.generate_name(),
+        );
+        self.current_row_num = 0;
+
         self.result.push(DataFileBuilder::new(
             meta_data,
             self.table_location.clone(),
-            self.current_location.clone(),
+            ori_location,
             written_size,
         ));
 
@@ -90,12 +100,8 @@ impl RollingWriter {
     }
 
     async fn open_new_writer(&mut self) -> Result<()> {
-        // open new write must call when current writer is closed or inited.
-        assert!(self.current_writer.is_none());
-
-        let location = self.location_generator.generate_name();
-        let file_writer = self.operator.writer(&location).await?;
         let current_writer = {
+            let file_writer = self.operator.writer(&self.current_location).await?;
             let mut props = WriterProperties::builder()
                 .set_writer_version(WriterVersion::PARQUET_1_0)
                 .set_bloom_filter_enabled(self.table_config.parquet_writer.enable_bloom_filter)
@@ -113,8 +119,6 @@ impl RollingWriter {
                 .build()?
         };
         self.current_writer = Some(current_writer);
-        self.current_row_num = 0;
-        self.current_location = location;
         Ok(())
     }
 
@@ -163,6 +167,10 @@ impl RollingWriter {
 impl FileAppender for RollingWriter {
     /// Write a record batch. The `DataFileWriter` will create a new file when the current row num is greater than `target_file_row_num`.
     async fn write(&mut self, batch: RecordBatch) -> Result<()> {
+        if self.current_writer.is_none() {
+            self.open_new_writer().await?;
+        }
+
         let batch = self.try_cast_batch(batch)?;
         self.current_writer
             .as_mut()
@@ -172,15 +180,14 @@ impl FileAppender for RollingWriter {
         self.current_row_num += batch.num_rows();
 
         if self.should_split() {
-            self.close_current_writer().await?;
-            self.open_new_writer().await?;
+            self.prepare_new_writer().await?;
         }
         Ok(())
     }
 
     /// Complte the write and return the list of `DataFile` as result.
     async fn close(&mut self) -> Result<Vec<DataFileBuilder>> {
-        self.close_current_writer().await?;
+        self.prepare_new_writer().await?;
         Ok(self.result.drain(0..).collect())
     }
 

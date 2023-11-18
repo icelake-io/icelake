@@ -68,8 +68,7 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> SortedPositionDeleteWriter<L> {
     async fn flush(&mut self) -> Result<()> {
         let file_appender = self
             .file_appender_factory
-            .build(self.schema.clone(), self.location_generator.clone())
-            .await?;
+            .build(self.schema.clone(), self.location_generator.clone())?;
         let mut writer = PositionDeleteWriter::try_new(None, file_appender)?;
         let delete_cache = std::mem::take(&mut self.delete_cache);
         for (file_path, mut delete_vec) in delete_cache.into_iter() {

@@ -35,7 +35,7 @@ pub enum AppendOnlyWriter<L: FileAppenderLayer<DefaultFileAppender>> {
 
 impl<L: FileAppenderLayer<DefaultFileAppender>> AppendOnlyWriter<L> {
     /// Create a new `TaskWriter`.
-    pub async fn try_new(
+    pub fn try_new(
         table_metadata: TableMetadata,
         file_appender_factory: FileAppenderBuilder<L>,
         location_generator: Arc<FileLocationGenerator>,
@@ -51,9 +51,7 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> AppendOnlyWriter<L> {
 
         if current_partition_spec.is_unpartitioned() {
             Ok(Self::Unpartitioned(DataFileWriter::try_new(
-                file_appender_factory
-                    .build(arrow_schema, location_generator)
-                    .await?,
+                file_appender_factory.build(arrow_schema, location_generator)?,
             )?))
         } else {
             let column_ids = current_partition_spec
@@ -144,8 +142,7 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> PartitionedAppendOnlyWriter<L> {
                     writer
                         .insert(DataFileWriter::try_new(
                             self.file_appender_factory
-                                .build(self.schema.clone(), self.location_generator.clone())
-                                .await?,
+                                .build(self.schema.clone(), self.location_generator.clone())?,
                         )?)
                         .write(batch)
                         .await?;

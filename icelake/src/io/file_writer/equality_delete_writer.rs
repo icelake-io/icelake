@@ -21,7 +21,7 @@ pub struct EqualityDeleteWriter<F: FileAppender> {
 }
 
 /// Create a new `EqualityDeleteWriter`.
-pub async fn new_eq_delete_writer<L: FileAppenderLayer<DefaultFileAppender>>(
+pub fn new_eq_delete_writer<L: FileAppenderLayer<DefaultFileAppender>>(
     arrow_schema: SchemaRef,
     equality_ids: Vec<usize>,
     location_generator: Arc<location_generator::FileLocationGenerator>,
@@ -55,7 +55,7 @@ pub async fn new_eq_delete_writer<L: FileAppenderLayer<DefaultFileAppender>>(
     })?);
 
     Ok(EqualityDeleteWriter {
-        inner_writer: factory.build(delete_schema, location_generator).await?,
+        inner_writer: factory.build(delete_schema, location_generator)?,
         equality_ids,
         col_id_idx,
     })

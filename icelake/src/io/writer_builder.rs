@@ -131,7 +131,7 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> WriterBuilder<L> {
     }
 
     /// Build a `EqualityDeleteWriter`.
-    pub async fn build_equality_delete_writer(
+    pub fn build_equality_delete_writer(
         self,
         equality_ids: Vec<usize>,
     ) -> Result<EqualityDeleteWriter<L::R>> {
@@ -142,7 +142,6 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> WriterBuilder<L> {
             delete_location_generator,
             &self.file_appender_builder,
         )
-        .await
     }
 
     /// Build a `EqualityDeltaWriter`.
@@ -160,23 +159,18 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> WriterBuilder<L> {
             data_location_generator,
             delete_location_generator,
         )
-        .await
     }
 
-    pub async fn build_append_only_writer(self) -> Result<AppendOnlyWriter<L>> {
+    pub fn build_append_only_writer(self) -> Result<AppendOnlyWriter<L>> {
         let data_location_generator = self.data_location_generator()?.into();
         AppendOnlyWriter::try_new(
             self.table_metadata,
             self.file_appender_builder,
             data_location_generator,
         )
-        .await
     }
 
-    pub async fn build_upsert_writer(
-        self,
-        unique_column_ids: Vec<usize>,
-    ) -> Result<UpsertWriter<L>> {
+    pub fn build_upsert_writer(self, unique_column_ids: Vec<usize>) -> Result<UpsertWriter<L>> {
         let data_location_generator = self.data_location_generator()?.into();
         let delete_location_generator = self.delete_location_generator()?.into();
         UpsertWriter::try_new(
@@ -187,6 +181,5 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> WriterBuilder<L> {
             data_location_generator,
             delete_location_generator,
         )
-        .await
     }
 }

@@ -127,7 +127,7 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> FileAppenderBuilder<L> {
         }
     }
 
-    pub async fn build(
+    pub fn build(
         &self,
         schema: SchemaRef,
         location_generator: Arc<FileLocationGenerator>,
@@ -138,8 +138,7 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> FileAppenderBuilder<L> {
             location_generator,
             schema,
             self.table_config.clone(),
-        )
-        .await?;
+        )?;
 
         Ok(self.layer.layer(inner))
     }

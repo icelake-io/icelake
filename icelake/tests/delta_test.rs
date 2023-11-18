@@ -226,7 +226,6 @@ impl DeltaTest {
             .await
             .unwrap()
             .build_upsert_writer(vec![1, 2])
-            .await
             .unwrap();
 
         self.write_and_delete_with_delta(
@@ -291,7 +290,6 @@ impl DeltaTest {
             .await
             .unwrap()
             .build_upsert_writer(vec![1, 2])
-            .await
             .unwrap();
 
         self.write_and_delete_with_delta(
@@ -313,7 +311,6 @@ impl DeltaTest {
             .await
             .unwrap()
             .build_upsert_writer(vec![1, 2])
-            .await
             .unwrap();
 
         self.write_and_delete_with_delta(

@@ -34,7 +34,7 @@ pub const INSERT_OP: i32 = 1;
 pub const DELETE_OP: i32 = 2;
 
 impl<L: FileAppenderLayer<DefaultFileAppender>> UpsertWriter<L> {
-    pub async fn try_new(
+    pub fn try_new(
         table_metadata: TableMetadata,
         table_config: TableConfigRef,
         unique_column_ids: Vec<usize>,
@@ -53,17 +53,14 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> UpsertWriter<L> {
         let current_partition_spec = table_metadata.current_partition_spec()?;
 
         if current_partition_spec.is_unpartitioned() {
-            Ok(Self::Unpartitioned(
-                EqualityDeltaWriter::try_new(
-                    arrow_schema,
-                    table_config,
-                    unique_column_ids,
-                    file_appender_factory,
-                    data_location_generator,
-                    delete_location_generator,
-                )
-                .await?,
-            ))
+            Ok(Self::Unpartitioned(EqualityDeltaWriter::try_new(
+                arrow_schema,
+                table_config,
+                unique_column_ids,
+                file_appender_factory,
+                data_location_generator,
+                delete_location_generator,
+            )?))
         } else {
             let column_ids = current_partition_spec
                 .fields
@@ -168,7 +165,7 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> PartitionedUpsertWriter<L> {
         }
     }
 
-    async fn get_writer_partition_key(
+    fn get_writer_partition_key(
         &mut self,
         partition_key: PartitionKey,
     ) -> Result<&mut EqualityDeltaWriter<L>> {
@@ -181,8 +178,7 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> PartitionedUpsertWriter<L> {
                     self.file_appender_factory.clone(),
                     self.data_location_generator.clone(),
                     self.delete_location_generator.clone(),
-                )
-                .await?;
+                )?;
                 Ok(v.insert(writer))
             }
             Entry::Occupied(v) => Ok(v.into_mut()),
@@ -192,8 +188,7 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> PartitionedUpsertWriter<L> {
     pub async fn write(&mut self, batch: RecordBatch) -> Result<()> {
         let partitions = self.partition_splitter.split_by_partition(&batch)?;
         for (partition_key, batch) in partitions {
-            self.get_writer_partition_key(partition_key)
-                .await?
+            self.get_writer_partition_key(partition_key)?
                 .write(batch)
                 .await?;
         }
@@ -203,8 +198,7 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> PartitionedUpsertWriter<L> {
     pub async fn delete(&mut self, batch: RecordBatch) -> Result<()> {
         let partitions = self.partition_splitter.split_by_partition(&batch)?;
         for (partition_key, batch) in partitions {
-            self.get_writer_partition_key(partition_key)
-                .await?
+            self.get_writer_partition_key(partition_key)?
                 .delete(batch)
                 .await?;
         }

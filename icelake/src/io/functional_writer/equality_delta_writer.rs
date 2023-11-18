@@ -60,7 +60,7 @@ pub struct EqDeltaWriterMetrics {
 impl<L: FileAppenderLayer<DefaultFileAppender>> EqualityDeltaWriter<L> {
     /// Create a new `EqualityDeltaWriter`.
     #[allow(clippy::too_many_arguments)]
-    pub async fn try_new(
+    pub fn try_new(
         arrow_schema: SchemaRef,
         table_config: TableConfigRef,
         unique_column_ids: Vec<usize>,
@@ -87,17 +87,14 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> EqualityDeltaWriter<L> {
 
         Ok(Self {
             data_file_writer: DataFileWriter::try_new(
-                file_appender_factory
-                    .build(arrow_schema.clone(), data_location_generator)
-                    .await?,
+                file_appender_factory.build(arrow_schema.clone(), data_location_generator)?,
             )?,
             eq_delete_writer: new_eq_delete_writer(
                 arrow_schema.clone(),
                 unique_column_ids,
                 delete_location_generator.clone(),
                 &file_appender_factory,
-            )
-            .await?,
+            )?,
             sorted_pos_delete_writer: SortedPositionDeleteWriter::new(
                 table_config.clone(),
                 file_appender_factory,

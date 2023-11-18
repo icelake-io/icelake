@@ -166,7 +166,6 @@ impl TestFixture {
                 .await
                 .unwrap()
                 .build_append_only_writer()
-                .await
                 .unwrap();
 
             for record_batch in records {

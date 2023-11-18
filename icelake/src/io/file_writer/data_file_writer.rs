@@ -100,8 +100,7 @@ mod test {
                 "/tmp/table".to_string(),
                 Arc::new(TableConfig::default()),
             )
-            .build(to_write.schema(), location_generator.into())
-            .await?,
+            .build(to_write.schema(), location_generator.into())?,
         )?;
 
         writer.write(to_write.clone()).await?;
