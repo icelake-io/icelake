@@ -167,6 +167,8 @@ impl RollingWriter {
 impl FileAppender for RollingWriter {
     /// Write a record batch. The `DataFileWriter` will create a new file when the current row num is greater than `target_file_row_num`.
     async fn write(&mut self, batch: RecordBatch) -> Result<()> {
+        // # TODO
+        // Optimize by `unlikely`
         if self.current_writer.is_none() {
             self.open_new_writer().await?;
         }
