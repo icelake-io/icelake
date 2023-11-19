@@ -16,6 +16,33 @@ use opendal::Operator;
 
 use super::FileAppender;
 
+struct InnerFileWriter {
+    pub location: String,
+    pub row_num: usize,
+
+    /// To avoid async new, the writer will be laze created util open. So use `Option` here.
+    /// But most of the time, the current writer will not be none.
+    pub writer: Option<ParquetWriter>,
+}
+
+impl InnerFileWriter {
+    fn new(file_location: String) -> Self {
+        Self {
+            location: file_location,
+            row_num: 0,
+            writer: None,
+        }
+    }
+
+    fn open(&mut self, writer: ParquetWriter) {
+        self.writer = Some(writer);
+    }
+
+    fn is_open(&self) -> bool {
+        self.writer.is_some()
+    }
+}
+
 /// A writer capable of splitting incoming data into multiple files within one spec/partition based on the target file size.
 /// When complete, it will return a list of `FileMetaData`.
 /// This writer should be used by specific content writer(`DataFileWriter` and `PositionDeleteFileWriter`), they should convert
@@ -26,11 +53,7 @@ pub struct RollingWriter {
     location_generator: Arc<FileLocationGenerator>,
     arrow_schema: SchemaRef,
 
-    /// To avoid async new, the current writer will be laze created util the first write. So use `Option` here.
-    /// But most of the time, the current writer will not be none.
-    current_writer: Option<ParquetWriter>,
-    current_row_num: usize,
-    current_location: String,
+    file_writer: InnerFileWriter,
 
     result: Vec<DataFileBuilder>,
 
@@ -49,50 +72,34 @@ impl RollingWriter {
         Ok(Self {
             operator,
             table_location,
-            current_location: location_generator.generate_name(),
+            file_writer: InnerFileWriter::new(location_generator.generate_name()),
             location_generator,
             arrow_schema,
-            current_writer: None,
-            current_row_num: 0,
             result: vec![],
             table_config,
         })
     }
 
     fn should_split(&self) -> bool {
-        self.current_row_num % self.table_config.rolling_writer.rows_per_file == 0
-            && self.current_writer.as_ref().unwrap().get_written_size()
+        self.file_writer.row_num % self.table_config.rolling_writer.rows_per_file == 0
+            && self.file_writer.writer.as_ref().unwrap().get_written_size()
                 >= self.table_config.rolling_writer.target_file_size_in_bytes
     }
 
-    async fn prepare_new_writer(&mut self) -> Result<()> {
-        // close current writer
-        let current_writer = self
-            .current_writer
-            .take()
-            .expect("Call this when current writer is not none");
-        let (meta_data, written_size) = current_writer.close().await?;
-
-        // Check if this file is empty
-        if meta_data.num_rows == 0 {
-            self.operator
-                .delete(&self.current_location)
-                .await
-                .expect("Delete file failed");
+    async fn flush_open_file(&mut self) -> Result<()> {
+        if !self.file_writer.is_open() {
             return Ok(());
         }
-
-        // reset status
-        let ori_location = std::mem::replace(
-            &mut self.current_location,
-            self.location_generator.generate_name(),
+        let open_writer = std::mem::replace(
+            &mut self.file_writer,
+            InnerFileWriter::new(self.location_generator.generate_name()),
         );
-        self.current_row_num = 0;
-
+        // close current writer
+        let (meta_data, written_size) = open_writer.writer.unwrap().close().await?;
         self.result.push(DataFileBuilder::new(
             meta_data,
             self.table_location.clone(),
-            ori_location,
+            open_writer.location,
             written_size,
         ));
 
@@ -100,8 +107,8 @@ impl RollingWriter {
     }
 
     async fn open_new_writer(&mut self) -> Result<()> {
-        let current_writer = {
-            let file_writer = self.operator.writer(&self.current_location).await?;
+        let new_writer = {
+            let file_writer = self.operator.writer(&self.file_writer.location).await?;
             let mut props = WriterProperties::builder()
                 .set_writer_version(WriterVersion::PARQUET_1_0)
                 .set_bloom_filter_enabled(self.table_config.parquet_writer.enable_bloom_filter)
@@ -118,7 +125,7 @@ impl RollingWriter {
                 .with_properties(props.build())
                 .build()?
         };
-        self.current_writer = Some(current_writer);
+        self.file_writer.open(new_writer);
         Ok(())
     }
 
@@ -169,35 +176,38 @@ impl FileAppender for RollingWriter {
     async fn write(&mut self, batch: RecordBatch) -> Result<()> {
         // # TODO
         // Optimize by `unlikely`
-        if self.current_writer.is_none() {
+        if !self.file_writer.is_open() {
             self.open_new_writer().await?;
         }
 
         let batch = self.try_cast_batch(batch)?;
-        self.current_writer
+        self.file_writer
+            .writer
             .as_mut()
-            .expect("Should not be none here")
+            .unwrap()
             .write(&batch)
             .await?;
-        self.current_row_num += batch.num_rows();
+        self.file_writer.row_num += batch.num_rows();
 
         if self.should_split() {
-            self.prepare_new_writer().await?;
+            self.flush_open_file().await?;
+            self.open_new_writer().await?;
         }
+
         Ok(())
     }
 
     /// Complte the write and return the list of `DataFile` as result.
     async fn close(&mut self) -> Result<Vec<DataFileBuilder>> {
-        self.prepare_new_writer().await?;
+        self.flush_open_file().await?;
         Ok(self.result.drain(0..).collect())
     }
 
     fn current_file(&self) -> String {
-        format!("{}/{}", self.table_location, self.current_location)
+        format!("{}/{}", self.table_location, self.file_writer.location)
     }
 
     fn current_row(&self) -> usize {
-        self.current_row_num
+        self.file_writer.row_num
     }
 }
