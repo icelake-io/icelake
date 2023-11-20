@@ -3,9 +3,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::config::TableConfigRef;
-use crate::io::{
-    location_generator, DefaultFileAppender, FileAppender, FileAppenderBuilder, FileAppenderLayer,
-};
+use crate::io::{RecordBatchWriter, RecordBatchWriterBuilder};
 use crate::types::{Any, DataFileBuilder, Field, Primitive, Schema};
 use crate::{types::Struct, Result};
 use crate::{Error, ErrorKind};
@@ -13,11 +11,10 @@ use arrow_array::{ArrayRef, Int64Array, RecordBatch, StringArray};
 use arrow_schema::SchemaRef;
 
 /// A PositionDeleteWriter used to write position delete, it will sort the incoming delete by file_path and pos.
-pub struct SortedPositionDeleteWriter<L: FileAppenderLayer<DefaultFileAppender>> {
+pub struct SortedPositionDeleteWriter<B: RecordBatchWriterBuilder> {
     table_config: TableConfigRef,
     schema: SchemaRef,
-    file_appender_factory: FileAppenderBuilder<L>,
-    location_generator: Arc<location_generator::FileLocationGenerator>,
+    inner_writer_builder: B,
 
     delete_cache: BTreeMap<String, Vec<i64>>,
     record_num: usize,
@@ -25,18 +22,13 @@ pub struct SortedPositionDeleteWriter<L: FileAppenderLayer<DefaultFileAppender>>
     result: Vec<DataFileBuilder>,
 }
 
-impl<L: FileAppenderLayer<DefaultFileAppender>> SortedPositionDeleteWriter<L> {
+impl<B: RecordBatchWriterBuilder> SortedPositionDeleteWriter<B> {
     /// Create a new `SortedPositionDeleteWriter`.
-    pub fn new(
-        table_config: TableConfigRef,
-        file_appender_factory: FileAppenderBuilder<L>,
-        location_generator: Arc<location_generator::FileLocationGenerator>,
-    ) -> Self {
+    pub fn new(table_config: TableConfigRef, inner_writer_builder: B) -> Self {
         Self {
             table_config,
             delete_cache: BTreeMap::new(),
-            file_appender_factory,
-            location_generator,
+            inner_writer_builder,
             record_num: 0,
             schema: arrow_schema_of(None).unwrap(),
             result: vec![],
@@ -66,11 +58,12 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> SortedPositionDeleteWriter<L> {
 
     /// Write the delete cache into delete file.
     async fn flush(&mut self) -> Result<()> {
-        let file_appender = self
-            .file_appender_factory
-            .build(self.schema.clone(), self.location_generator.clone())
+        let writer = self
+            .inner_writer_builder
+            .clone()
+            .build(&self.schema)
             .await?;
-        let mut writer = PositionDeleteWriter::try_new(None, file_appender)?;
+        let mut writer = PositionDeleteWriter::try_new(None, writer)?;
         let delete_cache = std::mem::take(&mut self.delete_cache);
         for (file_path, mut delete_vec) in delete_cache.into_iter() {
             delete_vec.sort();
@@ -129,12 +122,12 @@ fn arrow_schema_of(row_type: Option<Arc<Struct>>) -> Result<SchemaRef> {
 /// - They're belong to partition.
 ///
 /// But PositionDeleteWriter will not guarantee and check above. It is the caller's responsibility to guarantee them.
-pub struct PositionDeleteWriter<F: FileAppender> {
+pub struct PositionDeleteWriter<F: RecordBatchWriter> {
     schema: SchemaRef,
     inner_writer: F,
 }
 
-impl<F: FileAppender> PositionDeleteWriter<F> {
+impl<F: RecordBatchWriter> PositionDeleteWriter<F> {
     /// Create a new `PositionDeleteWriter`.
     fn try_new(row_type: Option<Arc<Struct>>, inner_writer: F) -> Result<Self> {
         Ok(Self {

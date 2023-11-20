@@ -4,10 +4,7 @@ use std::{
 };
 
 use crate::{
-    io::{
-        location_generator::FileLocationGenerator, DefaultFileAppender, FileAppenderBuilder,
-        FileAppenderLayer,
-    },
+    io::{RecordBatchWriterBuilder, SingletonWriterStatus},
     types::{Any, FieldProjector, PartitionKey},
     ErrorKind, Result,
 };
@@ -25,22 +22,26 @@ use arrow_ord::partition::partition;
 
 use super::{DeltaWriterResult, EqualityDeltaWriter};
 
-pub enum UpsertWriter<L: FileAppenderLayer<DefaultFileAppender>> {
-    Unpartitioned(EqualityDeltaWriter<L>),
-    Partitioned(PartitionedUpsertWriter<L>),
+pub enum UpsertWriter<B: RecordBatchWriterBuilder>
+where
+    B::R: SingletonWriterStatus,
+{
+    Unpartitioned(EqualityDeltaWriter<B>),
+    Partitioned(PartitionedUpsertWriter<B>),
 }
 
 pub const INSERT_OP: i32 = 1;
 pub const DELETE_OP: i32 = 2;
 
-impl<L: FileAppenderLayer<DefaultFileAppender>> UpsertWriter<L> {
+impl<B: RecordBatchWriterBuilder> UpsertWriter<B>
+where
+    B::R: SingletonWriterStatus,
+{
     pub async fn try_new(
         table_metadata: TableMetadata,
         table_config: TableConfigRef,
         unique_column_ids: Vec<usize>,
-        file_appender_factory: FileAppenderBuilder<L>,
-        data_location_generator: Arc<FileLocationGenerator>,
-        delete_location_generator: Arc<FileLocationGenerator>,
+        writer_builder: B,
     ) -> Result<Self> {
         let current_schema = table_metadata.current_schema()?;
         let arrow_schema = Arc::new(current_schema.clone().try_into().map_err(|e| {
@@ -58,9 +59,7 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> UpsertWriter<L> {
                     arrow_schema,
                     table_config,
                     unique_column_ids,
-                    file_appender_factory,
-                    data_location_generator,
-                    delete_location_generator,
+                    writer_builder,
                 )
                 .await?,
             ))
@@ -85,9 +84,7 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> UpsertWriter<L> {
                 unique_column_ids,
                 arrow_schema,
                 partition_splitter,
-                file_appender_factory,
-                data_location_generator,
-                delete_location_generator,
+                writer_builder,
             )))
         }
     }
@@ -135,26 +132,28 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> UpsertWriter<L> {
     }
 }
 
-pub struct PartitionedUpsertWriter<L: FileAppenderLayer<DefaultFileAppender>> {
+pub struct PartitionedUpsertWriter<B: RecordBatchWriterBuilder>
+where
+    B::R: SingletonWriterStatus,
+{
     table_config: TableConfigRef,
     schema: SchemaRef,
-    writers: HashMap<crate::types::PartitionKey, EqualityDeltaWriter<L>>,
+    writers: HashMap<crate::types::PartitionKey, EqualityDeltaWriter<B>>,
     partition_splitter: PartitionSplitter,
     unique_column_ids: Vec<usize>,
-    file_appender_factory: FileAppenderBuilder<L>,
-    data_location_generator: Arc<FileLocationGenerator>,
-    delete_location_generator: Arc<FileLocationGenerator>,
+    writer_builder: B,
 }
 
-impl<L: FileAppenderLayer<DefaultFileAppender>> PartitionedUpsertWriter<L> {
+impl<B: RecordBatchWriterBuilder> PartitionedUpsertWriter<B>
+where
+    B::R: SingletonWriterStatus,
+{
     pub fn new(
         table_config: TableConfigRef,
         unique_column_ids: Vec<usize>,
         schema: SchemaRef,
         partition_splitter: PartitionSplitter,
-        file_appender_factory: FileAppenderBuilder<L>,
-        data_location_generator: Arc<FileLocationGenerator>,
-        delete_location_generator: Arc<FileLocationGenerator>,
+        writer_builder: B,
     ) -> Self {
         Self {
             table_config,
@@ -162,25 +161,21 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> PartitionedUpsertWriter<L> {
             writers: HashMap::new(),
             partition_splitter,
             unique_column_ids,
-            file_appender_factory,
-            data_location_generator,
-            delete_location_generator,
+            writer_builder,
         }
     }
 
     async fn get_writer_partition_key(
         &mut self,
         partition_key: PartitionKey,
-    ) -> Result<&mut EqualityDeltaWriter<L>> {
+    ) -> Result<&mut EqualityDeltaWriter<B>> {
         match self.writers.entry(partition_key) {
             Entry::Vacant(v) => {
                 let writer = EqualityDeltaWriter::try_new(
                     self.schema.clone(),
                     self.table_config.clone(),
                     self.unique_column_ids.clone(),
-                    self.file_appender_factory.clone(),
-                    self.data_location_generator.clone(),
-                    self.delete_location_generator.clone(),
+                    self.writer_builder.clone(),
                 )
                 .await?;
                 Ok(v.insert(writer))

@@ -2,10 +2,7 @@
 use std::sync::Arc;
 
 use crate::{
-    io::{
-        location_generator, DefaultFileAppender, FileAppender, FileAppenderBuilder,
-        FileAppenderLayer,
-    },
+    io::{RecordBatchWriter, RecordBatchWriterBuilder},
     types::{DataFileBuilder, COLUMN_ID_META_KEY},
     Error, ErrorKind, Result,
 };
@@ -14,19 +11,18 @@ use arrow_array::RecordBatch;
 use arrow_schema::SchemaRef;
 
 /// EqualityDeleteWriter is a writer that writes to a file in the equality delete format.
-pub struct EqualityDeleteWriter<F: FileAppender> {
+pub struct EqualityDeleteWriter<F: RecordBatchWriter> {
     inner_writer: F,
     equality_ids: Vec<usize>,
     col_id_idx: Vec<usize>,
 }
 
 /// Create a new `EqualityDeleteWriter`.
-pub async fn new_eq_delete_writer<L: FileAppenderLayer<DefaultFileAppender>>(
+pub async fn new_eq_delete_writer<B: RecordBatchWriterBuilder>(
     arrow_schema: SchemaRef,
     equality_ids: Vec<usize>,
-    location_generator: Arc<location_generator::FileLocationGenerator>,
-    factory: &FileAppenderBuilder<L>,
-) -> Result<EqualityDeleteWriter<L::R>> {
+    writer_builder: B,
+) -> Result<EqualityDeleteWriter<B::R>> {
     let mut col_id_idx = vec![];
     for &id in equality_ids.iter() {
         arrow_schema.fields().iter().enumerate().any(|(idx, f)| {
@@ -55,13 +51,13 @@ pub async fn new_eq_delete_writer<L: FileAppenderLayer<DefaultFileAppender>>(
     })?);
 
     Ok(EqualityDeleteWriter {
-        inner_writer: factory.build(delete_schema, location_generator).await?,
+        inner_writer: writer_builder.build(&delete_schema).await?,
         equality_ids,
         col_id_idx,
     })
 }
 
-impl<F: FileAppender> EqualityDeleteWriter<F> {
+impl<F: RecordBatchWriter> EqualityDeleteWriter<F> {
     /// Write a record batch.
     pub async fn write(&mut self, batch: RecordBatch) -> Result<()> {
         self.inner_writer

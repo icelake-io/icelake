@@ -1,11 +1,8 @@
 //! task_writer module provide a task writer for writing data in a table.
 //! table writer used directly by the compute engine.
 use crate::error::Result;
-use crate::io::location_generator::FileLocationGenerator;
 use crate::io::DataFileWriter;
-use crate::io::DefaultFileAppender;
-use crate::io::FileAppenderBuilder;
-use crate::io::FileAppenderLayer;
+use crate::io::RecordBatchWriterBuilder;
 use crate::types::Any;
 use crate::types::FieldProjector;
 use crate::types::PartitionKey;
@@ -26,20 +23,16 @@ use std::sync::Arc;
 /// If the table metadata has no partition spec, it will create a unpartitioned
 /// task writer. The unpartitioned task writer will write all data using a single
 /// data file writer.
-pub enum AppendOnlyWriter<L: FileAppenderLayer<DefaultFileAppender>> {
+pub enum AppendOnlyWriter<B: RecordBatchWriterBuilder> {
     /// Unpartitioned task writer
-    Unpartitioned(DataFileWriter<L::R>),
+    Unpartitioned(DataFileWriter<B::R>),
     /// Partitioned task writer
-    Partitioned(PartitionedAppendOnlyWriter<L>),
+    Partitioned(PartitionedAppendOnlyWriter<B>),
 }
 
-impl<L: FileAppenderLayer<DefaultFileAppender>> AppendOnlyWriter<L> {
+impl<B: RecordBatchWriterBuilder> AppendOnlyWriter<B> {
     /// Create a new `TaskWriter`.
-    pub async fn try_new(
-        table_metadata: TableMetadata,
-        file_appender_factory: FileAppenderBuilder<L>,
-        location_generator: Arc<FileLocationGenerator>,
-    ) -> Result<Self> {
+    pub async fn try_new(table_metadata: TableMetadata, writer_builder: B) -> Result<Self> {
         let current_schema = table_metadata.current_schema()?;
         let current_partition_spec = table_metadata.current_partition_spec()?;
         let arrow_schema = Arc::new(current_schema.clone().try_into().map_err(|e| {
@@ -51,9 +44,7 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> AppendOnlyWriter<L> {
 
         if current_partition_spec.is_unpartitioned() {
             Ok(Self::Unpartitioned(DataFileWriter::try_new(
-                file_appender_factory
-                    .build(arrow_schema, location_generator)
-                    .await?,
+                writer_builder.build(&arrow_schema).await?,
             )?))
         } else {
             let column_ids = current_partition_spec
@@ -73,9 +64,8 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> AppendOnlyWriter<L> {
             )?;
             Ok(Self::Partitioned(PartitionedAppendOnlyWriter::try_new(
                 arrow_schema,
-                location_generator,
                 partition_splitter,
-                file_appender_factory,
+                writer_builder,
             )?))
         }
     }
@@ -103,29 +93,26 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> AppendOnlyWriter<L> {
 }
 
 /// Partition append only writer
-pub struct PartitionedAppendOnlyWriter<L: FileAppenderLayer<DefaultFileAppender>> {
-    location_generator: Arc<FileLocationGenerator>,
+pub struct PartitionedAppendOnlyWriter<B: RecordBatchWriterBuilder> {
     schema: ArrowSchemaRef,
 
-    writers: HashMap<PartitionKey, DataFileWriter<L::R>>,
+    writers: HashMap<PartitionKey, DataFileWriter<B::R>>,
     partition_splitter: PartitionSplitter,
-    file_appender_factory: FileAppenderBuilder<L>,
+    writer_builder: B,
 }
 
-impl<L: FileAppenderLayer<DefaultFileAppender>> PartitionedAppendOnlyWriter<L> {
+impl<B: RecordBatchWriterBuilder> PartitionedAppendOnlyWriter<B> {
     /// Create a new `PartitionedWriter`.
     #[allow(clippy::too_many_arguments)]
     pub fn try_new(
         schema: ArrowSchemaRef,
-        location_generator: Arc<FileLocationGenerator>,
         partition_splitter: PartitionSplitter,
-        file_appender_factory: FileAppenderBuilder<L>,
+        writer_builder: B,
     ) -> Result<Self> {
         Ok(Self {
-            location_generator,
             writers: HashMap::new(),
             partition_splitter,
-            file_appender_factory,
+            writer_builder,
             schema,
         })
     }
@@ -143,8 +130,9 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> PartitionedAppendOnlyWriter<L> {
                 Entry::Vacant(writer) => {
                     writer
                         .insert(DataFileWriter::try_new(
-                            self.file_appender_factory
-                                .build(self.schema.clone(), self.location_generator.clone())
+                            self.writer_builder
+                                .clone()
+                                .build(&self.schema.clone())
                                 .await?,
                         )?)
                         .write(batch)

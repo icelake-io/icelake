@@ -5,16 +5,56 @@ use async_trait::async_trait;
 use parquet::file::properties::{WriterProperties, WriterVersion};
 use std::sync::Arc;
 
+use crate::config::{ParquetWriterConfig, RollingWriterConfig};
 use crate::io::location_generator::FileLocationGenerator;
 use crate::io::parquet::ParquetWriter;
+use crate::io::{RecordBatchWriter, RecordBatchWriterBuilder, SingletonWriterStatus};
 
+use crate::io::parquet::ParquetWriterBuilder;
 use crate::types::DataFileBuilder;
-use crate::{config::TableConfigRef, io::parquet::ParquetWriterBuilder};
 use crate::{Error, Result};
 use arrow_schema::{DataType, SchemaRef};
 use opendal::Operator;
 
-use super::FileAppender;
+#[derive(Clone)]
+pub struct RollingWriterBuilder {
+    location_generator: Arc<FileLocationGenerator>,
+    config: RollingWriterConfig,
+    parquet_config: ParquetWriterConfig,
+    operator: Operator,
+}
+
+impl RollingWriterBuilder {
+    pub fn new(
+        operator: Operator,
+        location_generator: Arc<FileLocationGenerator>,
+        config: RollingWriterConfig,
+        parquet_config: ParquetWriterConfig,
+    ) -> Self {
+        Self {
+            location_generator,
+            config,
+            parquet_config,
+            operator,
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl RecordBatchWriterBuilder for RollingWriterBuilder {
+    type R = RollingWriter;
+
+    async fn build(self, schema: &SchemaRef) -> Result<Self::R> {
+        RollingWriter::try_new(
+            self.operator,
+            self.location_generator,
+            schema.clone(),
+            self.config,
+            self.parquet_config,
+        )
+        .await
+    }
+}
 
 /// A writer capable of splitting incoming data into multiple files within one spec/partition based on the target file size.
 /// When complete, it will return a list of `FileMetaData`.
@@ -22,7 +62,6 @@ use super::FileAppender;
 /// `FileMetaData` to specific `DataFile`.
 pub struct RollingWriter {
     operator: Operator,
-    table_location: String,
     location_generator: Arc<FileLocationGenerator>,
     arrow_schema: SchemaRef,
 
@@ -33,37 +72,38 @@ pub struct RollingWriter {
 
     result: Vec<DataFileBuilder>,
 
-    table_config: TableConfigRef,
+    config: RollingWriterConfig,
+    parquet_config: ParquetWriterConfig,
 }
 
 impl RollingWriter {
     /// Create a new `DataFileWriter`.
     pub async fn try_new(
         operator: Operator,
-        table_location: String,
         location_generator: Arc<FileLocationGenerator>,
         arrow_schema: SchemaRef,
-        table_config: TableConfigRef,
+        config: RollingWriterConfig,
+        parquet_config: ParquetWriterConfig,
     ) -> Result<Self> {
         let mut writer = Self {
             operator,
-            table_location,
             location_generator,
             arrow_schema,
             current_writer: None,
             current_row_num: 0,
             current_location: String::new(),
             result: vec![],
-            table_config,
+            config,
+            parquet_config,
         };
         writer.open_new_writer().await?;
         Ok(writer)
     }
 
     fn should_split(&self) -> bool {
-        self.current_row_num % self.table_config.rolling_writer.rows_per_file == 0
+        self.current_row_num % self.config.rows_per_file == 0
             && self.current_writer.as_ref().unwrap().get_written_size()
-                >= self.table_config.rolling_writer.target_file_size_in_bytes
+                >= self.config.target_file_size_in_bytes
     }
 
     async fn close_current_writer(&mut self) -> Result<()> {
@@ -81,7 +121,7 @@ impl RollingWriter {
 
         self.result.push(DataFileBuilder::new(
             meta_data,
-            self.table_location.clone(),
+            self.location_generator.table_location().to_string(),
             self.current_location.clone(),
             written_size,
         ));
@@ -98,13 +138,13 @@ impl RollingWriter {
         let current_writer = {
             let mut props = WriterProperties::builder()
                 .set_writer_version(WriterVersion::PARQUET_1_0)
-                .set_bloom_filter_enabled(self.table_config.parquet_writer.enable_bloom_filter)
-                .set_compression(self.table_config.parquet_writer.compression)
-                .set_max_row_group_size(self.table_config.parquet_writer.max_row_group_size)
-                .set_write_batch_size(self.table_config.parquet_writer.write_batch_size)
-                .set_data_page_size_limit(self.table_config.parquet_writer.data_page_size);
+                .set_bloom_filter_enabled(self.parquet_config.enable_bloom_filter)
+                .set_compression(self.parquet_config.compression)
+                .set_max_row_group_size(self.parquet_config.max_row_group_size)
+                .set_write_batch_size(self.parquet_config.write_batch_size)
+                .set_data_page_size_limit(self.parquet_config.data_page_size);
 
-            if let Some(created_by) = self.table_config.parquet_writer.created_by.as_ref() {
+            if let Some(created_by) = self.parquet_config.created_by.as_ref() {
                 props = props.set_created_by(created_by.to_string());
             }
 
@@ -160,7 +200,7 @@ impl RollingWriter {
 // unsafe impl Sync for RollingWriter {}
 
 #[async_trait]
-impl FileAppender for RollingWriter {
+impl RecordBatchWriter for RollingWriter {
     /// Write a record batch. The `DataFileWriter` will create a new file when the current row num is greater than `target_file_row_num`.
     async fn write(&mut self, batch: RecordBatch) -> Result<()> {
         let batch = self.try_cast_batch(batch)?;
@@ -183,12 +223,18 @@ impl FileAppender for RollingWriter {
         self.close_current_writer().await?;
         Ok(self.result.drain(0..).collect())
     }
+}
 
+impl SingletonWriterStatus for RollingWriter {
     fn current_file(&self) -> String {
-        format!("{}/{}", self.table_location, self.current_location)
+        format!(
+            "{}/{}",
+            self.location_generator.table_location(),
+            self.current_location
+        )
     }
 
-    fn current_row(&self) -> usize {
+    fn current_row_num(&self) -> usize {
         self.current_row_num
     }
 }

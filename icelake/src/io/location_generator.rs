@@ -22,38 +22,18 @@ pub struct FileLocationGenerator {
     operation_id: String,
     file_format: DataFileFormat,
     suffix: Option<String>,
-    is_delete: bool,
     /// The data file relpath related to the base of table location.
     data_rel_location: String,
+
+    table_location: String,
 }
 
 impl FileLocationGenerator {
-    /// Create a file location generator for data file.
-    pub fn try_new_for_data_file(
+    pub fn try_new(
         table_metadata: &TableMetadata,
         partition_id: usize,
         task_id: usize,
         suffix: Option<String>,
-    ) -> Result<Self> {
-        Self::try_new(table_metadata, partition_id, task_id, suffix, false)
-    }
-
-    /// Create a file location generator for delete file.
-    pub fn try_new_for_delete_file(
-        table_metadata: &TableMetadata,
-        partition_id: usize,
-        task_id: usize,
-        suffix: Option<String>,
-    ) -> Result<Self> {
-        Self::try_new(table_metadata, partition_id, task_id, suffix, true)
-    }
-
-    fn try_new(
-        table_metadata: &TableMetadata,
-        partition_id: usize,
-        task_id: usize,
-        suffix: Option<String>,
-        is_delete: bool,
     ) -> Result<Self> {
         let operation_id = Uuid::new_v4().to_string();
 
@@ -67,8 +47,8 @@ impl FileLocationGenerator {
         )
         .unwrap_or(DataFileFormat::Parquet);
 
+        let table_location = table_metadata.location.clone();
         let data_rel_location = {
-            let base_location = &table_metadata.location;
             let data_location = table_metadata.properties.as_ref().and_then(|prop| {
                 prop.get(WRITE_DATA_LOCATION)
                     .or(prop.get(WRITE_FOLDER_STORAGE_LOCATION))
@@ -76,13 +56,13 @@ impl FileLocationGenerator {
             });
             if let Some(data_location) = data_location {
                 data_location
-                    .strip_prefix(base_location)
+                    .strip_prefix(&table_location)
                     .ok_or_else(|| {
                         Error::new(
                             ErrorKind::IcebergDataInvalid,
                             format!(
                                 "data location {} is not a subpath of table location {}",
-                                data_location, base_location
+                                data_location, table_location
                             ),
                         )
                     })?
@@ -100,7 +80,7 @@ impl FileLocationGenerator {
             file_format,
             suffix,
             data_rel_location,
-            is_delete,
+            table_location,
         })
     }
 
@@ -117,7 +97,7 @@ impl FileLocationGenerator {
             "".to_string()
         };
 
-        let mut file_name = format!(
+        let file_name = format!(
             "{:05}-{}-{}-{:05}{}",
             self.partition_id,
             self.task_id,
@@ -127,10 +107,6 @@ impl FileLocationGenerator {
             suffix,
         );
 
-        if self.is_delete {
-            file_name.push_str("-delete");
-        }
-
         let extension = self.file_format.to_string();
         let file_name = if file_name.to_ascii_lowercase().ends_with(&extension) {
             file_name
@@ -139,6 +115,10 @@ impl FileLocationGenerator {
         };
 
         format!("{}/{}", self.data_rel_location, file_name)
+    }
+
+    pub fn table_location(&self) -> &str {
+        &self.table_location
     }
 }
 
@@ -168,7 +148,7 @@ mod test {
             parse_table_metadata(&bs).expect("parse_table_metadata v1 must succeed")
         };
 
-        let generator = FileLocationGenerator::try_new_for_data_file(&metadata, 0, 0, None)?;
+        let generator = FileLocationGenerator::try_new(&metadata, 0, 0, None)?;
         let name = generator.generate_name();
         assert!(name.starts_with("data/"));
 
@@ -204,7 +184,7 @@ mod test {
         };
         metadata.properties = Some(mock_properties);
 
-        let generator = FileLocationGenerator::try_new_for_data_file(&metadata, 0, 0, None)?;
+        let generator = FileLocationGenerator::try_new(&metadata, 0, 0, None)?;
         let name = generator.generate_name();
         assert!(name.starts_with("/mock"));
         Ok(())
@@ -235,7 +215,7 @@ mod test {
         };
         metadata.properties = Some(mock_properties);
 
-        let generator = FileLocationGenerator::try_new_for_data_file(&metadata, 0, 0, None)?;
+        let generator = FileLocationGenerator::try_new(&metadata, 0, 0, None)?;
         let name = generator.generate_name();
         assert!(name.starts_with("/mock_storage"));
         Ok(())

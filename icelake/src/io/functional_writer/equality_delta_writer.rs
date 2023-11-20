@@ -1,12 +1,10 @@
 //! This module provide the `EqualityDeltaWriter`.
 use crate::config::TableConfigRef;
-use crate::io::location_generator::FileLocationGenerator;
 use crate::io::new_eq_delete_writer;
 use crate::io::DataFileWriter;
-use crate::io::DefaultFileAppender;
 use crate::io::EqualityDeleteWriter;
-use crate::io::FileAppenderBuilder;
-use crate::io::FileAppenderLayer;
+use crate::io::RecordBatchWriterBuilder;
+use crate::io::SingletonWriterStatus;
 use crate::io::SortedPositionDeleteWriter;
 use crate::types::DataFile;
 use crate::types::FieldProjector;
@@ -18,7 +16,6 @@ use arrow_row::{OwnedRow, RowConverter, Rows, SortField};
 use arrow_schema::SchemaRef;
 use arrow_select::filter;
 use std::collections::HashMap;
-use std::sync::Arc;
 
 struct PathOffset {
     pub path: String,
@@ -43,10 +40,13 @@ pub struct DeltaWriterResult {
 /// NOTE:
 /// This write is not as same with `upsert`. If the row with same unique columns is not written in
 /// this writer, it will not delete it.
-pub struct EqualityDeltaWriter<L: FileAppenderLayer<DefaultFileAppender>> {
-    data_file_writer: DataFileWriter<L::R>,
-    sorted_pos_delete_writer: SortedPositionDeleteWriter<L>,
-    eq_delete_writer: EqualityDeleteWriter<L::R>,
+pub struct EqualityDeltaWriter<B: RecordBatchWriterBuilder>
+where
+    B::R: SingletonWriterStatus,
+{
+    data_file_writer: DataFileWriter<B::R>,
+    sorted_pos_delete_writer: SortedPositionDeleteWriter<B>,
+    eq_delete_writer: EqualityDeleteWriter<B::R>,
     inserted_rows: HashMap<OwnedRow, PathOffset>,
     row_converter: RowConverter,
     col_extractor: FieldProjector,
@@ -57,16 +57,17 @@ pub struct EqDeltaWriterMetrics {
     pub sorted_pos_delete_cache_count: usize,
 }
 
-impl<L: FileAppenderLayer<DefaultFileAppender>> EqualityDeltaWriter<L> {
+impl<B: RecordBatchWriterBuilder> EqualityDeltaWriter<B>
+where
+    B::R: SingletonWriterStatus,
+{
     /// Create a new `EqualityDeltaWriter`.
     #[allow(clippy::too_many_arguments)]
     pub async fn try_new(
         arrow_schema: SchemaRef,
         table_config: TableConfigRef,
         unique_column_ids: Vec<usize>,
-        file_appender_factory: FileAppenderBuilder<L>,
-        data_location_generator: Arc<FileLocationGenerator>,
-        delete_location_generator: Arc<FileLocationGenerator>,
+        writer_builder: B,
     ) -> Result<Self> {
         let (col_extractor, unique_col_fields) =
             FieldProjector::new(arrow_schema.fields(), &unique_column_ids)?;
@@ -87,21 +88,17 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> EqualityDeltaWriter<L> {
 
         Ok(Self {
             data_file_writer: DataFileWriter::try_new(
-                file_appender_factory
-                    .build(arrow_schema.clone(), data_location_generator)
-                    .await?,
+                writer_builder.clone().build(&arrow_schema.clone()).await?,
             )?,
             eq_delete_writer: new_eq_delete_writer(
                 arrow_schema.clone(),
                 unique_column_ids,
-                delete_location_generator.clone(),
-                &file_appender_factory,
+                writer_builder.clone(),
             )
             .await?,
             sorted_pos_delete_writer: SortedPositionDeleteWriter::new(
                 table_config.clone(),
-                file_appender_factory,
-                delete_location_generator,
+                writer_builder,
             ),
             inserted_rows: HashMap::new(),
             row_converter,
@@ -122,7 +119,7 @@ impl<L: FileAppenderLayer<DefaultFileAppender>> EqualityDeltaWriter<L> {
     pub async fn write(&mut self, batch: RecordBatch) -> Result<()> {
         let rows = self.extract_unique_column(&batch)?;
         let current_file_path = self.data_file_writer.current_file();
-        let current_file_offset = self.data_file_writer.current_row();
+        let current_file_offset = self.data_file_writer.current_row_num();
         for (idx, row) in rows.iter().enumerate() {
             let previous_row_offset = self.inserted_rows.insert(
                 row.owned(),
