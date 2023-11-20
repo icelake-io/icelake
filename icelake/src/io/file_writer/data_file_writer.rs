@@ -49,3 +49,26 @@ impl<F: RecordBatchWriter + SingletonWriterStatus> SingletonWriterStatus for Dat
         self.inner_writer.current_row_num()
     }
 }
+
+#[cfg(test)]
+mod test {
+    use std::sync::Arc;
+
+    use arrow_array::{ArrayRef, Int64Array, RecordBatch};
+
+    use crate::io::TestWriter;
+
+    #[tokio::test]
+    async fn test_data_file() {
+        let inner_writer = TestWriter::default();
+        let mut writer = super::DataFileWriter::try_new(inner_writer).unwrap();
+
+        let data = (0..1024 * 1024).collect::<Vec<_>>();
+        let col = Arc::new(Int64Array::from_iter_values(data)) as ArrayRef;
+        let to_write = RecordBatch::try_from_iter([("col", col)]).unwrap();
+
+        writer.write(to_write.clone()).await.unwrap();
+        let result = writer.inner_writer.res();
+        assert_eq!(result, to_write);
+    }
+}

@@ -238,3 +238,86 @@ impl SingletonWriterStatus for RollingWriter {
         self.current_row_num
     }
 }
+
+#[cfg(test)]
+mod test {
+    use std::{fs, sync::Arc};
+
+    use arrow_array::{ArrayRef, Int64Array, RecordBatch};
+    use bytes::Bytes;
+    use opendal::{services::Memory, Operator};
+    use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
+
+    use crate::{
+        io::{
+            location_generator::FileLocationGenerator, RecordBatchWriter, RecordBatchWriterBuilder,
+            RollingWriterBuilder,
+        },
+        types::parse_table_metadata,
+    };
+
+    #[tokio::test]
+    async fn test_rolling_writer() -> Result<(), anyhow::Error> {
+        let mut builder = Memory::default();
+        builder.root("/tmp/table");
+        let op = Operator::new(builder)?.finish();
+
+        let location_generator = {
+            let mut metadata = {
+                let path = format!(
+                    "{}/../testdata/simple_table/metadata/v1.metadata.json",
+                    env!("CARGO_MANIFEST_DIR")
+                );
+
+                let bs = fs::read(path).expect("read_file must succeed");
+
+                parse_table_metadata(&bs).expect("parse_table_metadata v1 must succeed")
+            };
+            metadata.location = "/tmp/table".to_string();
+
+            FileLocationGenerator::try_new(&metadata, 0, 0, None)?
+        };
+
+        let data = (0..1024 * 1024).collect::<Vec<_>>();
+        let col = Arc::new(Int64Array::from_iter_values(data)) as ArrayRef;
+        let to_write = RecordBatch::try_from_iter([("col", col.clone())]).unwrap();
+
+        let mut writer = RollingWriterBuilder::new(
+            op.clone(),
+            Arc::new(location_generator),
+            Default::default(),
+            Default::default(),
+        )
+        .build(&to_write.schema())
+        .await
+        .unwrap();
+
+        writer.write(to_write.clone()).await?;
+        writer.write(to_write.clone()).await?;
+        writer.write(to_write.clone()).await?;
+        let data_files = writer
+            .close()
+            .await?
+            .into_iter()
+            .map(|f| f.with_content(crate::types::DataContentType::Data).build())
+            .collect::<Vec<_>>();
+
+        let mut row_num = 0;
+        for data_file in data_files {
+            let res = op
+                .read(data_file.file_path.strip_prefix("/tmp/table").unwrap())
+                .await?;
+            let res = Bytes::from(res);
+            let reader = ParquetRecordBatchReaderBuilder::try_new(res)
+                .unwrap()
+                .build()
+                .unwrap();
+            reader.into_iter().for_each(|batch| {
+                row_num += batch.unwrap().num_rows();
+            });
+        }
+        assert_eq!(row_num, 1024 * 1024 * 3);
+
+        Ok(())
+    }
+}
