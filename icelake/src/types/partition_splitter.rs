@@ -11,6 +11,7 @@ use arrow_row::{OwnedRow, RowConverter, SortField};
 use arrow_schema::{DataType, FieldRef, Fields};
 use arrow_select::filter::filter_record_batch;
 use itertools::Itertools;
+use log::warn;
 
 /// Help to project specific field from `RecordBatch`` according to the column id.
 pub struct FieldProjector {
@@ -18,12 +19,12 @@ pub struct FieldProjector {
 }
 
 impl FieldProjector {
-    pub fn new(batch_fields: &Fields, column_ids: &[usize]) -> Result<(Self, Fields)> {
+    pub fn new(batch_fields: &Fields, column_ids: &[i32]) -> Result<(Self, Fields)> {
         let mut index_vec_vec = Vec::with_capacity(column_ids.len());
         let mut fields = Vec::with_capacity(column_ids.len());
         for &id in column_ids {
             let mut index_vec = vec![];
-            if let Some(field) = Self::fetch_column_index(batch_fields, &mut index_vec, id as i64) {
+            if let Some(field) = Self::fetch_column_index(batch_fields, &mut index_vec, id) {
                 fields.push(field.clone());
                 index_vec_vec.push(index_vec);
             } else {
@@ -39,15 +40,19 @@ impl FieldProjector {
     fn fetch_column_index(
         fields: &Fields,
         index_vec: &mut Vec<usize>,
-        col_id: i64,
+        col_id: i32,
     ) -> Option<FieldRef> {
         for (pos, field) in fields.iter().enumerate() {
-            let id: i64 = field
-                .metadata()
-                .get(COLUMN_ID_META_KEY)
-                .expect("column_id must be set")
-                .parse()
-                .expect("column_id must can be parse as i64");
+            let id: i32 = if let Some(id) = field.metadata().get(COLUMN_ID_META_KEY) {
+                if let Ok(id) = id.parse::<i32>() {
+                    id
+                } else {
+                    warn!("Skip invalid number column id: {}", id);
+                    continue;
+                }
+            } else {
+                continue;
+            };
             if col_id == id {
                 index_vec.push(pos);
                 return Some(field.clone());
@@ -87,7 +92,7 @@ impl FieldProjector {
 
 /// `PartitionSplitter` is used to separate a given `RecordBatch`` according partition spec.
 pub struct PartitionSplitter {
-    col_extractor: FieldProjector,
+    projector: FieldProjector,
     transforms: Vec<BoxedTransformFunction>,
     row_converter: RowConverter,
     arrow_partition_type_fields: Fields,
@@ -109,7 +114,7 @@ impl From<OwnedRow> for PartitionKey {
 impl PartitionSplitter {
     /// Create a new `PartitionSplitter`.
     pub fn try_new(
-        col_extractor: FieldProjector,
+        projector: FieldProjector,
         partition_spec: &PartitionSpec,
         partition_type: Any,
     ) -> Result<Self> {
@@ -131,7 +136,7 @@ impl PartitionSplitter {
         .map_err(|e| crate::error::Error::new(crate::ErrorKind::ArrowError, format!("{}", e)))?;
 
         Ok(Self {
-            col_extractor,
+            projector,
             transforms,
             arrow_partition_type_fields,
             row_converter,
@@ -146,7 +151,7 @@ impl PartitionSplitter {
         &mut self,
         batch: &RecordBatch,
     ) -> Result<HashMap<PartitionKey, RecordBatch>> {
-        let arrays = self.col_extractor.project(batch.columns());
+        let arrays = self.projector.project(batch.columns());
         let value_array = Arc::new(StructArray::new(
             self.arrow_partition_type_fields.clone(),
             arrays

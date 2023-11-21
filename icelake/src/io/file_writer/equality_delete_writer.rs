@@ -13,14 +13,14 @@ use arrow_schema::SchemaRef;
 /// EqualityDeleteWriter is a writer that writes to a file in the equality delete format.
 pub struct EqualityDeleteWriter<F: RecordBatchWriter> {
     inner_writer: F,
-    equality_ids: Vec<usize>,
+    equality_ids: Vec<i32>,
     col_id_idx: Vec<usize>,
 }
 
 /// Create a new `EqualityDeleteWriter`.
 pub async fn new_eq_delete_writer<B: RecordBatchWriterBuilder>(
     arrow_schema: SchemaRef,
-    equality_ids: Vec<usize>,
+    equality_ids: Vec<i32>,
     writer_builder: B,
 ) -> Result<EqualityDeleteWriter<B::R>> {
     let mut col_id_idx = vec![];
@@ -29,7 +29,7 @@ pub async fn new_eq_delete_writer<B: RecordBatchWriterBuilder>(
             if f.metadata()
                 .get(COLUMN_ID_META_KEY)
                 .unwrap()
-                .parse::<usize>()
+                .parse::<i32>()
                 .unwrap()
                 == id
             {
@@ -84,7 +84,7 @@ impl<F: RecordBatchWriter> EqualityDeleteWriter<F> {
             .map(|builder| {
                 builder
                     .with_content(crate::types::DataContentType::EqualityDeletes)
-                    .with_equality_ids(self.equality_ids.iter().map(|&i| i as i32).collect())
+                    .with_equality_ids(self.equality_ids.clone())
             })
             .collect())
     }

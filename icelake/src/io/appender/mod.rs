@@ -11,7 +11,6 @@ pub use self::test::*;
 #[cfg(test)]
 mod test {
     use crate::io::{RecordBatchWriter, RecordBatchWriterBuilder};
-    use crate::types::DataFileBuilder;
     use crate::Result;
     use arrow_array::RecordBatch;
     use arrow_select::concat::concat_batches;
@@ -46,8 +45,8 @@ mod test {
             Ok(())
         }
 
-        async fn close(&mut self) -> Result<Vec<DataFileBuilder>> {
-            Ok(vec![])
+        async fn close(&mut self) -> crate::Result<Vec<crate::types::DataFileBuilder>> {
+            unimplemented!()
         }
     }
 }

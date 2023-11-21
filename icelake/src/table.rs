@@ -7,7 +7,7 @@ use crate::catalog::CatalogRef;
 use crate::error::Result;
 use crate::io::writer_builder::WriterBuilder;
 use crate::io::TableScanBuilder;
-use itertools::Itertools;
+use arrow_schema::SchemaRef;
 use opendal::Operator;
 use serde::{Deserialize, Serialize};
 use url::Url;
@@ -351,12 +351,8 @@ impl Table {
                     format!("Can't convert iceberg schema to arrow schema: {}", e),
                 )
             })?;
-        let column_ids = current_partition_spec
-            .fields
-            .iter()
-            .map(|field| field.source_column_id as usize)
-            .collect_vec();
-        let (col_extractor, _) = FieldProjector::new(arrow_schema.fields(), &column_ids)?;
+        let (col_extractor, _) =
+            FieldProjector::new(arrow_schema.fields(), &current_partition_spec.column_ids())?;
 
         let partition_type = Any::Struct(
             current_partition_spec
@@ -368,6 +364,11 @@ impl Table {
             current_partition_spec,
             partition_type,
         )?))
+    }
+
+    pub fn current_arrow_schema(&self) -> Result<SchemaRef> {
+        let current_schema = self.current_table_metadata().current_schema()?;
+        Ok(Arc::new(current_schema.to_owned().try_into()?))
     }
 
     /// Return `WriterBuilder` used to create kinds of writer.

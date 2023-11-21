@@ -871,6 +871,13 @@ impl PartitionSpec {
         Ok(Struct::new(fields))
     }
 
+    pub fn column_ids(&self) -> Vec<i32> {
+        self.fields
+            .iter()
+            .map(|field| field.source_column_id)
+            .collect()
+    }
+
     /// Check if this partition spec is unpartitioned.
     pub fn is_unpartitioned(&self) -> bool {
         self.fields.is_empty()

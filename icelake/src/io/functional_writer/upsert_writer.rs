@@ -10,7 +10,6 @@ use crate::{
 };
 use arrow_array::{Int32Array, RecordBatch};
 use arrow_schema::SchemaRef;
-use itertools::Itertools;
 
 use crate::{
     config::TableConfigRef,
@@ -40,7 +39,7 @@ where
     pub async fn try_new(
         table_metadata: TableMetadata,
         table_config: TableConfigRef,
-        unique_column_ids: Vec<usize>,
+        unique_column_ids: Vec<i32>,
         writer_builder: B,
     ) -> Result<Self> {
         let current_schema = table_metadata.current_schema()?;
@@ -64,12 +63,8 @@ where
                 .await?,
             ))
         } else {
-            let column_ids = current_partition_spec
-                .fields
-                .iter()
-                .map(|field| field.source_column_id as usize)
-                .collect_vec();
-            let (col_extractor, _) = FieldProjector::new(arrow_schema.fields(), &column_ids)?;
+            let (col_extractor, _) =
+                FieldProjector::new(arrow_schema.fields(), &current_partition_spec.column_ids())?;
             let partition_splitter = PartitionSplitter::try_new(
                 col_extractor,
                 current_partition_spec,
@@ -140,7 +135,7 @@ where
     schema: SchemaRef,
     writers: HashMap<crate::types::PartitionKey, EqualityDeltaWriter<B>>,
     partition_splitter: PartitionSplitter,
-    unique_column_ids: Vec<usize>,
+    unique_column_ids: Vec<i32>,
     writer_builder: B,
 }
 
@@ -150,7 +145,7 @@ where
 {
     pub fn new(
         table_config: TableConfigRef,
-        unique_column_ids: Vec<usize>,
+        unique_column_ids: Vec<i32>,
         schema: SchemaRef,
         partition_splitter: PartitionSplitter,
         writer_builder: B,

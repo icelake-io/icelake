@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use arrow_array::{ArrayRef, Int64Array, RecordBatch};
 use arrow_schema::SchemaRef;
 use arrow_select::concat::concat_batches;
-use icelake::io::{RecordBatchWriterBuilder, RollingWriterBuilder, SingletonWriter, UpsertWriter};
+use icelake::io::{RollingWriterBuilder, UpsertWriter};
 use icelake::types::{AnyValue, Field, Struct, StructValueBuilder};
 use icelake::{catalog::load_catalog, transaction::Transaction, Table, TableIdentifier};
 mod utils;
@@ -181,13 +181,11 @@ impl DeltaTest {
         delta_writer.write(ops, &batch).await.unwrap();
     }
 
-    async fn commit_writer<B: RecordBatchWriterBuilder>(
+    async fn commit_writer(
         &self,
         table: &mut Table,
-        delta_writer: UpsertWriter<B>,
-    ) where
-        B::R: SingletonWriter,
-    {
+        delta_writer: UpsertWriter<RollingWriterBuilder>,
+    ) {
         let mut result = delta_writer.close().await.unwrap().remove(0);
 
         // Commit table transaction

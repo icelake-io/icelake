@@ -1,25 +1,42 @@
 //! A module provide `DataFileWriter`.
 
-use crate::io::{RecordBatchWriter, SingletonWriter};
+use crate::io::{RecordBatchWriter, RecordBatchWriterBuilder, SingletonWriter};
 use crate::types::DataFileBuilder;
 use crate::Result;
 use arrow_array::RecordBatch;
+use arrow_schema::SchemaRef;
 
-/// A writer capable of splitting incoming data into multiple files within one spec/partition based on the target file size.
-/// When complete, it will return a list of `DataFile`.
-///
-/// # NOTE
-/// This writer will not guarantee the written data is within one spec/partition. It is the caller's responsibility to make sure the data is within one spec/partition.
+#[derive(Clone)]
+pub struct DataFileWriterBuilder<B: RecordBatchWriterBuilder> {
+    inner: B,
+}
+
+impl<B: RecordBatchWriterBuilder> DataFileWriterBuilder<B> {
+    pub fn new(inner: B) -> Self {
+        Self { inner }
+    }
+}
+
+#[async_trait::async_trait]
+impl<B: RecordBatchWriterBuilder> RecordBatchWriterBuilder for DataFileWriterBuilder<B> {
+    type R = DataFileWriter<B::R>;
+
+    async fn build(self, schema: &SchemaRef) -> Result<Self::R> {
+        Ok(DataFileWriter {
+            inner_writer: self.inner.build(schema).await?,
+        })
+    }
+}
+
+/// A writer write data is within one spec/partition.
 pub struct DataFileWriter<F: RecordBatchWriter> {
     inner_writer: F,
 }
 
 impl<F: RecordBatchWriter> DataFileWriter<F> {
-    /// Create a new `DataFileWriter`.
-    pub fn try_new(writer: F) -> Result<Self> {
-        Ok(Self {
-            inner_writer: writer,
-        })
+    /// Create writer context.
+    pub fn new(inner_writer: F) -> Self {
+        Self { inner_writer }
     }
 }
 
@@ -56,16 +73,18 @@ mod test {
 
     use arrow_array::{ArrayRef, Int64Array, RecordBatch};
 
-    use crate::io::{RecordBatchWriter, TestWriter};
+    use crate::io::{RecordBatchWriter, RecordBatchWriterBuilder, TestWriterBuilder};
 
     #[tokio::test]
     async fn test_data_file() {
-        let inner_writer = TestWriter::default();
-        let mut writer = super::DataFileWriter::try_new(inner_writer).unwrap();
-
         let data = (0..1024 * 1024).collect::<Vec<_>>();
         let col = Arc::new(Int64Array::from_iter_values(data)) as ArrayRef;
         let to_write = RecordBatch::try_from_iter([("col", col)]).unwrap();
+
+        let mut writer = super::DataFileWriterBuilder::new(TestWriterBuilder)
+            .build(&to_write.schema())
+            .await
+            .unwrap();
 
         writer.write(to_write.clone()).await.unwrap();
         let result = writer.inner_writer.res();

@@ -1,8 +1,14 @@
 use std::{collections::HashMap, fs::File};
 
-use icelake::{catalog::load_catalog, transaction::Transaction, Table};
+use icelake::{
+    catalog::load_catalog,
+    io::{DataFileWriterBuilder, RecordBatchWriter, RecordBatchWriterBuilder},
+    transaction::Transaction,
+    Table,
+};
 
 mod utils;
+use itertools::Itertools;
 use tokio::runtime::Builder;
 pub use utils::*;
 
@@ -161,10 +167,19 @@ impl TestFixture {
             .unwrap()
             .rolling_writer_builder(None)
             .unwrap();
-        let mut task_writer = table
+        let data_file_writer_builder = DataFileWriterBuilder::new(rolling_writer_builder);
+        let partition_writer_builder = table
             .writer_builder()
             .unwrap()
-            .build_append_only_writer(rolling_writer_builder)
+            .partition_writer_builder(data_file_writer_builder.clone(), false)
+            .unwrap();
+        let dispacher_writer_builder = table
+            .writer_builder()
+            .unwrap()
+            .dispatcher_writer_builder(partition_writer_builder, data_file_writer_builder)
+            .unwrap();
+        let mut task_writer = dispacher_writer_builder
+            .build(&table.current_arrow_schema().unwrap())
             .await
             .unwrap();
 
@@ -173,10 +188,16 @@ impl TestFixture {
                 "Insert record batch with {} records using icelake.",
                 record_batch.num_rows()
             );
-            task_writer.write(record_batch).await.unwrap();
+            task_writer.write(record_batch.clone()).await.unwrap();
         }
 
-        let result = task_writer.close().await.unwrap();
+        let result = task_writer
+            .close()
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|builder| builder.build())
+            .collect_vec();
         log::debug!("Insert {} data files: {:?}", result.len(), result);
 
         // Commit table transaction

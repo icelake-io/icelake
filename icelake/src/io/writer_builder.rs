@@ -1,6 +1,7 @@
 //! This module provide `WriterBuilder`.
 use std::sync::Arc;
 
+use crate::types::Any;
 use crate::Result;
 use crate::{config::TableConfigRef, types::TableMetadata};
 use arrow_schema::SchemaRef;
@@ -9,8 +10,8 @@ use opendal::Operator;
 use super::file_writer::{new_eq_delete_writer, EqualityDeleteWriter, SortedPositionDeleteWriter};
 use super::location_generator::FileLocationGenerator;
 use super::{
-    AppendOnlyWriter, EqualityDeltaWriter, RecordBatchWriterBuilder, RollingWriterBuilder,
-    SingletonWriter, UpsertWriter,
+    DispatcherWriterBuilder, EqualityDeltaWriter, PartitionedWriterBuilder,
+    RecordBatchWriterBuilder, RollingWriterBuilder, SingletonWriter, UpsertWriter,
 };
 
 /// `WriterBuilder` used to create kinds of writer.
@@ -82,6 +83,38 @@ impl WriterBuilder {
         ))
     }
 
+    pub fn partition_writer_builder<B: RecordBatchWriterBuilder>(
+        &self,
+        inner_builder: B,
+        is_upsert: bool,
+    ) -> Result<PartitionedWriterBuilder<B>> {
+        let partition_spec = self.table_metadata.current_partition_spec()?;
+        let partition_type = Any::Struct(
+            partition_spec
+                .partition_type(self.table_metadata.current_schema()?)?
+                .into(),
+        );
+        Ok(PartitionedWriterBuilder::new(
+            inner_builder,
+            partition_type,
+            partition_spec.clone(),
+            is_upsert,
+        ))
+    }
+
+    pub fn dispatcher_writer_builder<P: RecordBatchWriterBuilder, UP: RecordBatchWriterBuilder>(
+        &self,
+        partitioned_builder: P,
+        unpartitioned_builder: UP,
+    ) -> Result<DispatcherWriterBuilder<P, UP>> {
+        let partition_spec = self.table_metadata.current_partition_spec()?;
+        Ok(DispatcherWriterBuilder::new(
+            !partition_spec.is_unpartitioned(),
+            partitioned_builder,
+            unpartitioned_builder,
+        ))
+    }
+
     /// Build a `PositionDeleteWriter`.
     pub async fn build_sorted_position_delete_writer<B: RecordBatchWriterBuilder>(
         self,
@@ -93,7 +126,7 @@ impl WriterBuilder {
     /// Build a `EqualityDeleteWriter`.
     pub async fn build_equality_delete_writer<B: RecordBatchWriterBuilder>(
         self,
-        equality_ids: Vec<usize>,
+        equality_ids: Vec<i32>,
         builder: B,
     ) -> Result<EqualityDeleteWriter<B::R>> {
         new_eq_delete_writer(self.cur_arrow_schema, equality_ids, builder).await
@@ -102,7 +135,7 @@ impl WriterBuilder {
     /// Build a `EqualityDeltaWriter`.
     pub async fn build_equality_delta_writer<B: RecordBatchWriterBuilder>(
         self,
-        unique_column_ids: Vec<usize>,
+        unique_column_ids: Vec<i32>,
         builder: B,
     ) -> Result<EqualityDeltaWriter<B>>
     where
@@ -117,16 +150,9 @@ impl WriterBuilder {
         .await
     }
 
-    pub async fn build_append_only_writer<B: RecordBatchWriterBuilder>(
-        self,
-        builder: B,
-    ) -> Result<AppendOnlyWriter<B>> {
-        AppendOnlyWriter::try_new(self.table_metadata, builder).await
-    }
-
     pub async fn build_upsert_writer<B: RecordBatchWriterBuilder>(
         self,
-        unique_column_ids: Vec<usize>,
+        unique_column_ids: Vec<i32>,
         builder: B,
     ) -> Result<UpsertWriter<B>>
     where

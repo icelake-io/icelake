@@ -67,7 +67,7 @@ where
     pub async fn try_new(
         arrow_schema: SchemaRef,
         table_config: TableConfigRef,
-        unique_column_ids: Vec<usize>,
+        unique_column_ids: Vec<i32>,
         writer_builder: B,
     ) -> Result<Self> {
         let (col_extractor, unique_col_fields) =
@@ -88,9 +88,9 @@ where
         })?;
 
         Ok(Self {
-            data_file_writer: DataFileWriter::try_new(
+            data_file_writer: DataFileWriter::new(
                 writer_builder.clone().build(&arrow_schema.clone()).await?,
-            )?,
+            ),
             eq_delete_writer: new_eq_delete_writer(
                 arrow_schema.clone(),
                 unique_column_ids,
