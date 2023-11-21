@@ -156,11 +156,15 @@ impl TestFixture {
 
         let records = &self.test_case.write_date;
 
+        let rolling_writer_builder = table
+            .writer_builder()
+            .unwrap()
+            .rolling_writer_builder(None)
+            .unwrap();
         let mut task_writer = table
             .writer_builder()
-            .await
             .unwrap()
-            .build_append_only_writer()
+            .build_append_only_writer(rolling_writer_builder)
             .await
             .unwrap();
 

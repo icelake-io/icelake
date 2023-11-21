@@ -22,7 +22,7 @@ pub struct TableConfig {
 }
 
 /// Data file writer configuration.
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub struct RollingWriterConfig {
     /// data file writer will keep row number of a data file as a multiple of this value.
     pub rows_per_file: usize,
@@ -55,7 +55,7 @@ impl Default for SortedDeletePositionWriterConfig {
 }
 
 /// Parquet writer configuration.
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub struct ParquetWriterConfig {
     /// Enable bloom filter.
     pub enable_bloom_filter: bool,

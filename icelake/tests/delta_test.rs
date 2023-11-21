@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use arrow_array::{ArrayRef, Int64Array, RecordBatch};
 use arrow_schema::SchemaRef;
 use arrow_select::concat::concat_batches;
-use icelake::io::{DefaultFileAppender, FileAppenderLayer, UpsertWriter};
+use icelake::io::{RecordBatchWriterBuilder, RollingWriterBuilder, SingletonWriter, UpsertWriter};
 use icelake::types::{AnyValue, Field, Struct, StructValueBuilder};
 use icelake::{catalog::load_catalog, transaction::Transaction, Table, TableIdentifier};
 mod utils;
@@ -149,7 +149,7 @@ impl DeltaTest {
     async fn write_and_delete_with_delta(
         &self,
         table: &Table,
-        delta_writer: &mut UpsertWriter<impl FileAppenderLayer<DefaultFileAppender>>,
+        delta_writer: &mut UpsertWriter<RollingWriterBuilder>,
         write: Option<Vec<ArrayRef>>,
         delete: Option<Vec<ArrayRef>>,
     ) {
@@ -181,11 +181,13 @@ impl DeltaTest {
         delta_writer.write(ops, &batch).await.unwrap();
     }
 
-    async fn commit_writer(
+    async fn commit_writer<B: RecordBatchWriterBuilder>(
         &self,
         table: &mut Table,
-        delta_writer: UpsertWriter<impl FileAppenderLayer<DefaultFileAppender>>,
-    ) {
+        delta_writer: UpsertWriter<B>,
+    ) where
+        B::R: SingletonWriter,
+    {
         let mut result = delta_writer.close().await.unwrap().remove(0);
 
         // Commit table transaction
@@ -221,14 +223,18 @@ impl DeltaTest {
             "Real path of table is: {}",
             table.current_table_metadata().location
         );
+
+        let rolling_writer_builder = table
+            .writer_builder()
+            .unwrap()
+            .rolling_writer_builder(None)
+            .unwrap();
         let mut delta_writer = table
             .writer_builder()
-            .await
             .unwrap()
-            .build_upsert_writer(vec![1, 2])
+            .build_upsert_writer(vec![1, 2], rolling_writer_builder)
             .await
             .unwrap();
-
         self.write_and_delete_with_delta(
             &table,
             &mut delta_writer,
@@ -286,11 +292,15 @@ impl DeltaTest {
             "Real path of table is: {}",
             table.current_table_metadata().location
         );
+        let rolling_writer_builder = table
+            .writer_builder()
+            .unwrap()
+            .rolling_writer_builder(None)
+            .unwrap();
         let mut delta_writer = table
             .writer_builder()
-            .await
             .unwrap()
-            .build_upsert_writer(vec![1, 2])
+            .build_upsert_writer(vec![1, 2], rolling_writer_builder)
             .await
             .unwrap();
 
@@ -308,11 +318,15 @@ impl DeltaTest {
 
         self.commit_writer(&mut table, delta_writer).await;
 
+        let rolling_writer_builder = table
+            .writer_builder()
+            .unwrap()
+            .rolling_writer_builder(None)
+            .unwrap();
         let mut delta_writer = table
             .writer_builder()
-            .await
             .unwrap()
-            .build_upsert_writer(vec![1, 2])
+            .build_upsert_writer(vec![1, 2], rolling_writer_builder)
             .await
             .unwrap();
 

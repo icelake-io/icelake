@@ -1,47 +1,26 @@
 //! Prometheus layer for FileAppender.
 
 use arrow_array::RecordBatch;
+use arrow_schema::SchemaRef;
 use async_trait::async_trait;
 use prometheus::{
     core::{AtomicU64, GenericCounter},
     Histogram,
 };
 
-use crate::{types::DataFileBuilder, Result};
-
-use super::{FileAppender, FileAppenderLayer};
-
-/// File writer context
-#[derive(Clone)]
-pub struct WriterPrometheusLayer {
-    metrics: FileAppenderMetrics,
-}
-
-impl WriterPrometheusLayer {
-    /// Create writer context.
-    pub fn new(metrics: FileAppenderMetrics) -> Self {
-        Self { metrics }
-    }
-}
-
-impl<F: FileAppender> FileAppenderLayer<F> for WriterPrometheusLayer {
-    type R = PrometheusLayeredFileAppender<F>;
-
-    fn layer(&self, appender: F) -> Self::R {
-        PrometheusLayeredFileAppender {
-            appender,
-            metrics: self.metrics.clone(),
-        }
-    }
-}
+use crate::{
+    io::{RecordBatchWriter, RecordBatchWriterBuilder},
+    types::DataFileBuilder,
+    Result,
+};
 
 #[derive(Clone)]
-pub struct FileAppenderMetrics {
+pub struct WriterMetrics {
     write_qps: GenericCounter<AtomicU64>,
     write_latency: Histogram,
 }
 
-impl FileAppenderMetrics {
+impl WriterMetrics {
     pub fn new(write_qps: GenericCounter<AtomicU64>, write_latency: Histogram) -> Self {
         Self {
             write_qps,
@@ -50,13 +29,39 @@ impl FileAppenderMetrics {
     }
 }
 
-pub struct PrometheusLayeredFileAppender<F: FileAppender> {
+#[derive(Clone)]
+pub struct PrometheusWriterBuilder<B: RecordBatchWriterBuilder> {
+    inner: B,
+    metrics: WriterMetrics,
+}
+
+impl<B: RecordBatchWriterBuilder> PrometheusWriterBuilder<B> {
+    /// Create writer context.
+    pub fn new(inner: B, metrics: WriterMetrics) -> Self {
+        Self { inner, metrics }
+    }
+}
+
+#[async_trait::async_trait]
+impl<B: RecordBatchWriterBuilder> RecordBatchWriterBuilder for PrometheusWriterBuilder<B> {
+    type R = PrometheusWriter<B::R>;
+
+    async fn build(self, schema: &SchemaRef) -> Result<Self::R> {
+        let appender = self.inner.build(schema).await?;
+        Ok(PrometheusWriter {
+            appender,
+            metrics: self.metrics,
+        })
+    }
+}
+
+pub struct PrometheusWriter<F: RecordBatchWriter> {
     appender: F,
-    metrics: FileAppenderMetrics,
+    metrics: WriterMetrics,
 }
 
 #[async_trait]
-impl<F: FileAppender> FileAppender for PrometheusLayeredFileAppender<F> {
+impl<F: RecordBatchWriter> RecordBatchWriter for PrometheusWriter<F> {
     async fn write(&mut self, record: RecordBatch) -> Result<()> {
         self.metrics.write_qps.inc();
         let _ = self.metrics.write_latency.start_timer();
@@ -65,13 +70,5 @@ impl<F: FileAppender> FileAppender for PrometheusLayeredFileAppender<F> {
 
     async fn close(&mut self) -> Result<Vec<DataFileBuilder>> {
         self.appender.close().await
-    }
-
-    fn current_file(&self) -> String {
-        self.appender.current_file()
-    }
-
-    fn current_row(&self) -> usize {
-        self.appender.current_row()
     }
 }

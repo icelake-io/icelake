@@ -1,6 +1,6 @@
 //! A module provide `DataFileWriter`.
 
-use crate::io::FileAppender;
+use crate::io::{RecordBatchWriter, SingletonWriter};
 use crate::types::DataFileBuilder;
 use crate::Result;
 use arrow_array::RecordBatch;
@@ -10,26 +10,26 @@ use arrow_array::RecordBatch;
 ///
 /// # NOTE
 /// This writer will not guarantee the written data is within one spec/partition. It is the caller's responsibility to make sure the data is within one spec/partition.
-pub struct DataFileWriter<F: FileAppender> {
+pub struct DataFileWriter<F: RecordBatchWriter> {
     inner_writer: F,
 }
 
-impl<F: FileAppender> DataFileWriter<F> {
+impl<F: RecordBatchWriter> DataFileWriter<F> {
     /// Create a new `DataFileWriter`.
-    pub fn try_new(file_appender: F) -> Result<Self> {
+    pub fn try_new(writer: F) -> Result<Self> {
         Ok(Self {
-            inner_writer: file_appender,
+            inner_writer: writer,
         })
     }
+}
 
-    /// Write a record batch.
-    pub async fn write(&mut self, batch: RecordBatch) -> Result<()> {
-        self.inner_writer.write(batch).await?;
-        Ok(())
+#[async_trait::async_trait]
+impl<F: RecordBatchWriter> RecordBatchWriter for DataFileWriter<F> {
+    async fn write(&mut self, batch: RecordBatch) -> Result<()> {
+        self.inner_writer.write(batch).await
     }
 
-    /// Complte the write and return the list of `DataFileBuilder` as result.
-    pub async fn close(mut self) -> Result<Vec<DataFileBuilder>> {
+    async fn close(&mut self) -> Result<Vec<DataFileBuilder>> {
         Ok(self
             .inner_writer
             .close()
@@ -38,98 +38,37 @@ impl<F: FileAppender> DataFileWriter<F> {
             .map(|builder| builder.with_content(crate::types::DataContentType::Data))
             .collect())
     }
+}
 
-    /// Return the current file name.
-    pub fn current_file(&self) -> String {
+impl<F: SingletonWriter> SingletonWriter for DataFileWriter<F> {
+    fn current_file(&self) -> String {
         self.inner_writer.current_file()
     }
 
-    /// Return the current row number.
-    pub fn current_row(&self) -> usize {
-        self.inner_writer.current_row()
+    fn current_row_num(&self) -> usize {
+        self.inner_writer.current_row_num()
     }
 }
 
 #[cfg(test)]
 mod test {
-    use std::{env, fs, sync::Arc};
+    use std::sync::Arc;
 
-    use arrow_array::RecordBatch;
-    use arrow_array::{ArrayRef, Int64Array};
-    use bytes::Bytes;
-    use opendal::{services::Memory, Operator};
+    use arrow_array::{ArrayRef, Int64Array, RecordBatch};
 
-    use anyhow::Result;
-    use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
-
-    use crate::config::TableConfig;
-    use crate::io::file_writer::data_file_writer;
-    use crate::io::location_generator::FileLocationGenerator;
-    use crate::io::new_file_appender_builder;
-    use crate::types::parse_table_metadata;
+    use crate::io::{RecordBatchWriter, TestWriter};
 
     #[tokio::test]
-    async fn tets_data_file_writer() -> Result<()> {
-        let mut builder = Memory::default();
-        builder.root("/tmp/table");
-        let op = Operator::new(builder)?.finish();
-
-        let location_generator = {
-            let mut metadata = {
-                let path = format!(
-                    "{}/../testdata/simple_table/metadata/v1.metadata.json",
-                    env!("CARGO_MANIFEST_DIR")
-                );
-
-                let bs = fs::read(path).expect("read_file must succeed");
-
-                parse_table_metadata(&bs).expect("parse_table_metadata v1 must succeed")
-            };
-            metadata.location = "/tmp/table".to_string();
-
-            FileLocationGenerator::try_new_for_data_file(&metadata, 0, 0, None)?
-        };
+    async fn test_data_file() {
+        let inner_writer = TestWriter::default();
+        let mut writer = super::DataFileWriter::try_new(inner_writer).unwrap();
 
         let data = (0..1024 * 1024).collect::<Vec<_>>();
         let col = Arc::new(Int64Array::from_iter_values(data)) as ArrayRef;
-        let to_write = RecordBatch::try_from_iter([("col", col.clone())]).unwrap();
+        let to_write = RecordBatch::try_from_iter([("col", col)]).unwrap();
 
-        let mut writer = data_file_writer::DataFileWriter::try_new(
-            new_file_appender_builder(
-                op.clone(),
-                "/tmp/table".to_string(),
-                Arc::new(TableConfig::default()),
-            )
-            .build(to_write.schema(), location_generator.into())
-            .await?,
-        )?;
-
-        writer.write(to_write.clone()).await?;
-        writer.write(to_write.clone()).await?;
-        writer.write(to_write.clone()).await?;
-        let data_files = writer
-            .close()
-            .await?
-            .into_iter()
-            .map(|f| f.build())
-            .collect::<Vec<_>>();
-
-        let mut row_num = 0;
-        for data_file in data_files {
-            let res = op
-                .read(data_file.file_path.strip_prefix("/tmp/table").unwrap())
-                .await?;
-            let res = Bytes::from(res);
-            let reader = ParquetRecordBatchReaderBuilder::try_new(res)
-                .unwrap()
-                .build()
-                .unwrap();
-            reader.into_iter().for_each(|batch| {
-                row_num += batch.unwrap().num_rows();
-            });
-        }
-        assert_eq!(row_num, 1024 * 1024 * 3);
-
-        Ok(())
+        writer.write(to_write.clone()).await.unwrap();
+        let result = writer.inner_writer.res();
+        assert_eq!(result, to_write);
     }
 }

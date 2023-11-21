@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use crate::catalog::CatalogRef;
 use crate::error::Result;
-use crate::io::writer_builder::{new_writer_builder, WriterBuilder};
-use crate::io::{EmptyLayer, TableScanBuilder};
+use crate::io::writer_builder::WriterBuilder;
+use crate::io::TableScanBuilder;
 use itertools::Itertools;
 use opendal::Operator;
 use serde::{Deserialize, Serialize};
@@ -371,17 +371,16 @@ impl Table {
     }
 
     /// Return `WriterBuilder` used to create kinds of writer.
-    pub async fn writer_builder(&self) -> Result<WriterBuilder<EmptyLayer>> {
+    pub fn writer_builder(&self) -> Result<WriterBuilder> {
         let task_id = self
             .task_id
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        new_writer_builder(
+        WriterBuilder::new(
             self.current_table_metadata().clone(),
             self.op.clone(),
             task_id,
             self.table_config.clone(),
         )
-        .await
     }
 
     /// Returns path of metadata file relative to the table root path.
