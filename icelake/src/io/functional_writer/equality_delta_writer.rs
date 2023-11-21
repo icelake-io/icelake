@@ -3,8 +3,9 @@ use crate::config::TableConfigRef;
 use crate::io::new_eq_delete_writer;
 use crate::io::DataFileWriter;
 use crate::io::EqualityDeleteWriter;
+use crate::io::RecordBatchWriter;
 use crate::io::RecordBatchWriterBuilder;
-use crate::io::SingletonWriterStatus;
+use crate::io::SingletonWriter;
 use crate::io::SortedPositionDeleteWriter;
 use crate::types::DataFile;
 use crate::types::FieldProjector;
@@ -42,7 +43,7 @@ pub struct DeltaWriterResult {
 /// this writer, it will not delete it.
 pub struct EqualityDeltaWriter<B: RecordBatchWriterBuilder>
 where
-    B::R: SingletonWriterStatus,
+    B::R: SingletonWriter,
 {
     data_file_writer: DataFileWriter<B::R>,
     sorted_pos_delete_writer: SortedPositionDeleteWriter<B>,
@@ -59,7 +60,7 @@ pub struct EqDeltaWriterMetrics {
 
 impl<B: RecordBatchWriterBuilder> EqualityDeltaWriter<B>
 where
-    B::R: SingletonWriterStatus,
+    B::R: SingletonWriter,
 {
     /// Create a new `EqualityDeltaWriter`.
     #[allow(clippy::too_many_arguments)]
@@ -166,7 +167,10 @@ where
     }
 
     /// Close the writer and return the result.
-    pub async fn close(self, partition_value: Option<StructValue>) -> Result<DeltaWriterResult> {
+    pub async fn close(
+        mut self,
+        partition_value: Option<StructValue>,
+    ) -> Result<DeltaWriterResult> {
         let data = self
             .data_file_writer
             .close()

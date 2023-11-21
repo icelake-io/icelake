@@ -1,6 +1,6 @@
 //! A module provide `DataFileWriter`.
 
-use crate::io::{RecordBatchWriter, SingletonWriterStatus};
+use crate::io::{RecordBatchWriter, SingletonWriter};
 use crate::types::DataFileBuilder;
 use crate::Result;
 use arrow_array::RecordBatch;
@@ -21,15 +21,15 @@ impl<F: RecordBatchWriter> DataFileWriter<F> {
             inner_writer: writer,
         })
     }
+}
 
-    /// Write a record batch.
-    pub async fn write(&mut self, batch: RecordBatch) -> Result<()> {
-        self.inner_writer.write(batch).await?;
-        Ok(())
+#[async_trait::async_trait]
+impl<F: RecordBatchWriter> RecordBatchWriter for DataFileWriter<F> {
+    async fn write(&mut self, batch: RecordBatch) -> Result<()> {
+        self.inner_writer.write(batch).await
     }
 
-    /// Complte the write and return the list of `DataFileBuilder` as result.
-    pub async fn close(mut self) -> Result<Vec<DataFileBuilder>> {
+    async fn close(&mut self) -> Result<Vec<DataFileBuilder>> {
         Ok(self
             .inner_writer
             .close()
@@ -40,7 +40,7 @@ impl<F: RecordBatchWriter> DataFileWriter<F> {
     }
 }
 
-impl<F: RecordBatchWriter + SingletonWriterStatus> SingletonWriterStatus for DataFileWriter<F> {
+impl<F: SingletonWriter> SingletonWriter for DataFileWriter<F> {
     fn current_file(&self) -> String {
         self.inner_writer.current_file()
     }
@@ -56,7 +56,7 @@ mod test {
 
     use arrow_array::{ArrayRef, Int64Array, RecordBatch};
 
-    use crate::io::TestWriter;
+    use crate::io::{RecordBatchWriter, TestWriter};
 
     #[tokio::test]
     async fn test_data_file() {

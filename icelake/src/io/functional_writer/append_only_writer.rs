@@ -2,6 +2,7 @@
 //! table writer used directly by the compute engine.
 use crate::error::Result;
 use crate::io::DataFileWriter;
+use crate::io::RecordBatchWriter;
 use crate::io::RecordBatchWriterBuilder;
 use crate::types::Any;
 use crate::types::FieldProjector;
@@ -81,7 +82,7 @@ impl<B: RecordBatchWriterBuilder> AppendOnlyWriter<B> {
     /// Close the writer and return the data files.
     pub async fn close(self) -> Result<Vec<DataFile>> {
         match self {
-            AppendOnlyWriter::Unpartitioned(writer) => Ok(writer
+            AppendOnlyWriter::Unpartitioned(mut writer) => Ok(writer
                 .close()
                 .await?
                 .into_iter()
@@ -146,7 +147,7 @@ impl<B: RecordBatchWriterBuilder> PartitionedAppendOnlyWriter<B> {
     /// Complete the write and return the data files.
     pub async fn close(self) -> Result<Vec<DataFile>> {
         let mut res = vec![];
-        for (key, writer) in self.writers.into_iter() {
+        for (key, mut writer) in self.writers.into_iter() {
             let data_file_builders = writer.close().await?;
 
             let partition_value = self.partition_splitter.convert_key_to_value(key)?;

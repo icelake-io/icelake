@@ -15,12 +15,12 @@ use crate::{
 };
 
 #[derive(Clone)]
-pub struct AppenderMetrics {
+pub struct WriterMetrics {
     write_qps: GenericCounter<AtomicU64>,
     write_latency: Histogram,
 }
 
-impl AppenderMetrics {
+impl WriterMetrics {
     pub fn new(write_qps: GenericCounter<AtomicU64>, write_latency: Histogram) -> Self {
         Self {
             write_qps,
@@ -30,38 +30,38 @@ impl AppenderMetrics {
 }
 
 #[derive(Clone)]
-pub struct PrometheusAppenderBuilder<B: RecordBatchWriterBuilder> {
+pub struct PrometheusWriterBuilder<B: RecordBatchWriterBuilder> {
     inner: B,
-    metrics: AppenderMetrics,
+    metrics: WriterMetrics,
 }
 
-impl<B: RecordBatchWriterBuilder> PrometheusAppenderBuilder<B> {
+impl<B: RecordBatchWriterBuilder> PrometheusWriterBuilder<B> {
     /// Create writer context.
-    pub fn new(inner: B, metrics: AppenderMetrics) -> Self {
+    pub fn new(inner: B, metrics: WriterMetrics) -> Self {
         Self { inner, metrics }
     }
 }
 
 #[async_trait::async_trait]
-impl<B: RecordBatchWriterBuilder> RecordBatchWriterBuilder for PrometheusAppenderBuilder<B> {
-    type R = PrometheusAppender<B::R>;
+impl<B: RecordBatchWriterBuilder> RecordBatchWriterBuilder for PrometheusWriterBuilder<B> {
+    type R = PrometheusWriter<B::R>;
 
     async fn build(self, schema: &SchemaRef) -> Result<Self::R> {
         let appender = self.inner.build(schema).await?;
-        Ok(PrometheusAppender {
+        Ok(PrometheusWriter {
             appender,
             metrics: self.metrics,
         })
     }
 }
 
-pub struct PrometheusAppender<F: RecordBatchWriter> {
+pub struct PrometheusWriter<F: RecordBatchWriter> {
     appender: F,
-    metrics: AppenderMetrics,
+    metrics: WriterMetrics,
 }
 
 #[async_trait]
-impl<F: RecordBatchWriter> RecordBatchWriter for PrometheusAppender<F> {
+impl<F: RecordBatchWriter> RecordBatchWriter for PrometheusWriter<F> {
     async fn write(&mut self, record: RecordBatch) -> Result<()> {
         self.metrics.write_qps.inc();
         let _ = self.metrics.write_latency.start_timer();

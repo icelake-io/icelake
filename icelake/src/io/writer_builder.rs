@@ -10,7 +10,7 @@ use super::file_writer::{new_eq_delete_writer, EqualityDeleteWriter, SortedPosit
 use super::location_generator::FileLocationGenerator;
 use super::{
     AppendOnlyWriter, EqualityDeltaWriter, RecordBatchWriterBuilder, RollingWriterBuilder,
-    SingletonWriterStatus, UpsertWriter,
+    SingletonWriter, UpsertWriter,
 };
 
 /// `WriterBuilder` used to create kinds of writer.
@@ -106,7 +106,7 @@ impl WriterBuilder {
         builder: B,
     ) -> Result<EqualityDeltaWriter<B>>
     where
-        B::R: SingletonWriterStatus,
+        B::R: SingletonWriter,
     {
         EqualityDeltaWriter::try_new(
             self.cur_arrow_schema,
@@ -130,7 +130,7 @@ impl WriterBuilder {
         builder: B,
     ) -> Result<UpsertWriter<B>>
     where
-        B::R: SingletonWriterStatus,
+        B::R: SingletonWriter,
     {
         UpsertWriter::try_new(
             self.table_metadata,

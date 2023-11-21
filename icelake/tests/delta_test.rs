@@ -3,9 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use arrow_array::{ArrayRef, Int64Array, RecordBatch};
 use arrow_schema::SchemaRef;
 use arrow_select::concat::concat_batches;
-use icelake::io::{
-    RecordBatchWriterBuilder, RollingWriterBuilder, SingletonWriterStatus, UpsertWriter,
-};
+use icelake::io::{RecordBatchWriterBuilder, RollingWriterBuilder, SingletonWriter, UpsertWriter};
 use icelake::types::{AnyValue, Field, Struct, StructValueBuilder};
 use icelake::{catalog::load_catalog, transaction::Transaction, Table, TableIdentifier};
 mod utils;
@@ -188,7 +186,7 @@ impl DeltaTest {
         table: &mut Table,
         delta_writer: UpsertWriter<B>,
     ) where
-        B::R: SingletonWriterStatus,
+        B::R: SingletonWriter,
     {
         let mut result = delta_writer.close().await.unwrap().remove(0);
 

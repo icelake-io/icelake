@@ -8,7 +8,7 @@ use std::sync::Arc;
 use crate::config::{ParquetWriterConfig, RollingWriterConfig};
 use crate::io::location_generator::FileLocationGenerator;
 use crate::io::parquet::ParquetWriter;
-use crate::io::{RecordBatchWriter, RecordBatchWriterBuilder, SingletonWriterStatus};
+use crate::io::{RecordBatchWriter, RecordBatchWriterBuilder, SingletonWriter};
 
 use crate::io::parquet::ParquetWriterBuilder;
 use crate::types::DataFileBuilder;
@@ -225,7 +225,7 @@ impl RecordBatchWriter for RollingWriter {
     }
 }
 
-impl SingletonWriterStatus for RollingWriter {
+impl SingletonWriter for RollingWriter {
     fn current_file(&self) -> String {
         format!(
             "{}/{}",

@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    io::{RecordBatchWriterBuilder, SingletonWriterStatus},
+    io::{RecordBatchWriterBuilder, SingletonWriter},
     types::{Any, FieldProjector, PartitionKey},
     ErrorKind, Result,
 };
@@ -24,7 +24,7 @@ use super::{DeltaWriterResult, EqualityDeltaWriter};
 
 pub enum UpsertWriter<B: RecordBatchWriterBuilder>
 where
-    B::R: SingletonWriterStatus,
+    B::R: SingletonWriter,
 {
     Unpartitioned(EqualityDeltaWriter<B>),
     Partitioned(PartitionedUpsertWriter<B>),
@@ -35,7 +35,7 @@ pub const DELETE_OP: i32 = 2;
 
 impl<B: RecordBatchWriterBuilder> UpsertWriter<B>
 where
-    B::R: SingletonWriterStatus,
+    B::R: SingletonWriter,
 {
     pub async fn try_new(
         table_metadata: TableMetadata,
@@ -134,7 +134,7 @@ where
 
 pub struct PartitionedUpsertWriter<B: RecordBatchWriterBuilder>
 where
-    B::R: SingletonWriterStatus,
+    B::R: SingletonWriter,
 {
     table_config: TableConfigRef,
     schema: SchemaRef,
@@ -146,7 +146,7 @@ where
 
 impl<B: RecordBatchWriterBuilder> PartitionedUpsertWriter<B>
 where
-    B::R: SingletonWriterStatus,
+    B::R: SingletonWriter,
 {
     pub fn new(
         table_config: TableConfigRef,

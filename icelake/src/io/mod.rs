@@ -32,7 +32,7 @@ pub trait RecordBatchWriterBuilder: Send + Sync + Clone + 'static {
     async fn build(self, schema: &SchemaRef) -> Result<Self::R>;
 }
 
-pub trait SingletonWriterStatus {
+pub trait SingletonWriter: RecordBatchWriter {
     fn current_file(&self) -> String;
     fn current_row_num(&self) -> usize;
 }
