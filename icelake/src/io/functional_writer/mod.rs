@@ -6,3 +6,5 @@ pub mod equality_delta_writer;
 pub use equality_delta_writer::*;
 pub mod dispatcher_writer;
 pub use dispatcher_writer::*;
+#[cfg(feature = "prometheus")]
+pub mod prometheus;

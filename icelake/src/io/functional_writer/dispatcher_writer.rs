@@ -1,19 +1,19 @@
 use arrow_array::RecordBatch;
 use arrow_schema::SchemaRef;
 
-use crate::io::{RecordBatchWriter, RecordBatchWriterBuilder};
+use crate::io::{RecordBatchWriter, WriterBuilder};
 use crate::types::DataFileBuilder;
 use crate::Result;
 
 /// DispatcherWriter used to dispatch the partitioned and unpartitioned writer so that user can store them as a single writer.
 #[derive(Clone)]
-pub struct DispatcherWriterBuilder<L: RecordBatchWriterBuilder, R: RecordBatchWriterBuilder> {
+pub struct DispatcherWriterBuilder<L: WriterBuilder, R: WriterBuilder> {
     is_partition: bool,
     partition_builder: L,
     no_partition_builder: R,
 }
 
-impl<L: RecordBatchWriterBuilder, R: RecordBatchWriterBuilder> DispatcherWriterBuilder<L, R> {
+impl<L: WriterBuilder, R: WriterBuilder> DispatcherWriterBuilder<L, R> {
     pub fn new(is_partition: bool, partition_builder: L, no_partition_builder: R) -> Self {
         Self {
             is_partition,
@@ -24,8 +24,10 @@ impl<L: RecordBatchWriterBuilder, R: RecordBatchWriterBuilder> DispatcherWriterB
 }
 
 #[async_trait::async_trait]
-impl<L: RecordBatchWriterBuilder, R: RecordBatchWriterBuilder> RecordBatchWriterBuilder
-    for DispatcherWriterBuilder<L, R>
+impl<L: WriterBuilder, R: WriterBuilder> WriterBuilder for DispatcherWriterBuilder<L, R>
+where
+    L::R: RecordBatchWriter,
+    R::R: RecordBatchWriter,
 {
     type R = DispatcherWriter<L::R, R::R>;
 

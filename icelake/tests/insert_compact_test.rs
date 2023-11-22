@@ -2,7 +2,7 @@ use std::{collections::HashMap, fs::File};
 
 use icelake::{
     catalog::load_catalog,
-    io::{DataFileWriterBuilder, RecordBatchWriter, RecordBatchWriterBuilder},
+    io::{DataFileWriterBuilder, RecordBatchWriter, WriterBuilder},
     transaction::Transaction,
     Table,
 };

@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use crate::catalog::CatalogRef;
 use crate::error::Result;
-use crate::io::writer_builder::WriterBuilder;
+use crate::io::writer_builder::WriterFactory;
 use crate::io::TableScanBuilder;
 use arrow_schema::SchemaRef;
 use opendal::Operator;
@@ -372,11 +372,11 @@ impl Table {
     }
 
     /// Return `WriterBuilder` used to create kinds of writer.
-    pub fn writer_builder(&self) -> Result<WriterBuilder> {
+    pub fn writer_builder(&self) -> Result<WriterFactory> {
         let task_id = self
             .task_id
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        WriterBuilder::new(
+        WriterFactory::new(
             self.current_table_metadata().clone(),
             self.op.clone(),
             task_id,

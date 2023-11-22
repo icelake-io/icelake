@@ -20,19 +20,27 @@ use arrow_schema::SchemaRef;
 use crate::types::DataFileBuilder;
 use crate::Result;
 
+type DefaultWriteResult = Vec<DataFileBuilder>;
+
 #[async_trait::async_trait]
-pub trait RecordBatchWriter: Send + 'static {
+pub trait RecordBatchWriter<R = DefaultWriteResult>: Send + 'static {
     async fn write(&mut self, batch: RecordBatch) -> Result<()>;
-    async fn close(&mut self) -> Result<Vec<DataFileBuilder>>;
+    async fn close(&mut self) -> Result<R>;
 }
 
 #[async_trait::async_trait]
-pub trait RecordBatchWriterBuilder: Send + Sync + Clone + 'static {
-    type R: RecordBatchWriter;
+pub trait FileWriter<R = DefaultWriteResult>: Send + 'static {
+    async fn write(&mut self, batch: RecordBatch) -> Result<()>;
+    async fn close(&mut self) -> Result<R>;
+}
+
+#[async_trait::async_trait]
+pub trait WriterBuilder: Send + Sync + Clone + 'static {
+    type R;
     async fn build(self, schema: &SchemaRef) -> Result<Self::R>;
 }
 
-pub trait SingletonWriter: RecordBatchWriter {
+pub trait SingletonWriter {
     fn current_file(&self) -> String;
     fn current_row_num(&self) -> usize;
 }

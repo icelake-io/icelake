@@ -3,10 +3,11 @@ use crate::config::TableConfigRef;
 use crate::io::new_eq_delete_writer;
 use crate::io::DataFileWriter;
 use crate::io::EqualityDeleteWriter;
+use crate::io::FileWriter;
 use crate::io::RecordBatchWriter;
-use crate::io::RecordBatchWriterBuilder;
 use crate::io::SingletonWriter;
 use crate::io::SortedPositionDeleteWriter;
+use crate::io::WriterBuilder;
 use crate::types::DataFile;
 use crate::types::FieldProjector;
 use crate::types::StructValue;
@@ -41,9 +42,9 @@ pub struct DeltaWriterResult {
 /// NOTE:
 /// This write is not as same with `upsert`. If the row with same unique columns is not written in
 /// this writer, it will not delete it.
-pub struct EqualityDeltaWriter<B: RecordBatchWriterBuilder>
+pub struct EqualityDeltaWriter<B: WriterBuilder>
 where
-    B::R: SingletonWriter,
+    B::R: SingletonWriter + FileWriter,
 {
     data_file_writer: DataFileWriter<B::R>,
     sorted_pos_delete_writer: SortedPositionDeleteWriter<B>,
@@ -58,9 +59,9 @@ pub struct EqDeltaWriterMetrics {
     pub sorted_pos_delete_cache_count: usize,
 }
 
-impl<B: RecordBatchWriterBuilder> EqualityDeltaWriter<B>
+impl<B: WriterBuilder> EqualityDeltaWriter<B>
 where
-    B::R: SingletonWriter,
+    B::R: SingletonWriter + FileWriter,
 {
     /// Create a new `EqualityDeltaWriter`.
     #[allow(clippy::too_many_arguments)]

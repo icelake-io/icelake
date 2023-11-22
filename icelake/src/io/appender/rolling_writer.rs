@@ -8,7 +8,7 @@ use std::sync::Arc;
 use crate::config::{ParquetWriterConfig, RollingWriterConfig};
 use crate::io::location_generator::FileLocationGenerator;
 use crate::io::parquet::ParquetWriter;
-use crate::io::{RecordBatchWriter, RecordBatchWriterBuilder, SingletonWriter};
+use crate::io::{FileWriter, SingletonWriter, WriterBuilder};
 
 use crate::io::parquet::ParquetWriterBuilder;
 use crate::types::DataFileBuilder;
@@ -41,7 +41,7 @@ impl RollingWriterBuilder {
 }
 
 #[async_trait::async_trait]
-impl RecordBatchWriterBuilder for RollingWriterBuilder {
+impl WriterBuilder for RollingWriterBuilder {
     type R = RollingWriter;
 
     async fn build(self, schema: &SchemaRef) -> Result<Self::R> {
@@ -200,7 +200,7 @@ impl RollingWriter {
 // unsafe impl Sync for RollingWriter {}
 
 #[async_trait]
-impl RecordBatchWriter for RollingWriter {
+impl FileWriter for RollingWriter {
     /// Write a record batch. The `DataFileWriter` will create a new file when the current row num is greater than `target_file_row_num`.
     async fn write(&mut self, batch: RecordBatch) -> Result<()> {
         let batch = self.try_cast_batch(batch)?;
@@ -250,8 +250,8 @@ mod test {
 
     use crate::{
         io::{
-            location_generator::FileLocationGenerator, RecordBatchWriter, RecordBatchWriterBuilder,
-            RollingWriterBuilder,
+            location_generator::FileLocationGenerator, FileWriter, RollingWriterBuilder,
+            WriterBuilder,
         },
         types::parse_table_metadata,
     };

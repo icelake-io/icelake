@@ -2,7 +2,7 @@
 use std::sync::Arc;
 
 use crate::{
-    io::{RecordBatchWriter, RecordBatchWriterBuilder},
+    io::{FileWriter, WriterBuilder},
     types::{DataFileBuilder, COLUMN_ID_META_KEY},
     Error, ErrorKind, Result,
 };
@@ -11,18 +11,21 @@ use arrow_array::RecordBatch;
 use arrow_schema::SchemaRef;
 
 /// EqualityDeleteWriter is a writer that writes to a file in the equality delete format.
-pub struct EqualityDeleteWriter<F: RecordBatchWriter> {
+pub struct EqualityDeleteWriter<F: FileWriter> {
     inner_writer: F,
     equality_ids: Vec<i32>,
     col_id_idx: Vec<usize>,
 }
 
 /// Create a new `EqualityDeleteWriter`.
-pub async fn new_eq_delete_writer<B: RecordBatchWriterBuilder>(
+pub async fn new_eq_delete_writer<B: WriterBuilder>(
     arrow_schema: SchemaRef,
     equality_ids: Vec<i32>,
     writer_builder: B,
-) -> Result<EqualityDeleteWriter<B::R>> {
+) -> Result<EqualityDeleteWriter<B::R>>
+where
+    B::R: FileWriter,
+{
     let mut col_id_idx = vec![];
     for &id in equality_ids.iter() {
         arrow_schema.fields().iter().enumerate().any(|(idx, f)| {
@@ -57,7 +60,7 @@ pub async fn new_eq_delete_writer<B: RecordBatchWriterBuilder>(
     })
 }
 
-impl<F: RecordBatchWriter> EqualityDeleteWriter<F> {
+impl<F: FileWriter> EqualityDeleteWriter<F> {
     /// Write a record batch.
     pub async fn write(&mut self, batch: RecordBatch) -> Result<()> {
         self.inner_writer

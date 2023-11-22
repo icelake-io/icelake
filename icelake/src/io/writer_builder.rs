@@ -10,12 +10,12 @@ use opendal::Operator;
 use super::file_writer::{new_eq_delete_writer, EqualityDeleteWriter, SortedPositionDeleteWriter};
 use super::location_generator::FileLocationGenerator;
 use super::{
-    DispatcherWriterBuilder, EqualityDeltaWriter, PartitionedWriterBuilder,
-    RecordBatchWriterBuilder, RollingWriterBuilder, SingletonWriter, UpsertWriter,
+    DispatcherWriterBuilder, EqualityDeltaWriter, FileWriter, PartitionedWriterBuilder,
+    RollingWriterBuilder, SingletonWriter, UpsertWriter, WriterBuilder,
 };
 
 /// `WriterBuilder` used to create kinds of writer.
-pub struct WriterBuilder {
+pub struct WriterFactory {
     table_metadata: TableMetadata,
     cur_arrow_schema: SchemaRef,
     operator: Operator,
@@ -24,13 +24,13 @@ pub struct WriterBuilder {
     table_config: TableConfigRef,
 }
 
-impl WriterBuilder {
+impl WriterFactory {
     pub fn new(
         table_metadata: TableMetadata,
         operator: Operator,
         task_id: usize,
         table_config: TableConfigRef,
-    ) -> Result<WriterBuilder> {
+    ) -> Result<WriterFactory> {
         let cur_arrow_schema = Arc::new(
             table_metadata
                 .current_schema()?
@@ -44,7 +44,7 @@ impl WriterBuilder {
                 })?,
         );
 
-        Ok(WriterBuilder {
+        Ok(WriterFactory {
             table_metadata,
             operator,
             cur_arrow_schema,
@@ -83,7 +83,7 @@ impl WriterBuilder {
         ))
     }
 
-    pub fn partition_writer_builder<B: RecordBatchWriterBuilder>(
+    pub fn partition_writer_builder<B: WriterBuilder>(
         &self,
         inner_builder: B,
         is_upsert: bool,
@@ -102,7 +102,7 @@ impl WriterBuilder {
         ))
     }
 
-    pub fn dispatcher_writer_builder<P: RecordBatchWriterBuilder, UP: RecordBatchWriterBuilder>(
+    pub fn dispatcher_writer_builder<P: WriterBuilder, UP: WriterBuilder>(
         &self,
         partitioned_builder: P,
         unpartitioned_builder: UP,
@@ -116,30 +116,36 @@ impl WriterBuilder {
     }
 
     /// Build a `PositionDeleteWriter`.
-    pub async fn build_sorted_position_delete_writer<B: RecordBatchWriterBuilder>(
+    pub async fn build_sorted_position_delete_writer<B: WriterBuilder>(
         self,
         builder: B,
-    ) -> Result<SortedPositionDeleteWriter<B>> {
+    ) -> Result<SortedPositionDeleteWriter<B>>
+    where
+        B::R: FileWriter,
+    {
         Ok(SortedPositionDeleteWriter::new(self.table_config, builder))
     }
 
     /// Build a `EqualityDeleteWriter`.
-    pub async fn build_equality_delete_writer<B: RecordBatchWriterBuilder>(
+    pub async fn build_equality_delete_writer<B: WriterBuilder>(
         self,
         equality_ids: Vec<i32>,
         builder: B,
-    ) -> Result<EqualityDeleteWriter<B::R>> {
+    ) -> Result<EqualityDeleteWriter<B::R>>
+    where
+        B::R: FileWriter,
+    {
         new_eq_delete_writer(self.cur_arrow_schema, equality_ids, builder).await
     }
 
     /// Build a `EqualityDeltaWriter`.
-    pub async fn build_equality_delta_writer<B: RecordBatchWriterBuilder>(
+    pub async fn build_equality_delta_writer<B: WriterBuilder>(
         self,
         unique_column_ids: Vec<i32>,
         builder: B,
     ) -> Result<EqualityDeltaWriter<B>>
     where
-        B::R: SingletonWriter,
+        B::R: SingletonWriter + FileWriter,
     {
         EqualityDeltaWriter::try_new(
             self.cur_arrow_schema,
@@ -150,13 +156,13 @@ impl WriterBuilder {
         .await
     }
 
-    pub async fn build_upsert_writer<B: RecordBatchWriterBuilder>(
+    pub async fn build_upsert_writer<B: WriterBuilder>(
         self,
         unique_column_ids: Vec<i32>,
         builder: B,
     ) -> Result<UpsertWriter<B>>
     where
-        B::R: SingletonWriter,
+        B::R: SingletonWriter + FileWriter,
     {
         UpsertWriter::try_new(
             self.table_metadata,

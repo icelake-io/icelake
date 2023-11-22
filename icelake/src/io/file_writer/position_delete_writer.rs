@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::config::TableConfigRef;
-use crate::io::{RecordBatchWriter, RecordBatchWriterBuilder};
+use crate::io::{FileWriter, WriterBuilder};
 use crate::types::{Any, DataFileBuilder, Field, Primitive, Schema};
 use crate::{types::Struct, Result};
 use crate::{Error, ErrorKind};
@@ -11,7 +11,10 @@ use arrow_array::{ArrayRef, Int64Array, RecordBatch, StringArray};
 use arrow_schema::SchemaRef;
 
 /// A PositionDeleteWriter used to write position delete, it will sort the incoming delete by file_path and pos.
-pub struct SortedPositionDeleteWriter<B: RecordBatchWriterBuilder> {
+pub struct SortedPositionDeleteWriter<B: WriterBuilder>
+where
+    B::R: FileWriter,
+{
     table_config: TableConfigRef,
     schema: SchemaRef,
     inner_writer_builder: B,
@@ -22,7 +25,10 @@ pub struct SortedPositionDeleteWriter<B: RecordBatchWriterBuilder> {
     result: Vec<DataFileBuilder>,
 }
 
-impl<B: RecordBatchWriterBuilder> SortedPositionDeleteWriter<B> {
+impl<B: WriterBuilder> SortedPositionDeleteWriter<B>
+where
+    B::R: FileWriter,
+{
     /// Create a new `SortedPositionDeleteWriter`.
     pub fn new(table_config: TableConfigRef, inner_writer_builder: B) -> Self {
         Self {
@@ -122,12 +128,12 @@ fn arrow_schema_of(row_type: Option<Arc<Struct>>) -> Result<SchemaRef> {
 /// - They're belong to partition.
 ///
 /// But PositionDeleteWriter will not guarantee and check above. It is the caller's responsibility to guarantee them.
-pub struct PositionDeleteWriter<F: RecordBatchWriter> {
+pub struct PositionDeleteWriter<F: FileWriter> {
     schema: SchemaRef,
     inner_writer: F,
 }
 
-impl<F: RecordBatchWriter> PositionDeleteWriter<F> {
+impl<F: FileWriter> PositionDeleteWriter<F> {
     /// Create a new `PositionDeleteWriter`.
     fn try_new(row_type: Option<Arc<Struct>>, inner_writer: F) -> Result<Self> {
         Ok(Self {

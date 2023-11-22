@@ -2,7 +2,7 @@
 //! table writer used directly by the compute engine.
 use crate::error::Result;
 use crate::io::RecordBatchWriter;
-use crate::io::RecordBatchWriterBuilder;
+use crate::io::WriterBuilder;
 use crate::types::Any;
 use crate::types::DataFileBuilder;
 use crate::types::FieldProjector;
@@ -19,14 +19,14 @@ use std::sync::Arc;
 
 /// PartitionWriter can route the batch into different inner writer by partition key.
 #[derive(Clone)]
-pub struct PartitionedWriterBuilder<L: RecordBatchWriterBuilder> {
+pub struct PartitionedWriterBuilder<L: WriterBuilder> {
     inner: L,
     partition_type: Any,
     partition_spec: PartitionSpec,
     is_upsert: bool,
 }
 
-impl<L: RecordBatchWriterBuilder> PartitionedWriterBuilder<L> {
+impl<L: WriterBuilder> PartitionedWriterBuilder<L> {
     pub fn new(
         inner: L,
         partition_type: Any,
@@ -43,7 +43,7 @@ impl<L: RecordBatchWriterBuilder> PartitionedWriterBuilder<L> {
 }
 
 #[async_trait::async_trait]
-impl<L: RecordBatchWriterBuilder> RecordBatchWriterBuilder for PartitionedWriterBuilder<L> {
+impl<L: WriterBuilder> WriterBuilder for PartitionedWriterBuilder<L> {
     type R = PartitionedWriter<L>;
 
     async fn build(self, schema: &SchemaRef) -> Result<Self::R> {
@@ -76,7 +76,7 @@ impl<L: RecordBatchWriterBuilder> RecordBatchWriterBuilder for PartitionedWriter
 }
 
 /// Partition append only writer
-pub struct PartitionedWriter<L: RecordBatchWriterBuilder> {
+pub struct PartitionedWriter<L: WriterBuilder> {
     inner_writers: HashMap<PartitionKey, L::R>,
     partition_splitter: PartitionSplitter,
     inner_buidler: L,
@@ -84,7 +84,10 @@ pub struct PartitionedWriter<L: RecordBatchWriterBuilder> {
 }
 
 #[async_trait::async_trait]
-impl<L: RecordBatchWriterBuilder> RecordBatchWriter for PartitionedWriter<L> {
+impl<L: WriterBuilder> RecordBatchWriter for PartitionedWriter<L>
+where
+    L::R: RecordBatchWriter,
+{
     /// Write a record batch. The `DataFileWriter` will create a new file when the current row num is greater than `target_file_row_num`.
     async fn write(&mut self, batch: RecordBatch) -> Result<()> {
         let split_batch = self.partition_splitter.split_by_partition(&batch)?;
@@ -127,10 +130,7 @@ mod test {
     use itertools::Itertools;
 
     use crate::{
-        io::{
-            PartitionedWriterBuilder, RecordBatchWriter, RecordBatchWriterBuilder,
-            TestWriterBuilder,
-        },
+        io::{PartitionedWriterBuilder, RecordBatchWriter, TestWriterBuilder, WriterBuilder},
         types::{Any, Field, PartitionField, PartitionSpec, Schema, Struct},
     };
 

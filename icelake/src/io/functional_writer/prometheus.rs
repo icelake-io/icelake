@@ -9,7 +9,7 @@ use prometheus::{
 };
 
 use crate::{
-    io::{RecordBatchWriter, RecordBatchWriterBuilder},
+    io::{RecordBatchWriter, WriterBuilder},
     types::DataFileBuilder,
     Result,
 };
@@ -30,12 +30,12 @@ impl WriterMetrics {
 }
 
 #[derive(Clone)]
-pub struct PrometheusWriterBuilder<B: RecordBatchWriterBuilder> {
+pub struct PrometheusWriterBuilder<B: WriterBuilder> {
     inner: B,
     metrics: WriterMetrics,
 }
 
-impl<B: RecordBatchWriterBuilder> PrometheusWriterBuilder<B> {
+impl<B: WriterBuilder> PrometheusWriterBuilder<B> {
     /// Create writer context.
     pub fn new(inner: B, metrics: WriterMetrics) -> Self {
         Self { inner, metrics }
@@ -43,7 +43,10 @@ impl<B: RecordBatchWriterBuilder> PrometheusWriterBuilder<B> {
 }
 
 #[async_trait::async_trait]
-impl<B: RecordBatchWriterBuilder> RecordBatchWriterBuilder for PrometheusWriterBuilder<B> {
+impl<B: WriterBuilder> WriterBuilder for PrometheusWriterBuilder<B>
+where
+    B::R: RecordBatchWriter,
+{
     type R = PrometheusWriter<B::R>;
 
     async fn build(self, schema: &SchemaRef) -> Result<Self::R> {
