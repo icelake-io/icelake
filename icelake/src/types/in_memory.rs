@@ -10,9 +10,9 @@ use chrono::NaiveDateTime;
 use chrono::NaiveTime;
 use chrono::Utc;
 use chrono::{DateTime, Datelike};
+use derive_builder::Builder;
 use opendal::Operator;
 use ordered_float::OrderedFloat;
-use parquet::format::FileMetaData;
 use serde::ser::SerializeMap;
 use serde::ser::SerializeStruct;
 use serde::Serialize;
@@ -1429,152 +1429,9 @@ impl TryFrom<u8> for ManifestStatus {
     }
 }
 
-/// This type used to build DataFile.
-pub struct DataFileBuilder {
-    meta_data: FileMetaData,
-    file_location: String,
-    written_size: u64,
-    table_location: String,
-    content: Option<DataContentType>,
-    partition_value: Option<StructValue>,
-    equality_ids: Option<Vec<i32>>,
-}
-
-impl DataFileBuilder {
-    /// Create a new `DataFileBuilder`.
-    pub fn new(
-        meta_data: FileMetaData,
-        table_location: String,
-        file_location: String,
-        written_size: u64,
-    ) -> Self {
-        Self {
-            meta_data,
-            file_location,
-            written_size,
-            table_location,
-            content: None,
-            partition_value: None,
-            equality_ids: None,
-        }
-    }
-
-    /// Set the content type of this data file.
-    /// This function must be call before build.
-    pub fn with_content(self, content: DataContentType) -> Self {
-        Self {
-            content: Some(content),
-            ..self
-        }
-    }
-
-    /// Set the partition value of this data file.
-    pub fn with_partition_value(self, value: Option<StructValue>) -> Self {
-        Self {
-            partition_value: value,
-            ..self
-        }
-    }
-
-    /// Set the equality ids of this data file.
-    pub fn with_equality_ids(self, ids: Vec<i32>) -> Self {
-        Self {
-            equality_ids: Some(ids),
-            ..self
-        }
-    }
-
-    /// Build the `DataFile`.
-    pub fn build(self) -> DataFile {
-        log::info!("{:?}", self.meta_data);
-        let (column_sizes, value_counts, null_value_counts, distinct_counts) = {
-            // how to decide column id
-            let mut per_col_size: HashMap<i32, _> = HashMap::new();
-            let mut per_col_val_num: HashMap<i32, _> = HashMap::new();
-            let mut per_col_null_val_num: HashMap<i32, _> = HashMap::new();
-            let mut per_col_distinct_val_num: HashMap<i32, _> = HashMap::new();
-            self.meta_data.row_groups.iter().for_each(|group| {
-                group
-                    .columns
-                    .iter()
-                    .enumerate()
-                    .for_each(|(column_id, column_chunk)| {
-                        if let Some(column_chunk_metadata) = &column_chunk.meta_data {
-                            *per_col_size.entry(column_id as i32).or_insert(0) +=
-                                column_chunk_metadata.total_compressed_size;
-                            *per_col_val_num.entry(column_id as i32).or_insert(0) +=
-                                column_chunk_metadata.num_values;
-                            *per_col_null_val_num
-                                .entry(column_id as i32)
-                                .or_insert(0_i64) += column_chunk_metadata
-                                .statistics
-                                .as_ref()
-                                .map(|s| s.null_count)
-                                .unwrap_or(None)
-                                .unwrap_or(0);
-                            *per_col_distinct_val_num
-                                .entry(column_id as i32)
-                                .or_insert(0_i64) += column_chunk_metadata
-                                .statistics
-                                .as_ref()
-                                .map(|s| s.distinct_count)
-                                .unwrap_or(None)
-                                .unwrap_or(0);
-                        }
-                    })
-            });
-            (
-                per_col_size,
-                per_col_val_num,
-                per_col_null_val_num,
-                per_col_distinct_val_num,
-            )
-        };
-
-        // equality_ids is required when content is EqualityDeletes.
-        if self.content.unwrap() == DataContentType::EqualityDeletes {
-            assert!(self.equality_ids.is_some());
-        }
-
-        DataFile {
-            content: self.content.unwrap(),
-            file_path: format!("{}/{}", self.table_location, self.file_location),
-            file_format: crate::types::DataFileFormat::Parquet,
-            // # NOTE
-            // DataFileWriter only response to write data. Partition should place by more high level writer.
-            partition: self.partition_value.unwrap_or_default(),
-            record_count: self.meta_data.num_rows,
-            column_sizes: Some(column_sizes),
-            value_counts: Some(value_counts),
-            null_value_counts: Some(null_value_counts),
-            distinct_counts: Some(distinct_counts),
-            key_metadata: self.meta_data.footer_signing_key_metadata,
-            file_size_in_bytes: self.written_size as i64,
-            // # TODO
-            //
-            // Following fields unsupported now:
-            // - `file_size_in_bytes` can't get from `FileMetaData` now.
-            // - `file_offset` in `FileMetaData` always be None now.
-            // - `nan_value_counts` can't get from `FileMetaData` now.
-            // Currently arrow parquet writer doesn't fill row group offsets, we can use first column chunk offset for it.
-            split_offsets: Some(
-                self.meta_data
-                    .row_groups
-                    .iter()
-                    .filter_map(|group| group.file_offset)
-                    .collect(),
-            ),
-            nan_value_counts: None,
-            lower_bounds: None,
-            upper_bounds: None,
-            equality_ids: self.equality_ids,
-            sort_order_id: None,
-        }
-    }
-}
-
 /// Data file carries data file path, partition tuple, metrics, …
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Builder)]
+#[builder(setter(prefix = "with"))]
 pub struct DataFile {
     /// field id: 134
     ///
@@ -1609,6 +1466,7 @@ pub struct DataFile {
     /// Map from column id to the total size on disk of all regions that
     /// store the column. Does not include bytes necessary to read other
     /// columns, like footers. Leave null for row-oriented formats (Avro)
+    #[builder(setter(strip_option), default)]
     pub column_sizes: Option<HashMap<i32, i64>>,
     /// field id: 109
     /// key field id: 119
@@ -1616,18 +1474,21 @@ pub struct DataFile {
     ///
     /// Map from column id to number of values in the column (including null
     /// and NaN values)
+    #[builder(setter(strip_option), default)]
     pub value_counts: Option<HashMap<i32, i64>>,
     /// field id: 110
     /// key field id: 121
     /// value field id: 122
     ///
     /// Map from column id to number of null values in the column
+    #[builder(setter(strip_option), default)]
     pub null_value_counts: Option<HashMap<i32, i64>>,
     /// field id: 137
     /// key field id: 138
     /// value field id: 139
     ///
     /// Map from column id to number of NaN values in the column
+    #[builder(setter(strip_option), default)]
     pub nan_value_counts: Option<HashMap<i32, i64>>,
     /// field id: 111
     /// key field id: 123
@@ -1637,6 +1498,7 @@ pub struct DataFile {
     /// distinct counts must be derived using values in the file by counting
     /// or using sketches, but not using methods like merging existing
     /// distinct counts
+    #[builder(setter(strip_option), default)]
     pub distinct_counts: Option<HashMap<i32, i64>>,
     /// field id: 125
     /// key field id: 126
@@ -1649,6 +1511,7 @@ pub struct DataFile {
     /// Reference:
     ///
     /// - [Binary single-value serialization](https://iceberg.apache.org/spec/#binary-single-value-serialization)
+    #[builder(setter(strip_option), default)]
     pub lower_bounds: Option<HashMap<i32, Vec<u8>>>,
     /// field id: 128
     /// key field id: 129
@@ -1661,6 +1524,7 @@ pub struct DataFile {
     /// Reference:
     ///
     /// - [Binary single-value serialization](https://iceberg.apache.org/spec/#binary-single-value-serialization)
+    #[builder(setter(strip_option), default)]
     pub upper_bounds: Option<HashMap<i32, Vec<u8>>>,
     /// field id: 131
     ///
@@ -1671,6 +1535,7 @@ pub struct DataFile {
     ///
     /// Split offsets for the data file. For example, all row group offsets
     /// in a Parquet file. Must be sorted ascending
+    #[builder(setter(strip_option), default)]
     pub split_offsets: Option<Vec<i64>>,
     /// field id: 135
     /// element field id: 136
@@ -1679,6 +1544,7 @@ pub struct DataFile {
     /// Required when content is EqualityDeletes and should be null
     /// otherwise. Fields with ids listed in this column must be present
     /// in the delete file
+    #[builder(setter(strip_option), default)]
     pub equality_ids: Option<Vec<i32>>,
     /// field id: 140
     ///
@@ -1690,6 +1556,7 @@ pub struct DataFile {
     /// sorted by file and position, not a table order, and should set sort
     /// order id to null. Readers must ignore sort order id for position
     /// delete files.
+    #[builder(setter(strip_option), default)]
     pub sort_order_id: Option<i32>,
 }
 

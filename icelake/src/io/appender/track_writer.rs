@@ -1,6 +1,6 @@
 use std::{
     pin::Pin,
-    sync::{atomic::AtomicU64, Arc},
+    sync::{atomic::AtomicI64, Arc},
 };
 
 use opendal::Writer;
@@ -9,20 +9,15 @@ use tokio::io::AsyncWrite;
 /// `TrackWriter` is used to track the written size.
 pub struct TrackWriter {
     writer: Writer,
-    written_size: Arc<AtomicU64>,
+    written_size: Arc<AtomicI64>,
 }
 
 impl TrackWriter {
-    pub fn new(writer: Writer) -> Self {
+    pub fn new(writer: Writer, written_size: Arc<AtomicI64>) -> Self {
         Self {
             writer,
-            written_size: Arc::new(AtomicU64::new(0)),
+            written_size,
         }
-    }
-
-    /// Return a reference to the written size, it can be used to track the written size.
-    pub fn get_wrriten_size(&self) -> Arc<AtomicU64> {
-        self.written_size.clone()
     }
 }
 
@@ -35,7 +30,7 @@ impl AsyncWrite for TrackWriter {
         match Pin::new(&mut self.writer).poll_write(cx, buf) {
             std::task::Poll::Ready(Ok(n)) => {
                 self.written_size
-                    .fetch_add(buf.len() as u64, std::sync::atomic::Ordering::SeqCst);
+                    .fetch_add(buf.len() as i64, std::sync::atomic::Ordering::Relaxed);
                 std::task::Poll::Ready(Ok(n))
             }
             std::task::Poll::Ready(Err(e)) => std::task::Poll::Ready(Err(e)),

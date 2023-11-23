@@ -9,8 +9,7 @@ use prometheus::{
 };
 
 use crate::{
-    io::{RecordBatchWriter, WriterBuilder},
-    types::DataFileBuilder,
+    io::{IcebergWriter, IcebergWriterBuilder},
     Result,
 };
 
@@ -30,12 +29,12 @@ impl WriterMetrics {
 }
 
 #[derive(Clone)]
-pub struct PrometheusWriterBuilder<B: WriterBuilder> {
+pub struct PrometheusWriterBuilder<B: IcebergWriterBuilder> {
     inner: B,
     metrics: WriterMetrics,
 }
 
-impl<B: WriterBuilder> PrometheusWriterBuilder<B> {
+impl<B: IcebergWriterBuilder> PrometheusWriterBuilder<B> {
     /// Create writer context.
     pub fn new(inner: B, metrics: WriterMetrics) -> Self {
         Self { inner, metrics }
@@ -43,9 +42,9 @@ impl<B: WriterBuilder> PrometheusWriterBuilder<B> {
 }
 
 #[async_trait::async_trait]
-impl<B: WriterBuilder> WriterBuilder for PrometheusWriterBuilder<B>
+impl<B: IcebergWriterBuilder> IcebergWriterBuilder for PrometheusWriterBuilder<B>
 where
-    B::R: RecordBatchWriter,
+    B::R: IcebergWriter,
 {
     type R = PrometheusWriter<B::R>;
 
@@ -58,20 +57,22 @@ where
     }
 }
 
-pub struct PrometheusWriter<F: RecordBatchWriter> {
+pub struct PrometheusWriter<F: IcebergWriter> {
     appender: F,
     metrics: WriterMetrics,
 }
 
 #[async_trait]
-impl<F: RecordBatchWriter> RecordBatchWriter for PrometheusWriter<F> {
+impl<F: IcebergWriter> IcebergWriter for PrometheusWriter<F> {
+    type R = F::R;
+
     async fn write(&mut self, record: RecordBatch) -> Result<()> {
         self.metrics.write_qps.inc();
         let _ = self.metrics.write_latency.start_timer();
         self.appender.write(record).await
     }
 
-    async fn close(&mut self) -> Result<Vec<DataFileBuilder>> {
+    async fn close(&mut self) -> Result<Self::R> {
         self.appender.close().await
     }
 }

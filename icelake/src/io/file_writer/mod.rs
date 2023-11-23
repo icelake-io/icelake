@@ -11,16 +11,18 @@ pub use self::test::*;
 
 #[cfg(test)]
 mod test {
-    use crate::io::{RecordBatchWriter, WriterBuilder};
+    use crate::io::{IcebergWriter, IcebergWriterBuilder};
+    use crate::types::DataFileBuilder;
     use crate::Result;
     use arrow_array::RecordBatch;
     use arrow_select::concat::concat_batches;
 
+    /// A writer used to test other iceberg writer.
     #[derive(Clone)]
     pub struct TestWriterBuilder;
 
     #[async_trait::async_trait]
-    impl WriterBuilder for TestWriterBuilder {
+    impl IcebergWriterBuilder for TestWriterBuilder {
         type R = TestWriter;
 
         async fn build(self, _schema: &arrow_schema::SchemaRef) -> Result<Self::R> {
@@ -40,13 +42,15 @@ mod test {
     }
 
     #[async_trait::async_trait]
-    impl RecordBatchWriter for TestWriter {
+    impl IcebergWriter for TestWriter {
+        type R = Vec<DataFileBuilder>;
+
         async fn write(&mut self, batch: RecordBatch) -> Result<()> {
             self.batch.push(batch);
             Ok(())
         }
 
-        async fn close(&mut self) -> crate::Result<Vec<crate::types::DataFileBuilder>> {
+        async fn close(&mut self) -> crate::Result<Self::R> {
             unimplemented!()
         }
     }

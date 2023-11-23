@@ -2,93 +2,73 @@
 use std::sync::Arc;
 
 use crate::{
-    io::{FileWriter, WriterBuilder},
-    types::{DataFileBuilder, COLUMN_ID_META_KEY},
+    io::{IcebergWriteResult, IcebergWriter, IcebergWriterBuilder},
+    types::FieldProjector,
     Error, ErrorKind, Result,
 };
 
 use arrow_array::RecordBatch;
 use arrow_schema::SchemaRef;
 
-/// EqualityDeleteWriter is a writer that writes to a file in the equality delete format.
-pub struct EqualityDeleteWriter<F: FileWriter> {
-    inner_writer: F,
+#[derive(Clone)]
+pub struct EqualityDeleteWriterBuilder<B: IcebergWriterBuilder> {
+    inner: B,
     equality_ids: Vec<i32>,
-    col_id_idx: Vec<usize>,
 }
 
-/// Create a new `EqualityDeleteWriter`.
-pub async fn new_eq_delete_writer<B: WriterBuilder>(
-    arrow_schema: SchemaRef,
-    equality_ids: Vec<i32>,
-    writer_builder: B,
-) -> Result<EqualityDeleteWriter<B::R>>
-where
-    B::R: FileWriter,
-{
-    let mut col_id_idx = vec![];
-    for &id in equality_ids.iter() {
-        arrow_schema.fields().iter().enumerate().any(|(idx, f)| {
-            if f.metadata()
-                .get(COLUMN_ID_META_KEY)
-                .unwrap()
-                .parse::<i32>()
-                .unwrap()
-                == id
-            {
-                col_id_idx.push(idx);
-                true
-            } else {
-                false
-            }
-        });
+impl<B: IcebergWriterBuilder> EqualityDeleteWriterBuilder<B> {
+    pub fn new(inner: B, equality_ids: Vec<i32>) -> Self {
+        Self {
+            inner,
+            equality_ids,
+        }
     }
-    let delete_schema = Arc::new(arrow_schema.project(&col_id_idx).map_err(|err| {
-        Error::new(
-            ErrorKind::ArrowError,
-            format!(
-                "Failed to project schema with equality ids: {:?}, error: {}",
-                equality_ids, err
-            ),
-        )
-    })?);
-
-    Ok(EqualityDeleteWriter {
-        inner_writer: writer_builder.build(&delete_schema).await?,
-        equality_ids,
-        col_id_idx,
-    })
 }
 
-impl<F: FileWriter> EqualityDeleteWriter<F> {
-    /// Write a record batch.
-    pub async fn write(&mut self, batch: RecordBatch) -> Result<()> {
-        self.inner_writer
-            .write(batch.project(&self.col_id_idx).map_err(|err| {
-                Error::new(
-                    ErrorKind::ArrowError,
-                    format!(
-                        "Failed to project record batch with equality ids: {:?}, error: {}",
-                        self.equality_ids, err
-                    ),
-                )
-            })?)
-            .await?;
+#[async_trait::async_trait]
+impl<B: IcebergWriterBuilder> IcebergWriterBuilder for EqualityDeleteWriterBuilder<B>
+where
+    B::R: IcebergWriter,
+{
+    type R = EqualityDeleteWriter<B::R>;
+
+    async fn build(self, schema: &SchemaRef) -> Result<Self::R> {
+        let (projector, fields) = FieldProjector::new(schema.fields(), &self.equality_ids)?;
+        let delete_schema = Arc::new(arrow_schema::Schema::new(fields));
+        Ok(EqualityDeleteWriter {
+            inner_writer: self.inner.build(&delete_schema).await?,
+            projector,
+            delete_schema,
+            equality_ids: self.equality_ids,
+        })
+    }
+}
+
+/// EqualityDeleteWriter is a writer that writes to a file in the equality delete format.
+pub struct EqualityDeleteWriter<F: IcebergWriter> {
+    inner_writer: F,
+    projector: FieldProjector,
+    delete_schema: SchemaRef,
+    equality_ids: Vec<i32>,
+}
+
+#[async_trait::async_trait]
+impl<F: IcebergWriter> IcebergWriter for EqualityDeleteWriter<F> {
+    type R = F::R;
+    async fn write(&mut self, batch: RecordBatch) -> Result<()> {
+        let batch = RecordBatch::try_new(
+            self.delete_schema.clone(),
+            self.projector.project(batch.columns()),
+        )
+        .map_err(|err| Error::new(ErrorKind::IcebergDataInvalid, format!("{err}")))?;
+        self.inner_writer.write(batch).await?;
         Ok(())
     }
 
-    /// Complte the write and return the list of `DataFileBuilder` as result.
-    pub async fn close(mut self) -> Result<Vec<DataFileBuilder>> {
-        Ok(self
-            .inner_writer
-            .close()
-            .await?
-            .into_iter()
-            .map(|builder| {
-                builder
-                    .with_content(crate::types::DataContentType::EqualityDeletes)
-                    .with_equality_ids(self.equality_ids.clone())
-            })
-            .collect())
+    async fn close(&mut self) -> Result<F::R> {
+        let mut res = self.inner_writer.close().await?;
+        res.with_content(crate::types::DataContentType::EqualityDeletes);
+        res.with_equality_ids(self.equality_ids.clone());
+        Ok(res)
     }
 }

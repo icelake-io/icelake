@@ -2,7 +2,7 @@ use std::{collections::HashMap, fs::File};
 
 use icelake::{
     catalog::load_catalog,
-    io::{DataFileWriterBuilder, RecordBatchWriter, WriterBuilder},
+    io::{DataFileWriterBuilder, IcebergWriter, IcebergWriterBuilder},
     transaction::Transaction,
     Table,
 };
@@ -162,23 +162,27 @@ impl TestFixture {
 
         let records = &self.test_case.write_date;
 
+        let parquet_writer_builder = table
+            .writer_builder()
+            .unwrap()
+            .parquet_writer_builder(0)
+            .unwrap();
         let rolling_writer_builder = table
             .writer_builder()
             .unwrap()
-            .rolling_writer_builder(None)
+            .rolling_writer_builder(None, parquet_writer_builder)
             .unwrap();
         let data_file_writer_builder = DataFileWriterBuilder::new(rolling_writer_builder);
         let partition_writer_builder = table
             .writer_builder()
             .unwrap()
-            .partition_writer_builder(data_file_writer_builder.clone(), false)
+            .partition_writer_builder(data_file_writer_builder.clone())
             .unwrap();
-        let dispacher_writer_builder = table
+        let mut task_writer = table
             .writer_builder()
             .unwrap()
             .dispatcher_writer_builder(partition_writer_builder, data_file_writer_builder)
-            .unwrap();
-        let mut task_writer = dispacher_writer_builder
+            .unwrap()
             .build(&table.current_arrow_schema().unwrap())
             .await
             .unwrap();
@@ -196,7 +200,7 @@ impl TestFixture {
             .await
             .unwrap()
             .into_iter()
-            .map(|builder| builder.build())
+            .map(|builder| builder.build().unwrap())
             .collect_vec();
         log::debug!("Insert {} data files: {:?}", result.len(), result);
 

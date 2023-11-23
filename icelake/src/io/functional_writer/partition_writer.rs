@@ -1,67 +1,47 @@
 //! task_writer module provide a task writer for writing data in a table.
 //! table writer used directly by the compute engine.
 use crate::error::Result;
-use crate::io::RecordBatchWriter;
-use crate::io::WriterBuilder;
+use crate::io::IcebergWriteResult;
+use crate::io::IcebergWriter;
+use crate::io::IcebergWriterBuilder;
 use crate::types::Any;
-use crate::types::DataFileBuilder;
 use crate::types::FieldProjector;
 use crate::types::PartitionKey;
 use crate::types::PartitionSpec;
 use crate::types::PartitionSplitter;
 use arrow_array::RecordBatch;
-use arrow_schema::Field;
-use arrow_schema::Fields;
 use arrow_schema::SchemaRef;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
-use std::sync::Arc;
 
 /// PartitionWriter can route the batch into different inner writer by partition key.
 #[derive(Clone)]
-pub struct PartitionedWriterBuilder<L: WriterBuilder> {
-    inner: L,
+pub struct PartitionedWriterBuilder<B: IcebergWriterBuilder> {
+    inner: B,
     partition_type: Any,
     partition_spec: PartitionSpec,
-    is_upsert: bool,
 }
 
-impl<L: WriterBuilder> PartitionedWriterBuilder<L> {
-    pub fn new(
-        inner: L,
-        partition_type: Any,
-        partition_spec: PartitionSpec,
-        is_upsert: bool,
-    ) -> Self {
+impl<B: IcebergWriterBuilder> PartitionedWriterBuilder<B> {
+    pub fn new(inner: B, partition_type: Any, partition_spec: PartitionSpec) -> Self {
         Self {
             inner,
             partition_type,
             partition_spec,
-            is_upsert,
         }
     }
 }
 
 #[async_trait::async_trait]
-impl<L: WriterBuilder> WriterBuilder for PartitionedWriterBuilder<L> {
-    type R = PartitionedWriter<L>;
+impl<B: IcebergWriterBuilder> IcebergWriterBuilder for PartitionedWriterBuilder<B>
+where
+    B::R: IcebergWriter,
+{
+    type R = PartitionedWriter<B>;
 
     async fn build(self, schema: &SchemaRef) -> Result<Self::R> {
-        let (projector, _) = if !self.is_upsert {
-            FieldProjector::new(schema.fields(), &self.partition_spec.column_ids())?
-        } else {
-            let mut new_fields = Vec::with_capacity(schema.fields().len() + 1);
-            new_fields.push(Arc::new(Field::new(
-                "",
-                arrow_schema::DataType::Int32,
-                false,
-            )));
-            new_fields.extend(schema.fields().iter().cloned());
-            FieldProjector::new(
-                &Fields::from_iter(new_fields.into_iter()),
-                &self.partition_spec.column_ids(),
-            )?
-        };
+        let (projector, _) =
+            FieldProjector::new(schema.fields(), &self.partition_spec.column_ids())?;
         Ok(PartitionedWriter {
             inner_writers: HashMap::new(),
             partition_splitter: PartitionSplitter::try_new(
@@ -76,18 +56,23 @@ impl<L: WriterBuilder> WriterBuilder for PartitionedWriterBuilder<L> {
 }
 
 /// Partition append only writer
-pub struct PartitionedWriter<L: WriterBuilder> {
-    inner_writers: HashMap<PartitionKey, L::R>,
+pub struct PartitionedWriter<B: IcebergWriterBuilder>
+where
+    B::R: IcebergWriter,
+{
+    inner_writers: HashMap<PartitionKey, B::R>,
     partition_splitter: PartitionSplitter,
-    inner_buidler: L,
+    inner_buidler: B,
     schema: SchemaRef,
 }
 
 #[async_trait::async_trait]
-impl<L: WriterBuilder> RecordBatchWriter for PartitionedWriter<L>
+impl<B: IcebergWriterBuilder> IcebergWriter for PartitionedWriter<B>
 where
-    L::R: RecordBatchWriter,
+    B::R: IcebergWriter,
 {
+    type R = <<B as IcebergWriterBuilder>::R as IcebergWriter>::R;
+
     /// Write a record batch. The `DataFileWriter` will create a new file when the current row num is greater than `target_file_row_num`.
     async fn write(&mut self, batch: RecordBatch) -> Result<()> {
         let split_batch = self.partition_splitter.split_by_partition(&batch)?;
@@ -107,19 +92,16 @@ where
     }
 
     /// Complte the write and return the list of `DataFile` as result.
-    async fn close(&mut self) -> Result<Vec<DataFileBuilder>> {
-        let mut res = vec![];
+    async fn close(&mut self) -> Result<Self::R> {
+        let mut res_vec = Self::R::default();
         let inner_writers = std::mem::take(&mut self.inner_writers);
         for (key, mut writer) in inner_writers.into_iter() {
-            let data_file_builders = writer.close().await?;
-
             let partition_value = self.partition_splitter.convert_key_to_value(key)?;
-
-            res.extend(data_file_builders.into_iter().map(|data_file_builder| {
-                data_file_builder.with_partition_value(Some(partition_value.clone()))
-            }));
+            let mut res = writer.close().await?;
+            res.with_partition(Some(partition_value));
+            res_vec.combine(res);
         }
-        Ok(res)
+        Ok(res_vec)
     }
 }
 
@@ -130,7 +112,7 @@ mod test {
     use itertools::Itertools;
 
     use crate::{
-        io::{PartitionedWriterBuilder, RecordBatchWriter, TestWriterBuilder, WriterBuilder},
+        io::{IcebergWriter, IcebergWriterBuilder, PartitionedWriterBuilder, TestWriterBuilder},
         types::{Any, Field, PartitionField, PartitionSpec, Schema, Struct},
     };
 
@@ -192,12 +174,8 @@ mod test {
             arrow_array::RecordBatch::try_from_iter([("pk", col.clone()), ("data", col2.clone())])
                 .unwrap();
 
-        let builder = PartitionedWriterBuilder::new(
-            TestWriterBuilder {},
-            partition_type,
-            partition_spec,
-            false,
-        );
+        let builder =
+            PartitionedWriterBuilder::new(TestWriterBuilder {}, partition_type, partition_spec);
         let mut writer = builder.build(&arrow_schema).await.unwrap();
         writer.write(to_write).await.unwrap();
 
@@ -253,6 +231,9 @@ mod test {
         let (schema, partition_spec) = create_partition();
         let partition_type = Any::Struct(partition_spec.partition_type(&schema).unwrap().into());
         let arrow_schema: arrow_schema::SchemaRef = Arc::new(schema.try_into().unwrap());
+        let builder =
+            PartitionedWriterBuilder::new(TestWriterBuilder {}, partition_type, partition_spec);
+        let mut writer = builder.build(&arrow_schema).await.unwrap();
 
         let data = vec![
             (3, 1, 1),
@@ -275,28 +256,16 @@ mod test {
             data.iter().map(|(_, _, data)| *data),
         )) as arrow_array::ArrayRef;
         let to_write = arrow_array::RecordBatch::try_from_iter([
-            ("op", op_col.clone()),
             ("pk", col.clone()),
             ("data", col2.clone()),
+            ("op", op_col.clone()),
         ])
         .unwrap();
-
-        let builder = PartitionedWriterBuilder::new(
-            TestWriterBuilder {},
-            partition_type,
-            partition_spec,
-            true,
-        );
-        let mut writer = builder.build(&arrow_schema).await.unwrap();
         writer.write(to_write).await.unwrap();
 
         assert_eq!(writer.inner_writers.len(), 3);
 
         let expect1 = arrow_array::RecordBatch::try_from_iter([
-            (
-                "op",
-                Arc::new(arrow_array::Int32Array::from(vec![3, 2, 1])) as arrow_array::ArrayRef,
-            ),
             (
                 "pk",
                 Arc::new(arrow_array::Int64Array::from(vec![1, 1, 1])) as arrow_array::ArrayRef,
@@ -305,13 +274,13 @@ mod test {
                 "data",
                 Arc::new(arrow_array::Int64Array::from(vec![1, 2, 3])) as arrow_array::ArrayRef,
             ),
+            (
+                "op",
+                Arc::new(arrow_array::Int32Array::from(vec![3, 2, 1])) as arrow_array::ArrayRef,
+            ),
         ])
         .unwrap();
         let expect2 = arrow_array::RecordBatch::try_from_iter([
-            (
-                "op",
-                Arc::new(arrow_array::Int32Array::from(vec![2, 3, 1])) as arrow_array::ArrayRef,
-            ),
             (
                 "pk",
                 Arc::new(arrow_array::Int64Array::from(vec![2, 2, 2])) as arrow_array::ArrayRef,
@@ -320,13 +289,13 @@ mod test {
                 "data",
                 Arc::new(arrow_array::Int64Array::from(vec![1, 2, 3])) as arrow_array::ArrayRef,
             ),
+            (
+                "op",
+                Arc::new(arrow_array::Int32Array::from(vec![2, 3, 1])) as arrow_array::ArrayRef,
+            ),
         ])
         .unwrap();
         let expect3 = arrow_array::RecordBatch::try_from_iter([
-            (
-                "op",
-                Arc::new(arrow_array::Int32Array::from(vec![3, 1, 2])) as arrow_array::ArrayRef,
-            ),
             (
                 "pk",
                 Arc::new(arrow_array::Int64Array::from(vec![3, 3, 3])) as arrow_array::ArrayRef,
@@ -334,6 +303,10 @@ mod test {
             (
                 "data",
                 Arc::new(arrow_array::Int64Array::from(vec![1, 2, 3])) as arrow_array::ArrayRef,
+            ),
+            (
+                "op",
+                Arc::new(arrow_array::Int32Array::from(vec![3, 1, 2])) as arrow_array::ArrayRef,
             ),
         ])
         .unwrap();
