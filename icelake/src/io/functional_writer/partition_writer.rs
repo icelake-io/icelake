@@ -107,72 +107,42 @@ where
 
 #[cfg(test)]
 mod test {
-    use std::sync::Arc;
-
     use itertools::Itertools;
 
     use crate::{
-        io::{IcebergWriter, IcebergWriterBuilder, PartitionedWriterBuilder, TestWriterBuilder},
-        types::{Any, Field, PartitionField, PartitionSpec, Schema, Struct},
+        io::{
+            test::{create_arrow_schema, create_batch, create_schema, TestWriterBuilder},
+            IcebergWriter, IcebergWriterBuilder, PartitionedWriterBuilder,
+        },
+        types::{Any, PartitionField, PartitionSpec},
     };
 
-    fn create_partition() -> (Schema, PartitionSpec) {
-        let schema = Schema::new(
-            1,
-            None,
-            Struct::new(vec![
-                Field::required(
-                    1,
-                    "pk",
-                    crate::types::Any::Primitive(crate::types::Primitive::Long),
-                )
-                .into(),
-                Field::required(
-                    2,
-                    "data",
-                    crate::types::Any::Primitive(crate::types::Primitive::Long),
-                )
-                .into(),
-            ]),
-        );
-        let partition_spec = PartitionSpec {
+    fn create_partition() -> PartitionSpec {
+        PartitionSpec {
             spec_id: 1,
             fields: vec![PartitionField {
                 source_column_id: 1,
                 partition_field_id: 1,
                 transform: crate::types::Transform::Identity,
-                name: "pk".to_string(),
+                name: "col1".to_string(),
             }],
-        };
-        (schema, partition_spec)
+        }
     }
 
     #[tokio::test]
     async fn test_partition_writer() {
-        let (schema, partition_spec) = create_partition();
+        let schema = create_schema(2);
+        let arrow_schema = create_arrow_schema(2);
+        let partition_spec = create_partition();
         let partition_type = Any::Struct(partition_spec.partition_type(&schema).unwrap().into());
-        let arrow_schema: arrow_schema::SchemaRef = Arc::new(schema.try_into().unwrap());
 
-        let data = [
-            (1, 1),
-            (2, 1),
-            (3, 1),
-            (1, 2),
-            (2, 2),
-            (3, 2),
-            (1, 3),
-            (2, 3),
-            (3, 3),
-        ];
-        let col = Arc::new(arrow_array::Int64Array::from_iter_values(
-            data.iter().map(|(pk, _)| *pk),
-        )) as arrow_array::ArrayRef;
-        let col2 = Arc::new(arrow_array::Int64Array::from_iter_values(
-            data.iter().map(|(_, data)| *data),
-        )) as arrow_array::ArrayRef;
-        let to_write =
-            arrow_array::RecordBatch::try_from_iter([("pk", col.clone()), ("data", col2.clone())])
-                .unwrap();
+        let to_write = create_batch(
+            &arrow_schema,
+            vec![
+                vec![1, 2, 3, 1, 2, 3, 1, 2, 3],
+                vec![1, 1, 1, 2, 2, 2, 3, 3, 3],
+            ],
+        );
 
         let builder =
             PartitionedWriterBuilder::new(TestWriterBuilder {}, partition_type, partition_spec);
@@ -181,39 +151,9 @@ mod test {
 
         assert_eq!(writer.inner_writers.len(), 3);
 
-        let expect1 = arrow_array::RecordBatch::try_from_iter([
-            (
-                "pk",
-                Arc::new(arrow_array::Int64Array::from(vec![1, 1, 1])) as arrow_array::ArrayRef,
-            ),
-            (
-                "data",
-                Arc::new(arrow_array::Int64Array::from(vec![1, 2, 3])) as arrow_array::ArrayRef,
-            ),
-        ])
-        .unwrap();
-        let expect2 = arrow_array::RecordBatch::try_from_iter([
-            (
-                "pk",
-                Arc::new(arrow_array::Int64Array::from(vec![2, 2, 2])) as arrow_array::ArrayRef,
-            ),
-            (
-                "data",
-                Arc::new(arrow_array::Int64Array::from(vec![1, 2, 3])) as arrow_array::ArrayRef,
-            ),
-        ])
-        .unwrap();
-        let expect3 = arrow_array::RecordBatch::try_from_iter([
-            (
-                "pk",
-                Arc::new(arrow_array::Int64Array::from(vec![3, 3, 3])) as arrow_array::ArrayRef,
-            ),
-            (
-                "data",
-                Arc::new(arrow_array::Int64Array::from(vec![1, 2, 3])) as arrow_array::ArrayRef,
-            ),
-        ])
-        .unwrap();
+        let expect1 = create_batch(&arrow_schema, vec![vec![1, 1, 1], vec![1, 2, 3]]);
+        let expect2 = create_batch(&arrow_schema, vec![vec![2, 2, 2], vec![1, 2, 3]]);
+        let expect3 = create_batch(&arrow_schema, vec![vec![3, 3, 3], vec![1, 2, 3]]);
         let actual_res = writer
             .inner_writers
             .values()
@@ -225,91 +165,41 @@ mod test {
     }
 
     // # NOTE
-    // This test case test that partition writer should guarantee the order within one partition is hold after partition.
+    // The delta writer will put the op vec in the last column, this test case test that the partition will
+    // ignore the last column.
     #[tokio::test]
-    async fn test_partition_upsert_writer() {
-        let (schema, partition_spec) = create_partition();
+    async fn test_partition_delta_writer() {
+        let schema = create_schema(2);
+        let arrow_schema = create_arrow_schema(3);
+        let partition_spec = create_partition();
         let partition_type = Any::Struct(partition_spec.partition_type(&schema).unwrap().into());
-        let arrow_schema: arrow_schema::SchemaRef = Arc::new(schema.try_into().unwrap());
+
         let builder =
             PartitionedWriterBuilder::new(TestWriterBuilder {}, partition_type, partition_spec);
         let mut writer = builder.build(&arrow_schema).await.unwrap();
 
-        let data = vec![
-            (3, 1, 1),
-            (2, 2, 1),
-            (3, 3, 1),
-            (2, 1, 2),
-            (3, 2, 2),
-            (1, 3, 2),
-            (1, 1, 3),
-            (1, 2, 3),
-            (2, 3, 3),
-        ];
-        let op_col = Arc::new(arrow_array::Int32Array::from_iter_values(
-            data.iter().map(|(op, _, _)| *op),
-        )) as arrow_array::ArrayRef;
-        let col = Arc::new(arrow_array::Int64Array::from_iter_values(
-            data.iter().map(|(_, pk, _)| *pk),
-        )) as arrow_array::ArrayRef;
-        let col2 = Arc::new(arrow_array::Int64Array::from_iter_values(
-            data.iter().map(|(_, _, data)| *data),
-        )) as arrow_array::ArrayRef;
-        let to_write = arrow_array::RecordBatch::try_from_iter([
-            ("pk", col.clone()),
-            ("data", col2.clone()),
-            ("op", op_col.clone()),
-        ])
-        .unwrap();
+        let to_write = create_batch(
+            &arrow_schema,
+            vec![
+                vec![1, 2, 3, 1, 2, 3, 1, 2, 3],
+                vec![1, 1, 1, 2, 2, 2, 3, 3, 3],
+                vec![3, 2, 1, 1, 3, 2, 2, 1, 3],
+            ],
+        );
         writer.write(to_write).await.unwrap();
-
         assert_eq!(writer.inner_writers.len(), 3);
-
-        let expect1 = arrow_array::RecordBatch::try_from_iter([
-            (
-                "pk",
-                Arc::new(arrow_array::Int64Array::from(vec![1, 1, 1])) as arrow_array::ArrayRef,
-            ),
-            (
-                "data",
-                Arc::new(arrow_array::Int64Array::from(vec![1, 2, 3])) as arrow_array::ArrayRef,
-            ),
-            (
-                "op",
-                Arc::new(arrow_array::Int32Array::from(vec![3, 2, 1])) as arrow_array::ArrayRef,
-            ),
-        ])
-        .unwrap();
-        let expect2 = arrow_array::RecordBatch::try_from_iter([
-            (
-                "pk",
-                Arc::new(arrow_array::Int64Array::from(vec![2, 2, 2])) as arrow_array::ArrayRef,
-            ),
-            (
-                "data",
-                Arc::new(arrow_array::Int64Array::from(vec![1, 2, 3])) as arrow_array::ArrayRef,
-            ),
-            (
-                "op",
-                Arc::new(arrow_array::Int32Array::from(vec![2, 3, 1])) as arrow_array::ArrayRef,
-            ),
-        ])
-        .unwrap();
-        let expect3 = arrow_array::RecordBatch::try_from_iter([
-            (
-                "pk",
-                Arc::new(arrow_array::Int64Array::from(vec![3, 3, 3])) as arrow_array::ArrayRef,
-            ),
-            (
-                "data",
-                Arc::new(arrow_array::Int64Array::from(vec![1, 2, 3])) as arrow_array::ArrayRef,
-            ),
-            (
-                "op",
-                Arc::new(arrow_array::Int32Array::from(vec![3, 1, 2])) as arrow_array::ArrayRef,
-            ),
-        ])
-        .unwrap();
+        let expect1 = create_batch(
+            &arrow_schema,
+            vec![vec![1, 1, 1], vec![1, 2, 3], vec![3, 1, 2]],
+        );
+        let expect2 = create_batch(
+            &arrow_schema,
+            vec![vec![2, 2, 2], vec![1, 2, 3], vec![2, 3, 1]],
+        );
+        let expect3 = create_batch(
+            &arrow_schema,
+            vec![vec![3, 3, 3], vec![1, 2, 3], vec![1, 2, 3]],
+        );
         let actual_res = writer
             .inner_writers
             .values()

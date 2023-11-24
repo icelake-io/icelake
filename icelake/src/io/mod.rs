@@ -19,6 +19,8 @@ use arrow_schema::SchemaRef;
 
 use crate::types::{DataFileBuilder, StructValue};
 use crate::Result;
+pub mod input_wrapper;
+pub use input_wrapper::*;
 
 type DefaultInput = RecordBatch;
 
@@ -35,14 +37,14 @@ pub trait FileWriter: Send + 'static {
     async fn close(self) -> Result<Self::R>;
 }
 
-pub trait FileWriteResult: Send + Sync + 'static {
+pub trait FileWriteResult: Send + 'static {
     type R: IcebergWriteResult;
     /// return None Indicates the result is empty.
     fn to_iceberg_result(self) -> Option<Self::R>;
 }
 
 #[async_trait::async_trait]
-pub trait IcebergWriterBuilder: Send + Sync + Clone + 'static {
+pub trait IcebergWriterBuilder: Send + Clone + 'static {
     type R;
     async fn build(self, schema: &SchemaRef) -> Result<Self::R>;
 }
@@ -113,28 +115,48 @@ impl IcebergWriteResult for Vec<DataFileBuilder> {
 
 #[cfg(test)]
 mod test {
-    use std::{collections::HashMap, fs, sync::Arc};
+    use std::{fs, sync::Arc};
 
+    use crate::Result;
     use arrow_array::{ArrayRef, Int64Array, RecordBatch};
-    use arrow_schema::{Fields, SchemaRef};
+    use arrow_schema::SchemaRef;
+    use arrow_select::concat::concat_batches;
+    use bytes::Bytes;
+    use itertools::Itertools;
     use opendal::{services::Memory, Operator};
+    use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 
-    use crate::types::{parse_table_metadata, COLUMN_ID_META_KEY};
+    use crate::types::{parse_table_metadata, DataFileBuilder, Field, Schema, Struct};
 
-    use super::location_generator::FileLocationGenerator;
+    use super::{location_generator::FileLocationGenerator, IcebergWriter, IcebergWriterBuilder};
 
-    pub fn create_schema(col_num: usize) -> SchemaRef {
-        let mut fields = vec![];
-        for i in 1..=col_num {
-            let mut field =
-                arrow_schema::Field::new(format!("col{}", i), arrow_schema::DataType::Int64, false);
-            field.set_metadata(HashMap::from([(
-                COLUMN_ID_META_KEY.to_string(),
-                (i).to_string(),
-            )]));
-            fields.push(field);
-        }
-        Arc::new(arrow_schema::Schema::new(Fields::from(fields)))
+    pub async fn read_batch(op: &Operator, path: &str) -> RecordBatch {
+        let res = op.read(path).await.unwrap();
+        let res = Bytes::from(res);
+        let reader = ParquetRecordBatchReaderBuilder::try_new(res)
+            .unwrap()
+            .build()
+            .unwrap();
+        let batches = reader.into_iter().map(|batch| batch.unwrap()).collect_vec();
+        concat_batches(&batches[0].schema(), batches.iter()).unwrap()
+    }
+
+    pub fn create_schema(col_num: usize) -> Schema {
+        let fields = (1..=col_num)
+            .map(|i| {
+                Arc::new(Field::required(
+                    i as i32,
+                    format!("col{}", i),
+                    crate::types::Any::Primitive(crate::types::Primitive::Long),
+                ))
+            })
+            .collect_vec();
+        Schema::new(1, None, Struct::new(fields))
+    }
+
+    pub fn create_arrow_schema(col_num: usize) -> SchemaRef {
+        let schema = create_schema(col_num);
+        Arc::new(schema.try_into().unwrap())
     }
 
     pub fn create_batch(schema: &SchemaRef, cols: Vec<Vec<i64>>) -> RecordBatch {
@@ -166,5 +188,43 @@ mod test {
         metadata.location = "/".to_string();
 
         FileLocationGenerator::try_new(&metadata, 0, 0, None).unwrap()
+    }
+
+    /// A writer used to test other iceberg writer.
+    #[derive(Clone)]
+    pub struct TestWriterBuilder;
+
+    #[async_trait::async_trait]
+    impl IcebergWriterBuilder for TestWriterBuilder {
+        type R = TestWriter;
+
+        async fn build(self, _schema: &arrow_schema::SchemaRef) -> Result<Self::R> {
+            Ok(TestWriter { batch: vec![] })
+        }
+    }
+
+    #[derive(Default)]
+    pub struct TestWriter {
+        batch: Vec<RecordBatch>,
+    }
+
+    impl TestWriter {
+        pub fn res(&self) -> RecordBatch {
+            concat_batches(&self.batch[0].schema(), self.batch.iter()).unwrap()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl IcebergWriter for TestWriter {
+        type R = Vec<DataFileBuilder>;
+
+        async fn write(&mut self, batch: RecordBatch) -> Result<()> {
+            self.batch.push(batch);
+            Ok(())
+        }
+
+        async fn close(&mut self) -> crate::Result<Self::R> {
+            unimplemented!()
+        }
     }
 }

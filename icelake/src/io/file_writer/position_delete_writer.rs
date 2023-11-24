@@ -1,36 +1,25 @@
 //! A module provide `PositionDeleteWriter`.
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::io::{Cacheable, IcebergWriteResult, IcebergWriter, IcebergWriterBuilder};
-use crate::types::{Any, Field, FieldProjector, Primitive, COLUMN_ID_META_KEY};
-use crate::Result;
-use crate::{Error, ErrorKind};
-use arrow_array::{ArrayRef, RecordBatch, StructArray};
-use arrow_schema::{
-    DataType, Field as ArrowField, FieldRef as ArrowFieldRef, Schema as ArrowSchema,
-    SchemaRef as ArrowSchemaRef,
+use crate::io::{
+    Combinable, IcebergWriteResult, IcebergWriter, IcebergWriterBuilder, SortWriter,
+    SortWriterBuilder,
 };
+use crate::types::{Any, Field, Primitive};
+use crate::Result;
+use arrow_array::{ArrayRef, RecordBatch};
+use arrow_schema::{FieldRef as ArrowFieldRef, Schema as ArrowSchema, SchemaRef as ArrowSchemaRef};
 
 #[derive(Clone)]
 pub struct PositionDeleteWriterBuilder<B: IcebergWriterBuilder> {
     inner: B,
-    row_field_ids: Option<Vec<i32>>,
+    cache_num: usize,
 }
 
 impl<B: IcebergWriterBuilder> PositionDeleteWriterBuilder<B> {
-    /// According iceberg spec, PositionDeleteFile have a row field whose schema
-    /// may be any subset of the table schema and must use field ids matching the table.
-    /// ref: https://iceberg.apache.org/spec/#position-delete-files:~:text=When%20the%20deleted%20row%20column%20is%20present%2C%20its%20schema%20may%20be%20any%20subset%20of%20the%20table%20schema%20and%20must%20use%20field%20ids%20matching%20the%20table.
-    ///
-    /// User can specify the field id in  `row_field_ids` and pass the whole row in write. The writer will extract the row field automatically.
-    /// If it is `None``, this field will be omitted.
-    pub fn new(inner: B, row_field_ids: Option<Vec<i32>>) -> Self {
-        Self {
-            inner,
-            row_field_ids,
-        }
+    pub fn new(inner: B, cache_num: usize) -> Self {
+        Self { inner, cache_num }
     }
 }
 
@@ -39,10 +28,10 @@ impl<B: IcebergWriterBuilder> IcebergWriterBuilder for PositionDeleteWriterBuild
 where
     B::R: IcebergWriter,
 {
-    type R = PositionDeleteWriter<B::R>;
+    type R = PositionDeleteWriter<B>;
 
-    async fn build(self, schema: &ArrowSchemaRef) -> Result<Self::R> {
-        let mut fields: Vec<ArrowFieldRef> = vec![
+    async fn build(self, _schema: &ArrowSchemaRef) -> Result<Self::R> {
+        let fields: Vec<ArrowFieldRef> = vec![
             Arc::new(
                 Field::required(2147483546, "file_path", Any::Primitive(Primitive::String))
                     .try_into()?,
@@ -51,88 +40,48 @@ where
                 Field::required(2147483545, "pos", Any::Primitive(Primitive::Long)).try_into()?,
             ),
         ];
-        let row_projector = if let Some(col_ids) = self.row_field_ids {
-            let (projector, row_fields) = FieldProjector::new(schema.fields(), &col_ids)?;
-            let field = ArrowField::new("row", DataType::Struct(row_fields.clone()), false)
-                .with_metadata(HashMap::from([(
-                    COLUMN_ID_META_KEY.to_string(),
-                    "2147483544".to_string(),
-                )]))
-                .into();
-            fields.push(field);
-            Some(projector)
-        } else {
-            None
-        };
         let schema = ArrowSchema::new(fields).into();
         Ok(PositionDeleteWriter {
-            inner_writer: self.inner.build(&schema).await?,
-            row_projector,
-            schema,
+            inner_writer: SortWriterBuilder::new(self.inner, vec![], self.cache_num)
+                .build(&schema)
+                .await?,
         })
     }
 }
 
-pub struct PositionDeleteWriter<F: IcebergWriter> {
-    inner_writer: F,
-    row_projector: Option<FieldProjector>,
-    schema: ArrowSchemaRef,
+//Position deletes are required to be sorted by file and position,
+pub struct PositionDeleteWriter<B: IcebergWriterBuilder>
+where
+    B::R: IcebergWriter,
+{
+    inner_writer: SortWriter<PositionDeleteInput, B>,
 }
 
 #[async_trait::async_trait]
-impl<F: IcebergWriter> IcebergWriter for PositionDeleteWriter<F> {
-    type R = F::R;
-    async fn write(&mut self, batch: RecordBatch) -> Result<()> {
-        if let Some(projector) = &self.row_projector {
-            let row_column = projector.project(
-                batch
-                    .column(2)
-                    .as_any()
-                    .downcast_ref::<StructArray>()
-                    .ok_or_else(|| {
-                        Error::new(
-                            ErrorKind::IcebergDataInvalid,
-                            "Last column should be row for this position delete writer.",
-                        )
-                    })?
-                    .columns(),
-            );
-            let row_fields = if let DataType::Struct(fields) = self.schema.field(2).data_type() {
-                fields
-            } else {
-                unreachable!()
-            };
-            let batch = RecordBatch::try_new(
-                self.schema.clone(),
-                vec![
-                    batch.column(0).clone(),
-                    batch.column(1).clone(),
-                    Arc::new(StructArray::new(row_fields.clone(), row_column, None)),
-                ],
-            )
-            .map_err(|err| Error::new(ErrorKind::IcebergDataInvalid, format!("{err}")))?;
-            self.inner_writer.write(batch).await?;
-        } else {
-            self.inner_writer.write(batch).await?;
-        }
-        Ok(())
+impl<B: IcebergWriterBuilder> IcebergWriter<PositionDeleteInput> for PositionDeleteWriter<B>
+where
+    B::R: IcebergWriter,
+{
+    type R = <B::R as IcebergWriter>::R;
+    async fn write(&mut self, input: PositionDeleteInput) -> Result<()> {
+        self.inner_writer.write(input).await
     }
 
-    async fn close(&mut self) -> Result<F::R> {
+    async fn close(&mut self) -> Result<Self::R> {
         let mut res = self.inner_writer.close().await?;
         res.with_content(crate::types::DataContentType::PositionDeletes);
         Ok(res)
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PositionDeleteInput {
     pub path: String,
     pub offset: i64,
 }
 
-impl Cacheable for PositionDeleteInput {
-    fn combine(vec: Vec<Self>) -> Result<RecordBatch> {
+impl Combinable for PositionDeleteInput {
+    fn combine(vec: Vec<Self>) -> RecordBatch {
         let schema = arrow_schema::Schema::new(vec![
             arrow_schema::Field::new("file_path", arrow_schema::DataType::Utf8, false),
             arrow_schema::Field::new("pos", arrow_schema::DataType::Int64, false),
@@ -145,15 +94,94 @@ impl Cacheable for PositionDeleteInput {
                 vec.iter().map(|i| i.offset).collect::<Vec<_>>(),
             )) as ArrayRef,
         ];
-        RecordBatch::try_new(Arc::new(schema), columns).map_err(|err| {
-            Error::new(
-                ErrorKind::IcebergDataInvalid,
-                format!("Fail concat cached batch: {}", err),
-            )
-        })
+        RecordBatch::try_new(Arc::new(schema), columns).unwrap()
     }
 
     fn size(&self) -> usize {
         1
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::sync::Arc;
+
+    use itertools::Itertools;
+
+    use crate::io::test::{
+        create_arrow_schema, create_location_generator, create_operator, read_batch,
+    };
+    use crate::io::IcebergWriterBuilder;
+    use crate::io::{
+        BaseFileWriterBuilder, IcebergWriter, ParquetWriterBuilder, PositionDeleteInput,
+        PositionDeleteWriterBuilder,
+    };
+
+    #[tokio::test]
+    async fn test_position_delete_writer() {
+        let op = create_operator();
+        let location_generator = create_location_generator();
+        let parquet_writer_builder = ParquetWriterBuilder::new(op.clone(), 0, Default::default());
+        let mut delete_writer = PositionDeleteWriterBuilder::new(
+            BaseFileWriterBuilder::new(Arc::new(location_generator), None, parquet_writer_builder),
+            100,
+        )
+        .build(&create_arrow_schema(2))
+        .await
+        .unwrap();
+
+        let path_col = vec![
+            "file1", "file1", "file1", "file2", "file3", "file1", "file2",
+        ];
+        let offset_col = vec![3, 2, 2, 10, 30, 1, 20];
+
+        for (path, offset) in path_col.iter().zip(offset_col.iter()) {
+            delete_writer
+                .write(PositionDeleteInput {
+                    path: path.to_string(),
+                    offset: *offset,
+                })
+                .await
+                .unwrap()
+        }
+
+        let data_file_builder = delete_writer.close().await.unwrap();
+        assert_eq!(data_file_builder.len(), 1);
+        let data_file = data_file_builder
+            .into_iter()
+            .next()
+            .unwrap()
+            .with_partition(Default::default())
+            .build()
+            .unwrap();
+
+        let batch = read_batch(&op, &data_file.file_path).await;
+
+        // generate expect
+        let mut expect = path_col
+            .into_iter()
+            .zip(offset_col.into_iter())
+            .collect_vec();
+        expect.sort();
+        let path_col = expect.iter().map(|(path, _)| *path).collect_vec();
+        let offset_col = expect.iter().map(|(_, offset)| *offset).collect_vec();
+
+        assert_eq!(batch.num_columns(), 2);
+        assert_eq!(
+            batch
+                .column(0)
+                .as_any()
+                .downcast_ref::<arrow_array::StringArray>()
+                .unwrap(),
+            &arrow_array::StringArray::from(path_col)
+        );
+        assert_eq!(
+            batch
+                .column(1)
+                .as_any()
+                .downcast_ref::<arrow_array::Int64Array>()
+                .unwrap(),
+            &arrow_array::Int64Array::from(offset_col)
+        );
     }
 }

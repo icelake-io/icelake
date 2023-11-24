@@ -8,7 +8,5 @@ pub mod dispatcher_writer;
 pub use dispatcher_writer::*;
 pub mod sort_writer;
 pub use sort_writer::*;
-pub mod input_wrapper;
-pub use input_wrapper::*;
 #[cfg(feature = "prometheus")]
 pub mod prometheus;

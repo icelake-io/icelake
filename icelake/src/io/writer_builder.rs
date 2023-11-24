@@ -6,8 +6,9 @@ use opendal::Operator;
 
 use super::location_generator::FileLocationGenerator;
 use super::{
-    DispatcherWriterBuilder, FileWriterBuilder, IcebergWriter, IcebergWriterBuilder,
-    ParquetWriterBuilder, PartitionedWriterBuilder, RollingWriterBuilder,
+    BaseFileWriterBuilder, DispatcherWriterBuilder, FileWriterBuilder, IcebergWriter,
+    IcebergWriterBuilder, ParquetWriterBuilder, PartitionedWriterBuilder,
+    PositionDeleteWriterBuilder, SingletonWriter,
 };
 
 /// `WriterBuilderHelper` used to create kinds of writer builder.
@@ -64,10 +65,22 @@ impl WriterBuilderHelper {
         &self,
         file_name_suffix: Option<String>,
         inner_builder: B,
-    ) -> Result<RollingWriterBuilder<B>> {
-        Ok(RollingWriterBuilder::new(
+    ) -> Result<BaseFileWriterBuilder<B>> {
+        Ok(BaseFileWriterBuilder::new(
             self.data_location_generator(file_name_suffix)?.into(),
-            self.table_config.rolling_writer.clone(),
+            Some(self.table_config.rolling_writer.clone()),
+            inner_builder,
+        ))
+    }
+
+    pub fn simple_writer_builder<B: FileWriterBuilder>(
+        &self,
+        file_name_suffix: Option<String>,
+        inner_builder: B,
+    ) -> Result<BaseFileWriterBuilder<B>> {
+        Ok(BaseFileWriterBuilder::new(
+            self.data_location_generator(file_name_suffix)?.into(),
+            None,
             inner_builder,
         ))
     }
@@ -106,6 +119,20 @@ impl WriterBuilderHelper {
             !partition_spec.is_unpartitioned(),
             partitioned_builder,
             unpartitioned_builder,
+        ))
+    }
+
+    pub fn position_delete_writer_builder<B: FileWriterBuilder>(
+        &self,
+        cache_num: usize,
+        inner_builder: B,
+    ) -> Result<PositionDeleteWriterBuilder<BaseFileWriterBuilder<B>>>
+    where
+        B::R: SingletonWriter,
+    {
+        Ok(PositionDeleteWriterBuilder::new(
+            self.simple_writer_builder(Some("pos-del".to_string()), inner_builder)?,
+            cache_num,
         ))
     }
 }

@@ -4,11 +4,10 @@ use arrow_array::{ArrayRef, Int64Array, RecordBatch};
 use arrow_schema::SchemaRef;
 use arrow_select::concat::concat_batches;
 use icelake::io::{
-    DataFileWriterBuilder, DeltaResult, EqualityDeleteWriterBuilder, EqualityDeltaWriterBuilder,
-    IcebergWriter, IcebergWriterBuilder, PositionDeleteWriterBuilder, SortWriterBuilder,
-    UpsertWrapWriterBuilder, UpsertWrapperWriter,
+    DataFileWriterBuilder, DeltaWriter, EqualityDeleteWriterBuilder, EqualityDeltaWriterBuilder,
+    IcebergWriterBuilder,
 };
-use icelake::types::{AnyValue, DataFileBuilder, Field, Struct, StructValueBuilder};
+use icelake::types::{AnyValue, Field, Struct, StructValueBuilder};
 use icelake::{catalog::load_catalog, transaction::Transaction, Table, TableIdentifier};
 mod utils;
 use tokio::runtime::Builder;
@@ -153,7 +152,7 @@ impl DeltaTest {
     async fn write_and_delete_with_delta(
         &self,
         table: &Table,
-        delta_writer: &mut UpsertWrapperWriter<impl IcebergWriter>,
+        delta_writer: &mut DeltaWriter,
         write: Option<Vec<ArrayRef>>,
         delete: Option<Vec<ArrayRef>>,
     ) {
@@ -185,13 +184,7 @@ impl DeltaTest {
         delta_writer.write(ops, batch).await.unwrap();
     }
 
-    async fn commit_writer(
-        &self,
-        table: &mut Table,
-        delta_writer: &mut UpsertWrapperWriter<
-            impl IcebergWriter<R = DeltaResult<Vec<DataFileBuilder>, Vec<DataFileBuilder>>>,
-        >,
-    ) {
+    async fn commit_writer(&self, table: &mut Table, delta_writer: &mut DeltaWriter) {
         let result = delta_writer.close().await.unwrap();
 
         // Commit table transaction
@@ -213,11 +206,7 @@ impl DeltaTest {
         }
     }
 
-    async fn create_writer(
-        &self,
-    ) -> UpsertWrapperWriter<
-        impl IcebergWriter<R = DeltaResult<Vec<DataFileBuilder>, Vec<DataFileBuilder>>>,
-    > {
+    async fn create_writer(&self) -> DeltaWriter {
         let table = self.create_icelake_table().await;
         log::info!(
             "Real path of table is: {}",
@@ -232,18 +221,19 @@ impl DeltaTest {
         let rolling_writer_builder = table
             .writer_builder()
             .unwrap()
-            .rolling_writer_builder(None, paquet_writer_builder)
+            .rolling_writer_builder(None, paquet_writer_builder.clone())
             .unwrap();
         let data_file_writer_builder = DataFileWriterBuilder::new(rolling_writer_builder.clone());
         let equality_delete_writer_builder =
             EqualityDeleteWriterBuilder::new(rolling_writer_builder.clone(), vec![1, 2]);
-        let position_delete_writer_builder =
-            PositionDeleteWriterBuilder::new(rolling_writer_builder.clone(), None);
-        let sorted_position_delete_writer_budiler =
-            SortWriterBuilder::new(position_delete_writer_builder, 0, 100);
+        let position_delete_writer_builder = table
+            .writer_builder()
+            .unwrap()
+            .position_delete_writer_builder(100, paquet_writer_builder)
+            .unwrap();
         let delta_writer = EqualityDeltaWriterBuilder::new(
             data_file_writer_builder,
-            sorted_position_delete_writer_budiler,
+            position_delete_writer_builder,
             equality_delete_writer_builder,
             vec![1, 2],
             false,
@@ -253,10 +243,12 @@ impl DeltaTest {
             .unwrap()
             .partition_writer_builder(delta_writer)
             .unwrap();
-        UpsertWrapWriterBuilder::new(partition_writer_builder)
-            .build(&table.current_arrow_schema().unwrap())
-            .await
-            .unwrap()
+        DeltaWriter::new(
+            partition_writer_builder
+                .build(&table.current_arrow_schema().unwrap())
+                .await
+                .unwrap(),
+        )
     }
 
     pub async fn test_write(&mut self) {

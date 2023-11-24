@@ -15,39 +15,39 @@ use crate::{Error, Result};
 use arrow_schema::{DataType, SchemaRef};
 
 #[derive(Clone)]
-pub struct RollingWriterBuilder<B: FileWriterBuilder> {
+pub struct BaseFileWriterBuilder<B: FileWriterBuilder> {
     location_generator: Arc<FileLocationGenerator>,
-    config: RollingWriterConfig,
+    rolling_config: Option<RollingWriterConfig>,
     inner: B,
 }
 
-impl<B: FileWriterBuilder> RollingWriterBuilder<B> {
+impl<B: FileWriterBuilder> BaseFileWriterBuilder<B> {
     pub fn new(
         location_generator: Arc<FileLocationGenerator>,
-        config: RollingWriterConfig,
+        rolling_config: Option<RollingWriterConfig>,
         inner: B,
     ) -> Self {
         Self {
             location_generator,
-            config,
+            rolling_config,
             inner,
         }
     }
 }
 
 #[async_trait::async_trait]
-impl<B: FileWriterBuilder> IcebergWriterBuilder for RollingWriterBuilder<B>
+impl<B: FileWriterBuilder> IcebergWriterBuilder for BaseFileWriterBuilder<B>
 where
     B::R: SingletonWriter,
 {
-    type R = RollingWriter<B>;
+    type R = BaseFileWriter<B>;
 
-    async fn build(self, schema: &SchemaRef) -> Result<RollingWriter<B>> {
-        RollingWriter::try_new(
+    async fn build(self, schema: &SchemaRef) -> Result<BaseFileWriter<B>> {
+        BaseFileWriter::try_new(
             self.inner,
             self.location_generator,
             schema.clone(),
-            self.config,
+            self.rolling_config,
         )
         .await
     }
@@ -57,7 +57,7 @@ where
 /// When complete, it will return a list of `FileMetaData`.
 /// This writer should be used by specific content writer(`DataFileWriter` and `PositionDeleteFileWriter`), they should convert
 /// `FileMetaData` to specific `DataFile`.
-pub struct RollingWriter<B: FileWriterBuilder> {
+pub struct BaseFileWriter<B: FileWriterBuilder> {
     location_generator: Arc<FileLocationGenerator>,
     arrow_schema: SchemaRef,
 
@@ -69,10 +69,10 @@ pub struct RollingWriter<B: FileWriterBuilder> {
     current_location: String,
 
     result: <<<B as FileWriterBuilder>::R as FileWriter>::R as FileWriteResult>::R,
-    config: RollingWriterConfig,
+    rolling_config: Option<RollingWriterConfig>,
 }
 
-impl<B: FileWriterBuilder> RollingWriter<B>
+impl<B: FileWriterBuilder> BaseFileWriter<B>
 where
     B::R: SingletonWriter,
 {
@@ -81,7 +81,7 @@ where
         writer_builder: B,
         location_generator: Arc<FileLocationGenerator>,
         arrow_schema: SchemaRef,
-        config: RollingWriterConfig,
+        rolling_config: Option<RollingWriterConfig>,
     ) -> Result<Self> {
         let mut writer = Self {
             writer_builder,
@@ -91,16 +91,20 @@ where
             current_row_num: 0,
             current_location: String::new(),
             result: Default::default(),
-            config,
+            rolling_config,
         };
         writer.open_new_writer().await?;
         Ok(writer)
     }
 
     fn should_split(&self) -> bool {
-        self.current_row_num % self.config.rows_per_file == 0
-            && self.current_writer.as_ref().unwrap().current_written_size() as u64
-                >= self.config.target_file_size_in_bytes
+        if let Some(rolling_config) = &self.rolling_config {
+            self.current_row_num % rolling_config.rows_per_file == 0
+                && self.current_writer.as_ref().unwrap().current_written_size() as u64
+                    >= rolling_config.target_file_size_in_bytes
+        } else {
+            false
+        }
     }
 
     async fn close_current_writer(&mut self) -> Result<()> {
@@ -176,7 +180,7 @@ where
 // unsafe impl Sync for RollingWriter {}
 
 #[async_trait]
-impl<B: FileWriterBuilder> IcebergWriter for RollingWriter<B>
+impl<B: FileWriterBuilder> IcebergWriter for BaseFileWriter<B>
 where
     B::R: SingletonWriter,
 {
@@ -205,7 +209,7 @@ where
     }
 }
 
-impl<B: FileWriterBuilder> SingletonWriter for RollingWriter<B>
+impl<B: FileWriterBuilder> SingletonWriter for BaseFileWriter<B>
 where
     B::R: SingletonWriter,
 {
@@ -233,13 +237,13 @@ where
 mod test {
     use std::sync::Arc;
 
-    use bytes::Bytes;
-    use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
-
     use crate::{
         io::{
-            test::{create_batch, create_location_generator, create_operator, create_schema},
-            IcebergWriter, IcebergWriterBuilder, ParquetWriterBuilder, RollingWriterBuilder,
+            test::{
+                create_arrow_schema, create_batch, create_location_generator, create_operator,
+                read_batch,
+            },
+            BaseFileWriterBuilder, IcebergWriter, IcebergWriterBuilder, ParquetWriterBuilder,
         },
         types::StructValue,
     };
@@ -248,7 +252,17 @@ mod test {
     async fn test_rolling_writer() -> Result<(), anyhow::Error> {
         let op = create_operator();
         let location_generator = create_location_generator();
-        let schema = create_schema(3);
+        let schema = create_arrow_schema(3);
+        let parquet_writer_builder = ParquetWriterBuilder::new(op.clone(), 0, Default::default());
+        let mut rolling_writer = BaseFileWriterBuilder::new(
+            Arc::new(location_generator),
+            Some(Default::default()),
+            parquet_writer_builder,
+        )
+        .build(&schema)
+        .await
+        .unwrap();
+
         let to_write = create_batch(
             &schema,
             vec![
@@ -257,16 +271,6 @@ mod test {
                 vec![3; 1024 * 1024],
             ],
         );
-        let parquet_writer_builder = ParquetWriterBuilder::new(op.clone(), 0, Default::default());
-        let mut rolling_writer = RollingWriterBuilder::new(
-            Arc::new(location_generator),
-            Default::default(),
-            parquet_writer_builder,
-        )
-        .build(&schema)
-        .await
-        .unwrap();
-
         rolling_writer.write(to_write.clone()).await?;
 
         let mut row_num = 0;
@@ -277,15 +281,8 @@ mod test {
                 .with_partition(StructValue::default())
                 .build()
                 .unwrap();
-            let res = op.read(&data_file.file_path).await?;
-            let res = Bytes::from(res);
-            let reader = ParquetRecordBatchReaderBuilder::try_new(res)
-                .unwrap()
-                .build()
-                .unwrap();
-            reader.into_iter().for_each(|batch| {
-                row_num += batch.unwrap().num_rows();
-            });
+            let batch = read_batch(&op, &data_file.file_path).await;
+            row_num += batch.num_rows();
         }
         assert_eq!(row_num, 1024 * 1024);
 
