@@ -72,7 +72,7 @@ impl<F: IcebergWriter> IcebergWriter for PrometheusWriter<F> {
         self.appender.write(record).await
     }
 
-    async fn close(&mut self) -> Result<Self::R> {
-        self.appender.close().await
+    async fn flush(&mut self) -> Result<Self::R> {
+        self.appender.flush().await
     }
 }

@@ -53,7 +53,7 @@ pub trait IcebergWriterBuilder: Send + Clone + 'static {
 pub trait IcebergWriter<I = DefaultInput>: Send + 'static {
     type R: IcebergWriteResult;
     async fn write(&mut self, input: I) -> Result<()>;
-    async fn close(&mut self) -> Result<Self::R>;
+    async fn flush(&mut self) -> Result<Self::R>;
 }
 
 pub trait IcebergWriteResult: Send + Sync + 'static + Default {
@@ -223,7 +223,7 @@ mod test {
             Ok(())
         }
 
-        async fn close(&mut self) -> crate::Result<Self::R> {
+        async fn flush(&mut self) -> crate::Result<Self::R> {
             unimplemented!()
         }
     }

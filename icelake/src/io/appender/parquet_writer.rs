@@ -71,6 +71,7 @@ impl FileWriterBuilder for ParquetWriterBuilder {
             file_name: file_name.to_string(),
             writer,
             written_size,
+            current_row_num: 0,
         })
     }
 }
@@ -83,6 +84,7 @@ pub struct ParquetWriter {
     file_name: String,
     writer: AsyncArrowWriter<TrackWriter>,
     written_size: Arc<AtomicI64>,
+    current_row_num: usize,
 }
 
 #[async_trait::async_trait]
@@ -93,6 +95,7 @@ impl FileWriter for ParquetWriter {
     ///
     /// Note: It will not guarantee to take effect immediately.
     async fn write(&mut self, data: &RecordBatch) -> Result<()> {
+        self.current_row_num += data.num_rows();
         self.writer.write(data).await?;
         Ok(())
     }
@@ -105,7 +108,7 @@ impl FileWriter for ParquetWriter {
     async fn close(self) -> Result<Option<ParquetResult>> {
         let metadata = self.writer.close().await?;
         let written_size = self.written_size.load(std::sync::atomic::Ordering::Relaxed);
-        if written_size == 0 {
+        if self.current_row_num == 0 {
             self.operator.delete(&self.file_name).await?;
             return Ok(None);
         }
@@ -122,7 +125,7 @@ impl SingletonWriter for ParquetWriter {
     }
 
     fn current_row_num(&self) -> usize {
-        0
+        self.current_row_num
     }
 
     fn current_written_size(&self) -> usize {

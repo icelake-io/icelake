@@ -49,7 +49,6 @@ pub struct EqualityDeltaWriterBuilder<
     sorted_cache_writer_builder: PDB,
     equality_delete_writer_builder: EDB,
     unique_column_ids: Vec<i32>,
-    is_pos_delete_with_row: bool,
 }
 
 impl<DB: IcebergWriterBuilder, PDB: IcebergWriterBuilder, EDB: IcebergWriterBuilder>
@@ -64,14 +63,12 @@ where
         sorted_cache_writer_builder: PDB,
         equality_delete_writer_builder: EDB,
         unique_column_ids: Vec<i32>,
-        is_pos_delete_with_row: bool,
     ) -> Self {
         Self {
             data_file_writer_builder,
             sorted_cache_writer_builder,
             equality_delete_writer_builder,
             unique_column_ids,
-            is_pos_delete_with_row,
         }
     }
 }
@@ -96,7 +93,6 @@ where
             equality_delete_writer,
             self.unique_column_ids,
             schema,
-            self.is_pos_delete_with_row,
         )
     }
 }
@@ -112,7 +108,6 @@ pub struct EqualityDeltaWriter<
     inserted_rows: HashMap<OwnedRow, PositionDeleteInput>,
     row_converter: RowConverter,
     projector: FieldProjector,
-    _is_pos_delete_with_row: bool,
 }
 
 impl<
@@ -127,7 +122,6 @@ impl<
         equality_delete_writer: ED,
         unique_column_ids: Vec<i32>,
         schema: &SchemaRef,
-        is_pos_delete_with_row: bool,
     ) -> Result<Self> {
         let (projector, unique_col_fields) =
             FieldProjector::new(schema.fields(), &unique_column_ids)?;
@@ -151,14 +145,13 @@ impl<
             inserted_rows: HashMap::new(),
             row_converter,
             projector,
-            _is_pos_delete_with_row: is_pos_delete_with_row,
         })
     }
 
     /// Write the batch.
     /// 1. If a row with the same unique column is not written, then insert it.
     /// 2. If a row with the same unique column is written, then delete the previous row and insert the new row.
-    async fn write(&mut self, batch: RecordBatch) -> Result<()> {
+    async fn insert(&mut self, batch: RecordBatch) -> Result<()> {
         let rows = self.extract_unique_column(&batch)?;
         let current_file_path = self.data_file_writer.current_file();
         let current_file_offset = self.data_file_writer.current_row_num();
@@ -218,11 +211,11 @@ impl<
 #[async_trait::async_trait]
 impl<
         D: SingletonWriter + IcebergWriter,
-        PD: IcebergWriter<PositionDeleteInput>,
-        ED: IcebergWriter<R = PD::R>,
+        PD: IcebergWriter<PositionDeleteInput, R = D::R>,
+        ED: IcebergWriter<R = D::R>,
     > IcebergWriter for EqualityDeltaWriter<D, PD, ED>
 {
-    type R = DeltaResult<D::R, PD::R>;
+    type R = DeltaResult<D::R>;
 
     async fn write(&mut self, batch: RecordBatch) -> Result<()> {
         // check the last column is int32 array.
@@ -246,7 +239,7 @@ impl<
                 .slice(range.start, range.end - range.start);
             match ops.value(range.start) {
                 // Insert
-                INSERT_OP => self.write(batch).await?,
+                INSERT_OP => self.insert(batch).await?,
                 // Delete
                 DELETE_OP => self.delete(batch).await?,
                 op => {
@@ -260,57 +253,169 @@ impl<
         Ok(())
     }
 
-    async fn close(&mut self) -> Result<Self::R> {
-        let data_res = self.data_file_writer.close().await?;
-        let mut delete_res = self.equality_delete_writer.close().await?;
-        delete_res.combine(self.position_delete_writer.close().await?);
+    async fn flush(&mut self) -> Result<Self::R> {
+        let data = self.data_file_writer.flush().await?;
+        let eq_delete = self.equality_delete_writer.flush().await?;
+        let pos_delete = self.position_delete_writer.flush().await?;
+        self.inserted_rows.clear();
         Ok(DeltaResult {
-            data: data_res,
-            delete: delete_res,
+            data,
+            pos_delete,
+            eq_delete,
         })
     }
 }
 
 #[derive(Default)]
-pub struct DeltaResult<D: IcebergWriteResult, DE: IcebergWriteResult> {
+pub struct DeltaResult<D: IcebergWriteResult> {
     pub data: D,
-    pub delete: DE,
+    pub pos_delete: D,
+    pub eq_delete: D,
 }
 
-impl<D: IcebergWriteResult, DE: IcebergWriteResult> IcebergWriteResult for DeltaResult<D, DE> {
+impl<D: IcebergWriteResult> IcebergWriteResult for DeltaResult<D> {
     fn combine(&mut self, other: Self) {
         self.data.combine(other.data);
-        self.delete.combine(other.delete);
+        self.pos_delete.combine(other.pos_delete);
+        self.eq_delete.combine(other.eq_delete)
     }
 
     fn with_file_path(&mut self, file_name: String) -> &mut Self {
         self.data.with_file_path(file_name.clone());
-        self.delete.with_file_path(file_name);
+        self.pos_delete.with_file_path(file_name.clone());
+        self.eq_delete.with_file_path(file_name);
         self
     }
 
     fn with_content(&mut self, content: crate::types::DataContentType) -> &mut Self {
         self.data.with_content(content);
-        self.delete.with_content(content);
+        self.pos_delete.with_content(content);
+        self.eq_delete.with_content(content);
         self
     }
 
     fn with_equality_ids(&mut self, equality_ids: Vec<i32>) -> &mut Self {
         self.data.with_equality_ids(equality_ids.clone());
-        self.delete.with_equality_ids(equality_ids);
+        self.pos_delete.with_equality_ids(equality_ids.clone());
+        self.eq_delete.with_equality_ids(equality_ids);
         self
     }
 
     fn with_partition(&mut self, partition_value: Option<crate::types::StructValue>) -> &mut Self {
         self.data.with_partition(partition_value.clone());
-        self.delete.with_partition(partition_value);
+        self.pos_delete.with_partition(partition_value.clone());
+        self.eq_delete.with_partition(partition_value);
         self
     }
 
     fn flush(&mut self) -> Self {
         Self {
             data: self.data.flush(),
-            delete: self.delete.flush(),
+            pos_delete: self.pos_delete.flush(),
+            eq_delete: self.eq_delete.flush(),
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::sync::Arc;
+
+    use arrow_array::Array;
+
+    use crate::io::{
+        test::{create_arrow_schema, create_batch, create_location_generator, create_operator},
+        BaseFileWriterBuilder, DataFileWriterBuilder, EqualityDeleteWriterBuilder,
+        EqualityDeltaWriterBuilder, IcebergWriteResult, IcebergWriter, IcebergWriterBuilder,
+        ParquetWriterBuilder, PositionDeleteWriterBuilder,
+    };
+
+    #[tokio::test]
+    async fn test_delta_writer() {
+        // create writer
+        let op = create_operator();
+        let location_generator = create_location_generator();
+        let arrow_schema = create_arrow_schema(3);
+        let simple_builder = BaseFileWriterBuilder::new(
+            Arc::new(location_generator),
+            None,
+            ParquetWriterBuilder::new(op.clone(), 0, Default::default()),
+        );
+        let pos_delete_writer_builder =
+            PositionDeleteWriterBuilder::new(simple_builder.clone(), 100);
+        let data_writer_buidler = DataFileWriterBuilder::new(simple_builder.clone());
+        let equality_delete_writer_builder =
+            EqualityDeleteWriterBuilder::new(simple_builder, vec![1, 2]);
+        let mut delta_writer = EqualityDeltaWriterBuilder::new(
+            data_writer_buidler,
+            pos_delete_writer_builder,
+            equality_delete_writer_builder,
+            vec![1, 2],
+        )
+        .build(&arrow_schema)
+        .await
+        .unwrap();
+
+        // test insert
+        let to_insert = create_batch(
+            &arrow_schema,
+            vec![
+                vec![1, 2, 3, 1, 2, 3, 1, 2, 3],
+                vec![1, 1, 1, 2, 2, 2, 3, 3, 3],
+                vec![1, 2, 3, 1, 2, 3, 1, 2, 3],
+            ],
+        );
+        delta_writer.insert(to_insert.clone()).await.unwrap();
+        let mut res = delta_writer.flush().await.unwrap();
+        assert_eq!(res.data.len(), 1);
+        assert_eq!(res.pos_delete.len(), 0);
+        assert_eq!(res.eq_delete.len(), 0);
+        res.with_partition(None);
+        let res = crate::io::test::read_batch(&op, &res.data[0].build().unwrap().file_path).await;
+        assert_eq!(res, to_insert);
+
+        // test upsert
+        let to_insert = create_batch(
+            &arrow_schema,
+            vec![vec![10, 11], vec![10, 11], vec![10, 11]],
+        );
+        let to_delete = create_batch(&arrow_schema, vec![vec![11, 1], vec![11, 1], vec![11, 1]]);
+        delta_writer.insert(to_insert.clone()).await.unwrap();
+        delta_writer.delete(to_delete.clone()).await.unwrap();
+        let mut delta_res = delta_writer.flush().await.unwrap();
+        assert_eq!(delta_res.data.len(), 1);
+        assert_eq!(delta_res.pos_delete.len(), 1);
+        assert_eq!(delta_res.eq_delete.len(), 1);
+        delta_res.with_partition(Default::default());
+        let data = delta_res.data[0].build().unwrap();
+        let pos_delete = delta_res.pos_delete[0].build().unwrap();
+        let eq_delete = delta_res.eq_delete[0].build().unwrap();
+        let data_batch = crate::io::test::read_batch(&op, &data.file_path).await;
+        let pos_delete_batch = crate::io::test::read_batch(&op, &pos_delete.file_path).await;
+        let eq_delete_batch = crate::io::test::read_batch(&op, &eq_delete.file_path).await;
+        // check data
+        assert_eq!(data_batch, to_insert);
+        // check position delete
+        let paths = pos_delete_batch
+            .column(0)
+            .as_any()
+            .downcast_ref::<arrow_array::StringArray>()
+            .unwrap();
+        assert_eq!(paths.len(), 1);
+        assert_eq!(paths.value(0), data.file_path);
+        assert_eq!(
+            eq_delete_batch
+                .column(1)
+                .as_any()
+                .downcast_ref::<arrow_array::Int64Array>()
+                .unwrap()
+                .value(0),
+            1
+        );
+        // check equality delete
+        assert_eq!(
+            eq_delete_batch,
+            create_batch(&create_arrow_schema(2), vec![vec![1], vec![1]])
+        );
     }
 }

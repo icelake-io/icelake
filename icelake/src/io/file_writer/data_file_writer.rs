@@ -50,8 +50,8 @@ impl<F: IcebergWriter> IcebergWriter for DataFileWriter<F> {
         self.inner_writer.write(batch).await
     }
 
-    async fn close(&mut self) -> Result<F::R> {
-        let mut res = self.inner_writer.close().await?;
+    async fn flush(&mut self) -> Result<F::R> {
+        let mut res = self.inner_writer.flush().await?;
         res.with_content(crate::types::DataContentType::Data);
         Ok(res)
     }

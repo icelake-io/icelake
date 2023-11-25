@@ -203,8 +203,9 @@ where
     }
 
     /// Complte the write and return the list of `DataFile` as result.
-    async fn close(&mut self) -> Result<Self::R> {
+    async fn flush(&mut self) -> Result<Self::R> {
         self.close_current_writer().await?;
+        self.open_new_writer().await?;
         Ok(self.result.flush())
     }
 }
@@ -238,53 +239,138 @@ mod test {
     use std::sync::Arc;
 
     use crate::{
+        config::RollingWriterConfig,
         io::{
             test::{
                 create_arrow_schema, create_batch, create_location_generator, create_operator,
                 read_batch,
             },
-            BaseFileWriterBuilder, IcebergWriter, IcebergWriterBuilder, ParquetWriterBuilder,
+            BaseFileWriterBuilder, IcebergWriteResult, IcebergWriter, IcebergWriterBuilder,
+            ParquetWriterBuilder,
         },
-        types::StructValue,
     };
 
     #[tokio::test]
     async fn test_rolling_writer() -> Result<(), anyhow::Error> {
+        // create writer
         let op = create_operator();
         let location_generator = create_location_generator();
         let schema = create_arrow_schema(3);
         let parquet_writer_builder = ParquetWriterBuilder::new(op.clone(), 0, Default::default());
         let mut rolling_writer = BaseFileWriterBuilder::new(
             Arc::new(location_generator),
-            Some(Default::default()),
+            Some(RollingWriterConfig {
+                rows_per_file: 1024,
+                target_file_size_in_bytes: 0,
+            }),
             parquet_writer_builder,
         )
         .build(&schema)
         .await
         .unwrap();
 
+        // write 1024 * 3 column in 1 write
         let to_write = create_batch(
             &schema,
-            vec![
-                vec![1; 1024 * 1024],
-                vec![2; 1024 * 1024],
-                vec![3; 1024 * 1024],
-            ],
+            vec![vec![1; 1024 * 3], vec![2; 1024 * 3], vec![3; 1024 * 3]],
         );
         rolling_writer.write(to_write.clone()).await?;
 
+        // check output is 1 file.
+        let mut res = rolling_writer.flush().await.unwrap();
+        assert!(res.len() == 1);
+
+        // check row num
+        res.with_content(crate::types::DataContentType::Data)
+            .with_partition(None);
         let mut row_num = 0;
-        for mut data_file_builder in rolling_writer.close().await.unwrap() {
-            // full fill necessary to field
-            let data_file = data_file_builder
-                .with_content(crate::types::DataContentType::Data)
-                .with_partition(StructValue::default())
-                .build()
-                .unwrap();
+        for builder in res {
+            let data_file = builder.build().unwrap();
             let batch = read_batch(&op, &data_file.file_path).await;
             row_num += batch.num_rows();
         }
-        assert_eq!(row_num, 1024 * 1024);
+        assert_eq!(row_num, 1024 * 3);
+
+        // write 1024 * 3 column in 3 write
+        let to_write = create_batch(&schema, vec![vec![1; 1024], vec![2; 1024], vec![3; 1024]]);
+        rolling_writer.write(to_write.clone()).await?;
+        rolling_writer.write(to_write.clone()).await?;
+        rolling_writer.write(to_write.clone()).await?;
+
+        // check output is 3 file
+        let mut res = rolling_writer.flush().await.unwrap();
+        assert!(res.len() == 3);
+
+        // check row num
+        res.with_content(crate::types::DataContentType::Data)
+            .with_partition(None);
+        let mut row_num = 0;
+        for builder in res {
+            let data_file = builder.build().unwrap();
+            let batch = read_batch(&op, &data_file.file_path).await;
+            row_num += batch.num_rows();
+        }
+        assert_eq!(row_num, 1024 * 3);
+
+        Ok(())
+    }
+
+    // Check that simple writer should write all data into one file.
+    #[tokio::test]
+    async fn test_simple_writer() -> Result<(), anyhow::Error> {
+        // create writer
+        let op = create_operator();
+        let location_generator = create_location_generator();
+        let schema = create_arrow_schema(3);
+        let parquet_writer_builder = ParquetWriterBuilder::new(op.clone(), 0, Default::default());
+        let mut rolling_writer =
+            BaseFileWriterBuilder::new(Arc::new(location_generator), None, parquet_writer_builder)
+                .build(&schema)
+                .await
+                .unwrap();
+
+        // write 1024 * 3 column in 1 write
+        let to_write = create_batch(
+            &schema,
+            vec![vec![1; 1024 * 3], vec![2; 1024 * 3], vec![3; 1024 * 3]],
+        );
+        rolling_writer.write(to_write.clone()).await?;
+
+        // check output is 1 file.
+        let mut res = rolling_writer.flush().await.unwrap();
+        assert!(res.len() == 1);
+
+        // check row num
+        res.with_content(crate::types::DataContentType::Data)
+            .with_partition(None);
+        let mut row_num = 0;
+        for builder in res {
+            let data_file = builder.build().unwrap();
+            let batch = read_batch(&op, &data_file.file_path).await;
+            row_num += batch.num_rows();
+        }
+        assert_eq!(row_num, 1024 * 3);
+
+        // write 1024 * 3 column in 3 write
+        let to_write = create_batch(&schema, vec![vec![1; 1024], vec![2; 1024], vec![3; 1024]]);
+        rolling_writer.write(to_write.clone()).await?;
+        rolling_writer.write(to_write.clone()).await?;
+        rolling_writer.write(to_write.clone()).await?;
+
+        // check output is 1 file
+        let mut res = rolling_writer.flush().await.unwrap();
+        assert!(res.len() == 1);
+
+        // check row num
+        res.with_content(crate::types::DataContentType::Data)
+            .with_partition(None);
+        let mut row_num = 0;
+        for builder in res {
+            let data_file = builder.build().unwrap();
+            let batch = read_batch(&op, &data_file.file_path).await;
+            row_num += batch.num_rows();
+        }
+        assert_eq!(row_num, 1024 * 3);
 
         Ok(())
     }

@@ -198,7 +198,13 @@ impl DeltaTest {
             );
             tx.append_delete_file(
                 result
-                    .delete
+                    .pos_delete
+                    .into_iter()
+                    .map(|builder| builder.build().unwrap()),
+            );
+            tx.append_delete_file(
+                result
+                    .eq_delete
                     .into_iter()
                     .map(|builder| builder.build().unwrap()),
             );
@@ -236,7 +242,6 @@ impl DeltaTest {
             position_delete_writer_builder,
             equality_delete_writer_builder,
             vec![1, 2],
-            false,
         );
         let partition_writer_builder = table
             .writer_builder()

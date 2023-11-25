@@ -67,11 +67,11 @@ impl<UP: IcebergWriter, P: IcebergWriter<R = UP::R>> IcebergWriter for Dispatche
         }
     }
 
-    async fn close(&mut self) -> Result<Self::R> {
+    async fn flush(&mut self) -> Result<Self::R> {
         match self {
-            DispatcherWriter::Partition(writer) => writer.close().await,
+            DispatcherWriter::Partition(writer) => writer.flush().await,
             DispatcherWriter::Unpartition(writer) => {
-                let mut res = writer.close().await?;
+                let mut res = writer.flush().await?;
                 res.with_partition(None);
                 Ok(res)
             }

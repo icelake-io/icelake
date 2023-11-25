@@ -67,8 +67,8 @@ where
         self.inner_writer.write(input).await
     }
 
-    async fn close(&mut self) -> Result<Self::R> {
-        let mut res = self.inner_writer.close().await?;
+    async fn flush(&mut self) -> Result<Self::R> {
+        let mut res = self.inner_writer.flush().await?;
         res.with_content(crate::types::DataContentType::PositionDeletes);
         Ok(res)
     }
@@ -111,61 +111,64 @@ mod test {
     use crate::io::test::{
         create_arrow_schema, create_location_generator, create_operator, read_batch,
     };
-    use crate::io::IcebergWriterBuilder;
     use crate::io::{
         BaseFileWriterBuilder, IcebergWriter, ParquetWriterBuilder, PositionDeleteInput,
         PositionDeleteWriterBuilder,
     };
+    use crate::io::{IcebergWriteResult, IcebergWriterBuilder};
+
+    fn generate_test_data(
+        mut input: Vec<(&str, i64)>,
+    ) -> (Vec<PositionDeleteInput>, Vec<&str>, Vec<i64>) {
+        let position_delete = input
+            .iter()
+            .map(|(path, offset)| PositionDeleteInput {
+                path: path.to_string(),
+                offset: *offset,
+            })
+            .collect_vec();
+        input.sort();
+        let path_col = input.iter().map(|(path, _)| *path).collect_vec();
+        let offset_col = input.iter().map(|(_, offset)| *offset).collect_vec();
+        (position_delete, path_col, offset_col)
+    }
 
     #[tokio::test]
     async fn test_position_delete_writer() {
+        // create writer
         let op = create_operator();
         let location_generator = create_location_generator();
         let parquet_writer_builder = ParquetWriterBuilder::new(op.clone(), 0, Default::default());
         let mut delete_writer = PositionDeleteWriterBuilder::new(
             BaseFileWriterBuilder::new(Arc::new(location_generator), None, parquet_writer_builder),
-            100,
+            7,
         )
         .build(&create_arrow_schema(2))
         .await
         .unwrap();
 
-        let path_col = vec![
-            "file1", "file1", "file1", "file2", "file3", "file1", "file2",
-        ];
-        let offset_col = vec![3, 2, 2, 10, 30, 1, 20];
+        // prepare data
+        let (position_delete, path_col, offset_col) = generate_test_data(vec![
+            ("file1", 3),
+            ("file1", 2),
+            ("file1", 2),
+            ("file2", 10),
+            ("file3", 30),
+            ("file1", 1),
+            ("file2", 20),
+        ]);
 
-        for (path, offset) in path_col.iter().zip(offset_col.iter()) {
-            delete_writer
-                .write(PositionDeleteInput {
-                    path: path.to_string(),
-                    offset: *offset,
-                })
-                .await
-                .unwrap()
+        // write data
+        for input in position_delete {
+            delete_writer.write(input).await.unwrap()
         }
 
-        let data_file_builder = delete_writer.close().await.unwrap();
+        // check result
+        let mut data_file_builder = delete_writer.flush().await.unwrap();
+        data_file_builder.with_partition(None);
         assert_eq!(data_file_builder.len(), 1);
-        let data_file = data_file_builder
-            .into_iter()
-            .next()
-            .unwrap()
-            .with_partition(Default::default())
-            .build()
-            .unwrap();
-
+        let data_file = data_file_builder[0].build().unwrap();
         let batch = read_batch(&op, &data_file.file_path).await;
-
-        // generate expect
-        let mut expect = path_col
-            .into_iter()
-            .zip(offset_col.into_iter())
-            .collect_vec();
-        expect.sort();
-        let path_col = expect.iter().map(|(path, _)| *path).collect_vec();
-        let offset_col = expect.iter().map(|(_, offset)| *offset).collect_vec();
-
         assert_eq!(batch.num_columns(), 2);
         assert_eq!(
             batch
@@ -182,6 +185,81 @@ mod test {
                 .downcast_ref::<arrow_array::Int64Array>()
                 .unwrap(),
             &arrow_array::Int64Array::from(offset_col)
+        );
+
+        // prepare data
+        let (position_delete, path_col, offset_col) = generate_test_data(vec![
+            ("file1", 3),
+            ("file1", 2),
+            ("file1", 2),
+            ("file2", 10),
+            ("file3", 30),
+            ("file1", 1),
+            ("file2", 20),
+        ]);
+        let (position_delete2, path_col2, offset_col2) = generate_test_data(vec![
+            ("file4", 123),
+            ("file1", 12),
+            ("file7", 11),
+            ("file7", 1),
+            ("file3", 999),
+            ("file2", 2),
+            ("file2", 23),
+        ]);
+
+        // write data
+        for input in position_delete {
+            delete_writer.write(input).await.unwrap()
+        }
+        for input in position_delete2 {
+            delete_writer.write(input).await.unwrap()
+        }
+
+        // check result
+        let mut data_file_builder = delete_writer.flush().await.unwrap();
+        data_file_builder.with_partition(None);
+        assert_eq!(data_file_builder.len(), 2);
+
+        // check file 1
+        let data_file = data_file_builder[0].build().unwrap();
+        let batch = read_batch(&op, &data_file.file_path).await;
+        assert_eq!(batch.num_columns(), 2);
+        assert_eq!(
+            batch
+                .column(0)
+                .as_any()
+                .downcast_ref::<arrow_array::StringArray>()
+                .unwrap(),
+            &arrow_array::StringArray::from(path_col)
+        );
+        assert_eq!(
+            batch
+                .column(1)
+                .as_any()
+                .downcast_ref::<arrow_array::Int64Array>()
+                .unwrap(),
+            &arrow_array::Int64Array::from(offset_col)
+        );
+
+        // check file 2
+        let data_file = data_file_builder[1].build().unwrap();
+        let batch = read_batch(&op, &data_file.file_path).await;
+        assert_eq!(batch.num_columns(), 2);
+        assert_eq!(
+            batch
+                .column(0)
+                .as_any()
+                .downcast_ref::<arrow_array::StringArray>()
+                .unwrap(),
+            &arrow_array::StringArray::from(path_col2)
+        );
+        assert_eq!(
+            batch
+                .column(1)
+                .as_any()
+                .downcast_ref::<arrow_array::Int64Array>()
+                .unwrap(),
+            &arrow_array::Int64Array::from(offset_col2)
         );
     }
 }

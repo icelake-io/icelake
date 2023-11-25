@@ -65,8 +65,8 @@ impl<F: IcebergWriter> IcebergWriter for EqualityDeleteWriter<F> {
         Ok(())
     }
 
-    async fn close(&mut self) -> Result<F::R> {
-        let mut res = self.inner_writer.close().await?;
+    async fn flush(&mut self) -> Result<F::R> {
+        let mut res = self.inner_writer.flush().await?;
         res.with_content(crate::types::DataContentType::EqualityDeletes);
         res.with_equality_ids(self.equality_ids.clone());
         Ok(res)

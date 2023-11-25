@@ -69,8 +69,10 @@ where
 {
     inner_builder: B,
     schema: SchemaRef,
+
     cache: Vec<I>,
     current_cache_number: usize,
+
     cache_number: usize,
     _sort_col_index: Vec<usize>,
     result: <<B as IcebergWriterBuilder>::R as IcebergWriter>::R,
@@ -83,13 +85,14 @@ where
     async fn flush_by_ord(&mut self) -> Result<()> {
         let mut new_writer = self.inner_builder.clone().build(&self.schema).await?;
 
+        self.current_cache_number = 0;
         let mut cache = std::mem::take(&mut self.cache);
         cache.sort();
         let batch = Combinable::combine(cache);
 
         // Write batch
         new_writer.write(batch).await?;
-        self.result.combine(new_writer.close().await?);
+        self.result.combine(new_writer.flush().await?);
         Ok(())
     }
 }
@@ -103,13 +106,13 @@ where
     async fn write(&mut self, input: I) -> Result<()> {
         self.current_cache_number += input.size();
         self.cache.push(input);
-        if self.current_cache_number == self.cache_number {
+        if self.current_cache_number >= self.cache_number {
             self.flush_by_ord().await?;
         }
         Ok(())
     }
 
-    async fn close(&mut self) -> Result<Self::R> {
+    async fn flush(&mut self) -> Result<Self::R> {
         if !self.cache.is_empty() {
             self.flush_by_ord().await?;
         }

@@ -92,12 +92,12 @@ where
     }
 
     /// Complte the write and return the list of `DataFile` as result.
-    async fn close(&mut self) -> Result<Self::R> {
+    async fn flush(&mut self) -> Result<Self::R> {
         let mut res_vec = Self::R::default();
         let inner_writers = std::mem::take(&mut self.inner_writers);
         for (key, mut writer) in inner_writers.into_iter() {
             let partition_value = self.partition_splitter.convert_key_to_value(key)?;
-            let mut res = writer.close().await?;
+            let mut res = writer.flush().await?;
             res.with_partition(Some(partition_value));
             res_vec.combine(res);
         }

@@ -9,13 +9,11 @@ use arrow_schema::Field;
 use super::DeltaResult;
 
 pub struct DeltaWriter {
-    inner: Box<dyn IcebergWriter<R = DeltaResult<Vec<DataFileBuilder>, Vec<DataFileBuilder>>>>,
+    inner: Box<dyn IcebergWriter<R = DeltaResult<Vec<DataFileBuilder>>>>,
 }
 
 impl DeltaWriter {
-    pub fn new(
-        inner: impl IcebergWriter<R = DeltaResult<Vec<DataFileBuilder>, Vec<DataFileBuilder>>>,
-    ) -> Self {
+    pub fn new(inner: impl IcebergWriter<R = DeltaResult<Vec<DataFileBuilder>>>) -> Self {
         Self {
             inner: Box::new(inner),
         }
@@ -39,10 +37,8 @@ impl DeltaWriter {
         self.inner.write(batch).await
     }
 
-    pub async fn close(
-        &mut self,
-    ) -> Result<DeltaResult<Vec<DataFileBuilder>, Vec<DataFileBuilder>>> {
-        self.inner.close().await
+    pub async fn close(&mut self) -> Result<DeltaResult<Vec<DataFileBuilder>>> {
+        self.inner.flush().await
     }
 }
 
@@ -61,8 +57,8 @@ impl RecordBatchWriter {
         self.inner.write(input).await
     }
 
-    pub async fn close(&mut self) -> Result<Vec<DataFileBuilder>> {
-        self.inner.close().await
+    pub async fn flush(&mut self) -> Result<Vec<DataFileBuilder>> {
+        self.inner.flush().await
     }
 }
 

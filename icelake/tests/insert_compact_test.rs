@@ -201,7 +201,7 @@ impl TestFixture {
             }
 
             let result = task_writer
-                .close()
+                .flush()
                 .await
                 .unwrap()
                 .into_iter()
