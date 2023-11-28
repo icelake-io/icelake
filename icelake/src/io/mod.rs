@@ -27,7 +27,7 @@ type DefaultInput = RecordBatch;
 #[async_trait::async_trait]
 pub trait FileWriterBuilder: Send + Sync + Clone + 'static {
     type R: FileWriter;
-    async fn build(self, schema: &SchemaRef, file_name: &str) -> Result<Self::R>;
+    async fn build(self, schema: &SchemaRef) -> Result<Self::R>;
 }
 
 #[async_trait::async_trait]
@@ -39,8 +39,9 @@ pub trait FileWriter: Send + 'static {
 
 pub trait FileWriteResult: Send + 'static {
     type R: IcebergWriteResult;
-    /// return None Indicates the result is empty.
-    fn to_iceberg_result(self) -> Option<Self::R>;
+    fn empty() -> Self;
+    fn combine(&mut self, other: Self);
+    fn to_iceberg_result(self) -> Self::R;
 }
 
 #[async_trait::async_trait]
@@ -56,8 +57,8 @@ pub trait IcebergWriter<I = DefaultInput>: Send + 'static {
     async fn flush(&mut self) -> Result<Self::R>;
 }
 
-pub trait IcebergWriteResult: Send + Sync + 'static + Default {
-    fn with_file_path(&mut self, file_name: String) -> &mut Self;
+pub trait IcebergWriteResult: Send + Sync + 'static {
+    fn empty() -> Self;
     fn with_content(&mut self, content: crate::types::DataContentType) -> &mut Self;
     fn with_equality_ids(&mut self, equality_ids: Vec<i32>) -> &mut Self;
     fn with_partition(&mut self, partition_value: Option<StructValue>) -> &mut Self;
@@ -65,20 +66,13 @@ pub trait IcebergWriteResult: Send + Sync + 'static + Default {
     fn flush(&mut self) -> Self;
 }
 
-pub trait SingletonWriter {
-    fn current_file(&self) -> String;
+pub trait SingleFileWriter {
+    fn current_file_path(&self) -> String;
     fn current_row_num(&self) -> usize;
     fn current_written_size(&self) -> usize;
 }
 
 impl IcebergWriteResult for Vec<DataFileBuilder> {
-    fn with_file_path(&mut self, file_name: String) -> &mut Self {
-        self.iter_mut().for_each(|builder| {
-            builder.with_file_path(file_name.clone());
-        });
-        self
-    }
-
     fn with_content(&mut self, content: crate::types::DataContentType) -> &mut Self {
         self.iter_mut().for_each(|builder| {
             builder.with_content(content);
@@ -110,6 +104,10 @@ impl IcebergWriteResult for Vec<DataFileBuilder> {
 
     fn flush(&mut self) -> Self {
         std::mem::take(self)
+    }
+
+    fn empty() -> Self {
+        vec![]
     }
 }
 

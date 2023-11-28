@@ -10,7 +10,8 @@ use parquet::file::properties::{WriterProperties, WriterVersion};
 use parquet::format::FileMetaData;
 
 use crate::config::ParquetWriterConfig;
-use crate::io::{FileWriteResult, FileWriter, FileWriterBuilder, SingletonWriter};
+use crate::io::location_generator::FileLocationGenerator;
+use crate::io::{FileWriteResult, FileWriter, FileWriterBuilder, SingleFileWriter};
 use crate::types::DataFileBuilder;
 use crate::Result;
 
@@ -24,6 +25,7 @@ pub struct ParquetWriterBuilder {
     /// The intermediate buffer will automatically be resized if necessary
     init_buffer_size: usize,
     props: WriterProperties,
+    location_generator: Arc<FileLocationGenerator>,
 }
 
 impl ParquetWriterBuilder {
@@ -32,6 +34,7 @@ impl ParquetWriterBuilder {
         operator: Operator,
         init_buffer_size: usize,
         parquet_config: ParquetWriterConfig,
+        location_generator: Arc<FileLocationGenerator>,
     ) -> Self {
         let mut props = WriterProperties::builder()
             .set_writer_version(WriterVersion::PARQUET_1_0)
@@ -47,6 +50,7 @@ impl ParquetWriterBuilder {
             operator,
             init_buffer_size,
             props: props.build(),
+            location_generator,
         }
     }
 }
@@ -55,9 +59,14 @@ impl ParquetWriterBuilder {
 impl FileWriterBuilder for ParquetWriterBuilder {
     type R = ParquetWriter;
 
-    async fn build(self, schema: &SchemaRef, file_name: &str) -> Result<Self::R> {
+    async fn build(self, schema: &SchemaRef) -> Result<Self::R> {
+        let file_name = self.location_generator.generate_name();
+
         let written_size = Arc::new(AtomicI64::new(0));
-        let writer = TrackWriter::new(self.operator.writer(file_name).await?, written_size.clone());
+        let writer = TrackWriter::new(
+            self.operator.writer(&file_name).await?,
+            written_size.clone(),
+        );
 
         let writer = AsyncArrowWriter::try_new(
             writer,
@@ -69,6 +78,7 @@ impl FileWriterBuilder for ParquetWriterBuilder {
         Ok(ParquetWriter {
             operator: self.operator,
             file_name: file_name.to_string(),
+            file_path: format!("{}/{}", self.location_generator.table_location(), file_name),
             writer,
             written_size,
             current_row_num: 0,
@@ -81,7 +91,9 @@ impl FileWriterBuilder for ParquetWriterBuilder {
 /// Initiate a new writer with `ParquetWriterBuilder::new()`.
 pub struct ParquetWriter {
     operator: Operator,
+    /// Used to delete file when no data is written.
     file_name: String,
+    file_path: String,
     writer: AsyncArrowWriter<TrackWriter>,
     written_size: Arc<AtomicI64>,
     current_row_num: usize,
@@ -89,7 +101,7 @@ pub struct ParquetWriter {
 
 #[async_trait::async_trait]
 impl FileWriter for ParquetWriter {
-    type R = Option<ParquetResult>;
+    type R = Vec<ParquetResult>;
 
     /// Write data into the file.
     ///
@@ -105,23 +117,24 @@ impl FileWriter for ParquetWriter {
     /// # Note
     ///
     /// This function must be called before complete the write process.
-    async fn close(self) -> Result<Option<ParquetResult>> {
+    async fn close(self) -> Result<Self::R> {
         let metadata = self.writer.close().await?;
         let written_size = self.written_size.load(std::sync::atomic::Ordering::Relaxed);
         if self.current_row_num == 0 {
             self.operator.delete(&self.file_name).await?;
-            return Ok(None);
+            return Ok(vec![]);
         }
-        Ok(Some(ParquetResult {
+        Ok(vec![ParquetResult {
             metadata,
             written_size,
-        }))
+            file_path: self.file_path,
+        }])
     }
 }
 
-impl SingletonWriter for ParquetWriter {
-    fn current_file(&self) -> String {
-        self.file_name.clone()
+impl SingleFileWriter for ParquetWriter {
+    fn current_file_path(&self) -> String {
+        self.file_path.clone()
     }
 
     fn current_row_num(&self) -> usize {
@@ -136,20 +149,17 @@ impl SingletonWriter for ParquetWriter {
 pub struct ParquetResult {
     metadata: FileMetaData,
     written_size: i64,
+    file_path: String,
 }
 
-impl FileWriteResult for Option<ParquetResult> {
-    type R = Vec<DataFileBuilder>;
-
-    fn to_iceberg_result(self) -> Option<Self::R> {
-        let val = self?;
+impl ParquetResult {
+    fn convert_to_iceberg_result(self) -> DataFileBuilder {
         let (column_sizes, value_counts, null_value_counts, distinct_counts) = {
-            // how to decide column id
             let mut per_col_size: HashMap<i32, _> = HashMap::new();
             let mut per_col_val_num: HashMap<i32, _> = HashMap::new();
             let mut per_col_null_val_num: HashMap<i32, _> = HashMap::new();
             let mut per_col_distinct_val_num: HashMap<i32, _> = HashMap::new();
-            val.metadata.row_groups.iter().for_each(|group| {
+            self.metadata.row_groups.iter().for_each(|group| {
                 group
                     .columns
                     .iter()
@@ -194,18 +204,36 @@ impl FileWriteResult for Option<ParquetResult> {
             .with_value_counts(value_counts)
             .with_null_value_counts(null_value_counts)
             .with_distinct_counts(distinct_counts)
-            .with_file_size_in_bytes(val.written_size)
-            .with_record_count(val.metadata.num_rows)
-            .with_key_metadata(val.metadata.footer_signing_key_metadata)
+            .with_file_size_in_bytes(self.written_size)
+            .with_record_count(self.metadata.num_rows)
+            .with_key_metadata(self.metadata.footer_signing_key_metadata)
+            .with_file_path(self.file_path)
             .with_split_offsets(
-                val.metadata
+                self.metadata
                     .row_groups
                     .iter()
                     .filter_map(|group| group.file_offset)
                     .collect(),
             );
+        builder
+    }
+}
 
-        Some(vec![builder])
+impl FileWriteResult for Vec<ParquetResult> {
+    type R = Vec<DataFileBuilder>;
+
+    fn to_iceberg_result(self) -> Self::R {
+        self.into_iter()
+            .map(|result| result.convert_to_iceberg_result())
+            .collect()
+    }
+
+    fn empty() -> Self {
+        vec![]
+    }
+
+    fn combine(&mut self, other: Self) {
+        self.extend(other);
     }
 }
 
@@ -222,18 +250,26 @@ mod tests {
     use opendal::Operator;
     use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 
+    use crate::io::test::create_location_generator;
+
     use super::*;
 
     #[tokio::test]
     async fn parquet_write_test() -> Result<()> {
         let op = Operator::new(Memory::default())?.finish();
+        let location_generator = create_location_generator();
 
         let col = Arc::new(Int64Array::from_iter_values(vec![1; 1024])) as ArrayRef;
         let to_write = RecordBatch::try_from_iter([("col", col)]).unwrap();
 
-        let mut pw = ParquetWriterBuilder::new(op.clone(), 0, Default::default())
-            .build(&to_write.schema(), "test")
-            .await?;
+        let mut pw = ParquetWriterBuilder::new(
+            op.clone(),
+            0,
+            Default::default(),
+            Arc::new(location_generator),
+        )
+        .build(&to_write.schema())
+        .await?;
         pw.write(&to_write).await?;
         pw.write(&to_write).await?;
         pw.close().await?;

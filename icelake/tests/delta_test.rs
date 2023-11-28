@@ -222,12 +222,12 @@ impl DeltaTest {
         let paquet_writer_builder = table
             .writer_builder()
             .unwrap()
-            .parquet_writer_builder(0)
+            .parquet_writer_builder(0, None)
             .unwrap();
         let rolling_writer_builder = table
             .writer_builder()
             .unwrap()
-            .rolling_writer_builder(None, paquet_writer_builder.clone())
+            .rolling_writer_builder(paquet_writer_builder.clone())
             .unwrap();
         let data_file_writer_builder = DataFileWriterBuilder::new(rolling_writer_builder.clone());
         let equality_delete_writer_builder =

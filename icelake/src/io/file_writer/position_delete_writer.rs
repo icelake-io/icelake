@@ -3,8 +3,8 @@
 use std::sync::Arc;
 
 use crate::io::{
-    Combinable, IcebergWriteResult, IcebergWriter, IcebergWriterBuilder, SortWriter,
-    SortWriterBuilder,
+    Combinable, FileWriteResult, FileWriter, FileWriterBuilder, IcebergWriteResult, IcebergWriter,
+    IcebergWriterBuilder, SortWriter, SortWriterBuilder,
 };
 use crate::types::{Any, Field, Primitive};
 use crate::Result;
@@ -12,22 +12,19 @@ use arrow_array::{ArrayRef, RecordBatch};
 use arrow_schema::{FieldRef as ArrowFieldRef, Schema as ArrowSchema, SchemaRef as ArrowSchemaRef};
 
 #[derive(Clone)]
-pub struct PositionDeleteWriterBuilder<B: IcebergWriterBuilder> {
+pub struct PositionDeleteWriterBuilder<B: FileWriterBuilder> {
     inner: B,
     cache_num: usize,
 }
 
-impl<B: IcebergWriterBuilder> PositionDeleteWriterBuilder<B> {
+impl<B: FileWriterBuilder> PositionDeleteWriterBuilder<B> {
     pub fn new(inner: B, cache_num: usize) -> Self {
         Self { inner, cache_num }
     }
 }
 
 #[async_trait::async_trait]
-impl<B: IcebergWriterBuilder> IcebergWriterBuilder for PositionDeleteWriterBuilder<B>
-where
-    B::R: IcebergWriter,
-{
+impl<B: FileWriterBuilder> IcebergWriterBuilder for PositionDeleteWriterBuilder<B> {
     type R = PositionDeleteWriter<B>;
 
     async fn build(self, _schema: &ArrowSchemaRef) -> Result<Self::R> {
@@ -50,19 +47,13 @@ where
 }
 
 //Position deletes are required to be sorted by file and position,
-pub struct PositionDeleteWriter<B: IcebergWriterBuilder>
-where
-    B::R: IcebergWriter,
-{
+pub struct PositionDeleteWriter<B: FileWriterBuilder> {
     inner_writer: SortWriter<PositionDeleteInput, B>,
 }
 
 #[async_trait::async_trait]
-impl<B: IcebergWriterBuilder> IcebergWriter<PositionDeleteInput> for PositionDeleteWriter<B>
-where
-    B::R: IcebergWriter,
-{
-    type R = <B::R as IcebergWriter>::R;
+impl<B: FileWriterBuilder> IcebergWriter<PositionDeleteInput> for PositionDeleteWriter<B> {
+    type R = <<B::R as FileWriter>::R as FileWriteResult>::R;
     async fn write(&mut self, input: PositionDeleteInput) -> Result<()> {
         self.inner_writer.write(input).await
     }
@@ -112,10 +103,9 @@ mod test {
         create_arrow_schema, create_location_generator, create_operator, read_batch,
     };
     use crate::io::{
-        BaseFileWriterBuilder, IcebergWriter, ParquetWriterBuilder, PositionDeleteInput,
-        PositionDeleteWriterBuilder,
+        BaseFileWriterBuilder, IcebergWriteResult, IcebergWriter, IcebergWriterBuilder,
+        ParquetWriterBuilder, PositionDeleteInput, PositionDeleteWriterBuilder,
     };
-    use crate::io::{IcebergWriteResult, IcebergWriterBuilder};
 
     fn generate_test_data(
         mut input: Vec<(&str, i64)>,
@@ -138,9 +128,14 @@ mod test {
         // create writer
         let op = create_operator();
         let location_generator = create_location_generator();
-        let parquet_writer_builder = ParquetWriterBuilder::new(op.clone(), 0, Default::default());
+        let parquet_writer_builder = ParquetWriterBuilder::new(
+            op.clone(),
+            0,
+            Default::default(),
+            Arc::new(location_generator),
+        );
         let mut delete_writer = PositionDeleteWriterBuilder::new(
-            BaseFileWriterBuilder::new(Arc::new(location_generator), None, parquet_writer_builder),
+            BaseFileWriterBuilder::new(None, parquet_writer_builder),
             7,
         )
         .build(&create_arrow_schema(2))

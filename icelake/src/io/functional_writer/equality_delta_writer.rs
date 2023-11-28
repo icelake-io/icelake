@@ -23,7 +23,7 @@ use arrow_select::filter;
 use itertools::Itertools;
 use std::collections::HashMap;
 
-use crate::{io::SingletonWriter, types::FieldProjector, Error, ErrorKind};
+use crate::{io::SingleFileWriter, types::FieldProjector, Error, ErrorKind};
 
 pub const INSERT_OP: i32 = 1;
 pub const DELETE_OP: i32 = 2;
@@ -42,7 +42,7 @@ pub struct EqualityDeltaWriterBuilder<
     PDB: IcebergWriterBuilder,
     EDB: IcebergWriterBuilder,
 > where
-    DB::R: SingletonWriter + IcebergWriter,
+    DB::R: SingleFileWriter + IcebergWriter,
     PDB::R: IcebergWriter<PositionDeleteInput>,
 {
     data_file_writer_builder: DB,
@@ -54,7 +54,7 @@ pub struct EqualityDeltaWriterBuilder<
 impl<DB: IcebergWriterBuilder, PDB: IcebergWriterBuilder, EDB: IcebergWriterBuilder>
     EqualityDeltaWriterBuilder<DB, PDB, EDB>
 where
-    DB::R: SingletonWriter + IcebergWriter,
+    DB::R: SingleFileWriter + IcebergWriter,
     PDB::R: IcebergWriter<PositionDeleteInput>,
     EDB::R: IcebergWriter,
 {
@@ -77,7 +77,7 @@ where
 impl<DB: IcebergWriterBuilder, PDB: IcebergWriterBuilder, EDB: IcebergWriterBuilder>
     IcebergWriterBuilder for EqualityDeltaWriterBuilder<DB, PDB, EDB>
 where
-    DB::R: SingletonWriter + IcebergWriter,
+    DB::R: SingleFileWriter + IcebergWriter,
     PDB::R: IcebergWriter<PositionDeleteInput>,
     EDB::R: IcebergWriter,
 {
@@ -98,7 +98,7 @@ where
 }
 
 pub struct EqualityDeltaWriter<
-    D: SingletonWriter + IcebergWriter,
+    D: SingleFileWriter + IcebergWriter,
     PD: IcebergWriter<PositionDeleteInput>,
     ED: IcebergWriter,
 > {
@@ -111,7 +111,7 @@ pub struct EqualityDeltaWriter<
 }
 
 impl<
-        D: SingletonWriter + IcebergWriter,
+        D: SingleFileWriter + IcebergWriter,
         PD: IcebergWriter<PositionDeleteInput>,
         ED: IcebergWriter,
     > EqualityDeltaWriter<D, PD, ED>
@@ -153,7 +153,7 @@ impl<
     /// 2. If a row with the same unique column is written, then delete the previous row and insert the new row.
     async fn insert(&mut self, batch: RecordBatch) -> Result<()> {
         let rows = self.extract_unique_column(&batch)?;
-        let current_file_path = self.data_file_writer.current_file();
+        let current_file_path = self.data_file_writer.current_file_path();
         let current_file_offset = self.data_file_writer.current_row_num();
         for (idx, row) in rows.iter().enumerate() {
             let previous_input = self.inserted_rows.insert(
@@ -210,7 +210,7 @@ impl<
 
 #[async_trait::async_trait]
 impl<
-        D: SingletonWriter + IcebergWriter,
+        D: SingleFileWriter + IcebergWriter,
         PD: IcebergWriter<PositionDeleteInput, R = D::R>,
         ED: IcebergWriter<R = D::R>,
     > IcebergWriter for EqualityDeltaWriter<D, PD, ED>
@@ -280,13 +280,6 @@ impl<D: IcebergWriteResult> IcebergWriteResult for DeltaResult<D> {
         self.eq_delete.combine(other.eq_delete)
     }
 
-    fn with_file_path(&mut self, file_name: String) -> &mut Self {
-        self.data.with_file_path(file_name.clone());
-        self.pos_delete.with_file_path(file_name.clone());
-        self.eq_delete.with_file_path(file_name);
-        self
-    }
-
     fn with_content(&mut self, content: crate::types::DataContentType) -> &mut Self {
         self.data.with_content(content);
         self.pos_delete.with_content(content);
@@ -315,6 +308,14 @@ impl<D: IcebergWriteResult> IcebergWriteResult for DeltaResult<D> {
             eq_delete: self.eq_delete.flush(),
         }
     }
+
+    fn empty() -> Self {
+        Self {
+            data: D::empty(),
+            pos_delete: D::empty(),
+            eq_delete: D::empty(),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -337,9 +338,13 @@ mod test {
         let location_generator = create_location_generator();
         let arrow_schema = create_arrow_schema(3);
         let simple_builder = BaseFileWriterBuilder::new(
-            Arc::new(location_generator),
             None,
-            ParquetWriterBuilder::new(op.clone(), 0, Default::default()),
+            ParquetWriterBuilder::new(
+                op.clone(),
+                0,
+                Default::default(),
+                Arc::new(location_generator),
+            ),
         );
         let pos_delete_writer_builder =
             PositionDeleteWriterBuilder::new(simple_builder.clone(), 100);

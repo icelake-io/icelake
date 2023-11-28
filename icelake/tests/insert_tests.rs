@@ -165,12 +165,12 @@ impl TestFixture {
         let parquet_writer_builder = table
             .writer_builder()
             .unwrap()
-            .parquet_writer_builder(0)
+            .parquet_writer_builder(0, None)
             .unwrap();
         let rolling_writer_builder = table
             .writer_builder()
             .unwrap()
-            .rolling_writer_builder(None, parquet_writer_builder)
+            .rolling_writer_builder(parquet_writer_builder)
             .unwrap();
         let data_file_writer_builder = DataFileWriterBuilder::new(rolling_writer_builder);
         let partition_writer_builder = table

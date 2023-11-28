@@ -16,13 +16,13 @@ use std::collections::HashMap;
 
 /// PartitionWriter can route the batch into different inner writer by partition key.
 #[derive(Clone)]
-pub struct PartitionedWriterBuilder<B: IcebergWriterBuilder> {
+pub struct FanoutPartitionedWriterBuilder<B: IcebergWriterBuilder> {
     inner: B,
     partition_type: Any,
     partition_spec: PartitionSpec,
 }
 
-impl<B: IcebergWriterBuilder> PartitionedWriterBuilder<B> {
+impl<B: IcebergWriterBuilder> FanoutPartitionedWriterBuilder<B> {
     pub fn new(inner: B, partition_type: Any, partition_spec: PartitionSpec) -> Self {
         Self {
             inner,
@@ -33,16 +33,16 @@ impl<B: IcebergWriterBuilder> PartitionedWriterBuilder<B> {
 }
 
 #[async_trait::async_trait]
-impl<B: IcebergWriterBuilder> IcebergWriterBuilder for PartitionedWriterBuilder<B>
+impl<B: IcebergWriterBuilder> IcebergWriterBuilder for FanoutPartitionedWriterBuilder<B>
 where
     B::R: IcebergWriter,
 {
-    type R = PartitionedWriter<B>;
+    type R = FanoutPartitionedWriter<B>;
 
     async fn build(self, schema: &SchemaRef) -> Result<Self::R> {
         let (projector, _) =
             FieldProjector::new(schema.fields(), &self.partition_spec.column_ids())?;
-        Ok(PartitionedWriter {
+        Ok(FanoutPartitionedWriter {
             inner_writers: HashMap::new(),
             partition_splitter: PartitionSplitter::try_new(
                 projector,
@@ -56,7 +56,7 @@ where
 }
 
 /// Partition append only writer
-pub struct PartitionedWriter<B: IcebergWriterBuilder>
+pub struct FanoutPartitionedWriter<B: IcebergWriterBuilder>
 where
     B::R: IcebergWriter,
 {
@@ -67,7 +67,7 @@ where
 }
 
 #[async_trait::async_trait]
-impl<B: IcebergWriterBuilder> IcebergWriter for PartitionedWriter<B>
+impl<B: IcebergWriterBuilder> IcebergWriter for FanoutPartitionedWriter<B>
 where
     B::R: IcebergWriter,
 {
@@ -93,7 +93,7 @@ where
 
     /// Complte the write and return the list of `DataFile` as result.
     async fn flush(&mut self) -> Result<Self::R> {
-        let mut res_vec = Self::R::default();
+        let mut res_vec = Self::R::empty();
         let inner_writers = std::mem::take(&mut self.inner_writers);
         for (key, mut writer) in inner_writers.into_iter() {
             let partition_value = self.partition_splitter.convert_key_to_value(key)?;
@@ -112,7 +112,7 @@ mod test {
     use crate::{
         io::{
             test::{create_arrow_schema, create_batch, create_schema, TestWriterBuilder},
-            IcebergWriter, IcebergWriterBuilder, PartitionedWriterBuilder,
+            FanoutPartitionedWriterBuilder, IcebergWriter, IcebergWriterBuilder,
         },
         types::{Any, PartitionField, PartitionSpec},
     };
@@ -144,8 +144,11 @@ mod test {
             ],
         );
 
-        let builder =
-            PartitionedWriterBuilder::new(TestWriterBuilder {}, partition_type, partition_spec);
+        let builder = FanoutPartitionedWriterBuilder::new(
+            TestWriterBuilder {},
+            partition_type,
+            partition_spec,
+        );
         let mut writer = builder.build(&arrow_schema).await.unwrap();
         writer.write(to_write).await.unwrap();
 
@@ -174,8 +177,11 @@ mod test {
         let partition_spec = create_partition();
         let partition_type = Any::Struct(partition_spec.partition_type(&schema).unwrap().into());
 
-        let builder =
-            PartitionedWriterBuilder::new(TestWriterBuilder {}, partition_type, partition_spec);
+        let builder = FanoutPartitionedWriterBuilder::new(
+            TestWriterBuilder {},
+            partition_type,
+            partition_spec,
+        );
         let mut writer = builder.build(&arrow_schema).await.unwrap();
 
         let to_write = create_batch(

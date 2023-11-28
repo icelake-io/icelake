@@ -2,23 +2,20 @@ use arrow_array::RecordBatch;
 use arrow_schema::SchemaRef;
 use async_trait::async_trait;
 
-use crate::io::{IcebergWriteResult, IcebergWriter, IcebergWriterBuilder};
+use crate::io::{
+    FileWriteResult, FileWriter, FileWriterBuilder, IcebergWriteResult, IcebergWriter,
+    IcebergWriterBuilder,
+};
 use crate::Result;
 
-pub(crate) struct SortWriterBuilder<I, B: IcebergWriterBuilder>
-where
-    B::R: IcebergWriter,
-{
+pub(crate) struct SortWriterBuilder<I, B: FileWriterBuilder> {
     inner: B,
     sort_col_index: Vec<usize>,
     cache_number: usize,
     _marker: std::marker::PhantomData<I>,
 }
 
-impl<I, B: IcebergWriterBuilder> Clone for SortWriterBuilder<I, B>
-where
-    B::R: IcebergWriter,
-{
+impl<I, B: FileWriterBuilder> Clone for SortWriterBuilder<I, B> {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
@@ -29,10 +26,7 @@ where
     }
 }
 
-impl<I, B: IcebergWriterBuilder> SortWriterBuilder<I, B>
-where
-    B::R: IcebergWriter,
-{
+impl<I, B: FileWriterBuilder> SortWriterBuilder<I, B> {
     pub fn new(inner: B, sort_col_index: Vec<usize>, cache_number: usize) -> Self {
         Self {
             inner,
@@ -44,10 +38,7 @@ where
 }
 
 #[async_trait]
-impl<I: Combinable, B: IcebergWriterBuilder> IcebergWriterBuilder for SortWriterBuilder<I, B>
-where
-    B::R: IcebergWriter,
-{
+impl<I: Combinable, B: FileWriterBuilder> IcebergWriterBuilder for SortWriterBuilder<I, B> {
     type R = SortWriter<I, B>;
 
     async fn build(self, schema: &SchemaRef) -> Result<Self::R> {
@@ -58,15 +49,12 @@ where
             current_cache_number: 0,
             cache_number: self.cache_number,
             _sort_col_index: self.sort_col_index,
-            result: Default::default(),
+            result: <<B::R as FileWriter>::R as FileWriteResult>::R::empty(),
         })
     }
 }
 
-pub struct SortWriter<I: Combinable, B: IcebergWriterBuilder>
-where
-    B::R: IcebergWriter,
-{
+pub struct SortWriter<I: Combinable, B: FileWriterBuilder> {
     inner_builder: B,
     schema: SchemaRef,
 
@@ -75,13 +63,10 @@ where
 
     cache_number: usize,
     _sort_col_index: Vec<usize>,
-    result: <<B as IcebergWriterBuilder>::R as IcebergWriter>::R,
+    result: <<B::R as FileWriter>::R as FileWriteResult>::R,
 }
 
-impl<I: Combinable + Ord, B: IcebergWriterBuilder> SortWriter<I, B>
-where
-    B::R: IcebergWriter,
-{
+impl<I: Combinable + Ord, B: FileWriterBuilder> SortWriter<I, B> {
     async fn flush_by_ord(&mut self) -> Result<()> {
         let mut new_writer = self.inner_builder.clone().build(&self.schema).await?;
 
@@ -91,18 +76,16 @@ where
         let batch = Combinable::combine(cache);
 
         // Write batch
-        new_writer.write(batch).await?;
-        self.result.combine(new_writer.flush().await?);
+        new_writer.write(&batch).await?;
+        let res = new_writer.close().await?.to_iceberg_result();
+        self.result.combine(res);
         Ok(())
     }
 }
 
 #[async_trait::async_trait]
-impl<I: Combinable + Ord, B: IcebergWriterBuilder> IcebergWriter<I> for SortWriter<I, B>
-where
-    B::R: IcebergWriter,
-{
-    type R = <<B as IcebergWriterBuilder>::R as IcebergWriter>::R;
+impl<I: Combinable + Ord, B: FileWriterBuilder> IcebergWriter<I> for SortWriter<I, B> {
+    type R = <<B::R as FileWriter>::R as FileWriteResult>::R;
     async fn write(&mut self, input: I) -> Result<()> {
         self.current_cache_number += input.size();
         self.cache.push(input);

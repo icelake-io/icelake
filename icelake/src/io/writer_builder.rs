@@ -6,9 +6,9 @@ use opendal::Operator;
 
 use super::location_generator::FileLocationGenerator;
 use super::{
-    BaseFileWriterBuilder, DispatcherWriterBuilder, FileWriterBuilder, IcebergWriter,
-    IcebergWriterBuilder, ParquetWriterBuilder, PartitionedWriterBuilder,
-    PositionDeleteWriterBuilder, SingletonWriter,
+    BaseFileWriterBuilder, DispatcherWriterBuilder, FanoutPartitionedWriterBuilder,
+    FileWriterBuilder, IcebergWriter, IcebergWriterBuilder, ParquetWriterBuilder,
+    PositionDeleteWriterBuilder, SingleFileWriter,
 };
 
 /// `WriterBuilderHelper` used to create kinds of writer builder.
@@ -53,21 +53,24 @@ impl WriterBuilderHelper {
         )
     }
 
-    pub fn parquet_writer_builder(&self, init_buffer_size: usize) -> Result<ParquetWriterBuilder> {
+    pub fn parquet_writer_builder(
+        &self,
+        init_buffer_size: usize,
+        file_name_suffix: Option<String>,
+    ) -> Result<ParquetWriterBuilder> {
         Ok(ParquetWriterBuilder::new(
             self.operator.clone(),
             init_buffer_size,
             self.table_config.parquet_writer.clone(),
+            self.data_location_generator(file_name_suffix)?.into(),
         ))
     }
 
     pub fn rolling_writer_builder<B: FileWriterBuilder>(
         &self,
-        file_name_suffix: Option<String>,
         inner_builder: B,
     ) -> Result<BaseFileWriterBuilder<B>> {
         Ok(BaseFileWriterBuilder::new(
-            self.data_location_generator(file_name_suffix)?.into(),
             Some(self.table_config.rolling_writer.clone()),
             inner_builder,
         ))
@@ -75,27 +78,22 @@ impl WriterBuilderHelper {
 
     pub fn simple_writer_builder<B: FileWriterBuilder>(
         &self,
-        file_name_suffix: Option<String>,
         inner_builder: B,
     ) -> Result<BaseFileWriterBuilder<B>> {
-        Ok(BaseFileWriterBuilder::new(
-            self.data_location_generator(file_name_suffix)?.into(),
-            None,
-            inner_builder,
-        ))
+        Ok(BaseFileWriterBuilder::new(None, inner_builder))
     }
 
     pub fn partition_writer_builder<B: IcebergWriterBuilder>(
         &self,
         inner_builder: B,
-    ) -> Result<PartitionedWriterBuilder<B>> {
+    ) -> Result<FanoutPartitionedWriterBuilder<B>> {
         let partition_spec = self.table_metadata.current_partition_spec()?;
         let partition_type = Any::Struct(
             partition_spec
                 .partition_type(self.table_metadata.current_schema()?)?
                 .into(),
         );
-        Ok(PartitionedWriterBuilder::new(
+        Ok(FanoutPartitionedWriterBuilder::new(
             inner_builder,
             partition_type,
             partition_spec.clone(),
@@ -128,10 +126,10 @@ impl WriterBuilderHelper {
         inner_builder: B,
     ) -> Result<PositionDeleteWriterBuilder<BaseFileWriterBuilder<B>>>
     where
-        B::R: SingletonWriter,
+        B::R: SingleFileWriter,
     {
         Ok(PositionDeleteWriterBuilder::new(
-            self.simple_writer_builder(Some("pos-del".to_string()), inner_builder)?,
+            self.simple_writer_builder(inner_builder)?,
             cache_num,
         ))
     }

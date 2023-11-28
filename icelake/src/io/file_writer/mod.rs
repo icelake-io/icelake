@@ -5,3 +5,5 @@ pub mod position_delete_writer;
 pub use position_delete_writer::*;
 pub mod equality_delete_writer;
 pub use equality_delete_writer::*;
+pub mod sort_writer;
+pub use sort_writer::*;
