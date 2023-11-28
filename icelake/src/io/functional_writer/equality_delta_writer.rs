@@ -343,6 +343,7 @@ mod test {
                 op.clone(),
                 0,
                 Default::default(),
+                "/".to_string(),
                 Arc::new(location_generator),
             ),
         );
@@ -395,6 +396,16 @@ mod test {
         let data = delta_res.data[0].build().unwrap();
         let pos_delete = delta_res.pos_delete[0].build().unwrap();
         let eq_delete = delta_res.eq_delete[0].build().unwrap();
+        // check return type
+        assert_eq!(data.content, crate::types::DataContentType::Data);
+        assert_eq!(
+            pos_delete.content,
+            crate::types::DataContentType::PositionDeletes
+        );
+        assert_eq!(
+            eq_delete.content,
+            crate::types::DataContentType::EqualityDeletes
+        );
         let data_batch = crate::io::test::read_batch(&op, &data.file_path).await;
         let pos_delete_batch = crate::io::test::read_batch(&op, &pos_delete.file_path).await;
         let eq_delete_batch = crate::io::test::read_batch(&op, &eq_delete.file_path).await;

@@ -4,7 +4,7 @@ use crate::Result;
 use crate::{config::TableConfigRef, types::TableMetadata};
 use opendal::Operator;
 
-use super::location_generator::FileLocationGenerator;
+use super::location_generator::{FileLocationGenerator, FileLocationGeneratorRef};
 use super::{
     BaseFileWriterBuilder, DispatcherWriterBuilder, FanoutPartitionedWriterBuilder,
     FileWriterBuilder, IcebergWriter, IcebergWriterBuilder, ParquetWriterBuilder,
@@ -44,25 +44,27 @@ impl WriterBuilderHelper {
         }
     }
 
-    fn data_location_generator(&self, suffix: Option<String>) -> Result<FileLocationGenerator> {
-        FileLocationGenerator::try_new(
+    fn data_location_generator(&self, suffix: Option<String>) -> Result<FileLocationGeneratorRef> {
+        Ok(FileLocationGenerator::try_new(
             &self.table_metadata,
             self.partition_id,
             self.task_id,
             suffix,
-        )
+        )?
+        .into())
     }
 
     pub fn parquet_writer_builder(
         &self,
         init_buffer_size: usize,
         file_name_suffix: Option<String>,
-    ) -> Result<ParquetWriterBuilder> {
+    ) -> Result<ParquetWriterBuilder<FileLocationGeneratorRef>> {
         Ok(ParquetWriterBuilder::new(
             self.operator.clone(),
             init_buffer_size,
             self.table_config.parquet_writer.clone(),
-            self.data_location_generator(file_name_suffix)?.into(),
+            self.table_metadata.location.clone(),
+            self.data_location_generator(file_name_suffix)?,
         ))
     }
 

@@ -10,7 +10,7 @@ use parquet::file::properties::{WriterProperties, WriterVersion};
 use parquet::format::FileMetaData;
 
 use crate::config::ParquetWriterConfig;
-use crate::io::location_generator::FileLocationGenerator;
+use crate::io::location_generator::LocationGenerator;
 use crate::io::{FileWriteResult, FileWriter, FileWriterBuilder, SingleFileWriter};
 use crate::types::DataFileBuilder;
 use crate::Result;
@@ -19,22 +19,24 @@ use super::track_writer::TrackWriter;
 
 /// ParquetWriterBuilder is used to builder a [`ParquetWriter`]
 #[derive(Clone)]
-pub struct ParquetWriterBuilder {
+pub struct ParquetWriterBuilder<L: LocationGenerator> {
     operator: Operator,
     /// `buffer_size` determines the initial size of the intermediate buffer.
     /// The intermediate buffer will automatically be resized if necessary
     init_buffer_size: usize,
     props: WriterProperties,
-    location_generator: Arc<FileLocationGenerator>,
+    table_location: String,
+    location_generator: L,
 }
 
-impl ParquetWriterBuilder {
+impl<L: LocationGenerator> ParquetWriterBuilder<L> {
     /// Initiate a new builder.
     pub fn new(
         operator: Operator,
         init_buffer_size: usize,
         parquet_config: ParquetWriterConfig,
-        location_generator: Arc<FileLocationGenerator>,
+        table_location: String,
+        location_generator: L,
     ) -> Self {
         let mut props = WriterProperties::builder()
             .set_writer_version(WriterVersion::PARQUET_1_0)
@@ -50,13 +52,14 @@ impl ParquetWriterBuilder {
             operator,
             init_buffer_size,
             props: props.build(),
+            table_location,
             location_generator,
         }
     }
 }
 
 #[async_trait::async_trait]
-impl FileWriterBuilder for ParquetWriterBuilder {
+impl<L: LocationGenerator> FileWriterBuilder for ParquetWriterBuilder<L> {
     type R = ParquetWriter;
 
     async fn build(self, schema: &SchemaRef) -> Result<Self::R> {
@@ -76,9 +79,9 @@ impl FileWriterBuilder for ParquetWriterBuilder {
         )?;
 
         Ok(ParquetWriter {
+            file_path: format!("{}/{}", self.table_location, file_name),
             operator: self.operator,
             file_name: file_name.to_string(),
-            file_path: format!("{}/{}", self.location_generator.table_location(), file_name),
             writer,
             written_size,
             current_row_num: 0,
@@ -250,14 +253,21 @@ mod tests {
     use opendal::Operator;
     use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 
-    use crate::io::test::create_location_generator;
-
     use super::*;
+
+    #[derive(Clone)]
+    struct TestLocationGen;
+
+    impl LocationGenerator for TestLocationGen {
+        fn generate_name(&self) -> String {
+            "test".to_string()
+        }
+    }
 
     #[tokio::test]
     async fn parquet_write_test() -> Result<()> {
         let op = Operator::new(Memory::default())?.finish();
-        let location_generator = create_location_generator();
+        let location_generator = TestLocationGen;
 
         let col = Arc::new(Int64Array::from_iter_values(vec![1; 1024])) as ArrayRef;
         let to_write = RecordBatch::try_from_iter([("col", col)]).unwrap();
@@ -266,7 +276,8 @@ mod tests {
             op.clone(),
             0,
             Default::default(),
-            Arc::new(location_generator),
+            "/".to_string(),
+            location_generator,
         )
         .build(&to_write.schema())
         .await?;

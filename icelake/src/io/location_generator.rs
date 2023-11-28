@@ -3,6 +3,7 @@
 
 use std::str::FromStr;
 use std::sync::atomic::AtomicUsize;
+use std::sync::Arc;
 
 use crate::types::{DataFileFormat, TableMetadata};
 use crate::{Error, ErrorKind, Result};
@@ -14,6 +15,11 @@ const DEFAULT_FILE_FORMAT_DEFAULT: &str = "parquet";
 const WRITE_DATA_LOCATION: &str = "write.data.path";
 const WRITE_FOLDER_STORAGE_LOCATION: &str = "write.folder-storage.path";
 
+pub trait LocationGenerator: Clone + Send + Sync + 'static {
+    /// Generate a related file location for the writer.
+    fn generate_name(&self) -> String;
+}
+
 /// FileLocationGenerator will generate a file location for the writer.
 pub struct FileLocationGenerator {
     file_count: AtomicUsize,
@@ -24,8 +30,6 @@ pub struct FileLocationGenerator {
     suffix: Option<String>,
     /// The data file relpath related to the base of table location.
     data_rel_location: String,
-
-    table_location: String,
 }
 
 impl FileLocationGenerator {
@@ -80,17 +84,14 @@ impl FileLocationGenerator {
             file_format,
             suffix,
             data_rel_location,
-            table_location,
         })
     }
+}
 
-    /// Generate a related file location for the writer.
-    ///
-    /// # TODO
-    ///
-    /// - Only support to generate file name for unpartitioned write.
-    /// - May need a way(e.g LocationProvider) to generate custom file name in future. It's useful in some case: <https://github.com/apache/iceberg/issues/1911>.
-    pub fn generate_name(&self) -> String {
+pub type FileLocationGeneratorRef = Arc<FileLocationGenerator>;
+
+impl LocationGenerator for FileLocationGeneratorRef {
+    fn generate_name(&self) -> String {
         let suffix = if let Some(suffix) = &self.suffix {
             format!("-{}", suffix)
         } else {
@@ -116,21 +117,18 @@ impl FileLocationGenerator {
 
         format!("{}/{}", self.data_rel_location, file_name)
     }
-
-    pub fn table_location(&self) -> &str {
-        &self.table_location
-    }
 }
 
 #[cfg(test)]
 mod test {
-    use std::{collections::HashMap, env, fs};
+    use std::{collections::HashMap, env, fs, sync::Arc};
 
     use anyhow::Result;
 
     use crate::{
         io::location_generator::{
-            FileLocationGenerator, WRITE_DATA_LOCATION, WRITE_FOLDER_STORAGE_LOCATION,
+            FileLocationGenerator, LocationGenerator, WRITE_DATA_LOCATION,
+            WRITE_FOLDER_STORAGE_LOCATION,
         },
         types::parse_table_metadata,
     };
@@ -148,7 +146,7 @@ mod test {
             parse_table_metadata(&bs).expect("parse_table_metadata v1 must succeed")
         };
 
-        let generator = FileLocationGenerator::try_new(&metadata, 0, 0, None)?;
+        let generator = Arc::new(FileLocationGenerator::try_new(&metadata, 0, 0, None)?);
         let name = generator.generate_name();
         assert!(name.starts_with("data/"));
 
@@ -184,7 +182,7 @@ mod test {
         };
         metadata.properties = Some(mock_properties);
 
-        let generator = FileLocationGenerator::try_new(&metadata, 0, 0, None)?;
+        let generator = Arc::new(FileLocationGenerator::try_new(&metadata, 0, 0, None)?);
         let name = generator.generate_name();
         assert!(name.starts_with("/mock"));
         Ok(())
@@ -215,7 +213,7 @@ mod test {
         };
         metadata.properties = Some(mock_properties);
 
-        let generator = FileLocationGenerator::try_new(&metadata, 0, 0, None)?;
+        let generator = Arc::new(FileLocationGenerator::try_new(&metadata, 0, 0, None)?);
         let name = generator.generate_name();
         assert!(name.starts_with("/mock_storage"));
         Ok(())

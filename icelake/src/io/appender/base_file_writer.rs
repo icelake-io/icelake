@@ -215,6 +215,7 @@ mod test {
             op.clone(),
             0,
             Default::default(),
+            "/".to_string(),
             Arc::new(location_generator),
         );
         let mut rolling_writer = BaseFileWriterBuilder::new(
@@ -263,6 +264,7 @@ mod test {
             op.clone(),
             0,
             Default::default(),
+            "/".to_string(),
             Arc::new(location_generator),
         );
         let mut rolling_writer = BaseFileWriterBuilder::new(
@@ -313,6 +315,7 @@ mod test {
             op.clone(),
             0,
             Default::default(),
+            "/".to_string(),
             Arc::new(location_generator),
         );
         let mut rolling_writer = BaseFileWriterBuilder::new(None, parquet_writer_builder)
@@ -354,6 +357,7 @@ mod test {
             op.clone(),
             0,
             Default::default(),
+            "/".to_string(),
             Arc::new(location_generator),
         );
         let mut rolling_writer = BaseFileWriterBuilder::new(None, parquet_writer_builder)

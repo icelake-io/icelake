@@ -99,6 +99,7 @@ mod test {
             op.clone(),
             0,
             Default::default(),
+            "/".to_string(),
             Arc::new(location_generator),
         );
         let rolling_writer_builder = BaseFileWriterBuilder::new(None, parquet_writer_builder);

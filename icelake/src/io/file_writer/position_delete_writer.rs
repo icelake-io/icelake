@@ -132,6 +132,7 @@ mod test {
             op.clone(),
             0,
             Default::default(),
+            "/".to_string(),
             Arc::new(location_generator),
         );
         let mut delete_writer = PositionDeleteWriterBuilder::new(
