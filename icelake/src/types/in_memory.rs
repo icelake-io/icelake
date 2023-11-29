@@ -10,6 +10,7 @@ use chrono::NaiveDateTime;
 use chrono::NaiveTime;
 use chrono::Utc;
 use chrono::{DateTime, Datelike};
+use derive_builder::Builder;
 use opendal::Operator;
 use ordered_float::OrderedFloat;
 use parquet::format::FileMetaData;
@@ -1567,7 +1568,8 @@ impl DataFileBuilder {
 }
 
 /// Data file carries data file path, partition tuple, metrics, …
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Builder)]
+#[builder(name = "DataFileBuilderV2", setter(prefix = "with"))]
 pub struct DataFile {
     /// field id: 134
     ///
@@ -1602,6 +1604,7 @@ pub struct DataFile {
     /// Map from column id to the total size on disk of all regions that
     /// store the column. Does not include bytes necessary to read other
     /// columns, like footers. Leave null for row-oriented formats (Avro)
+    #[builder(setter(strip_option), default)]
     pub column_sizes: Option<HashMap<i32, i64>>,
     /// field id: 109
     /// key field id: 119
@@ -1609,18 +1612,21 @@ pub struct DataFile {
     ///
     /// Map from column id to number of values in the column (including null
     /// and NaN values)
+    #[builder(setter(strip_option), default)]
     pub value_counts: Option<HashMap<i32, i64>>,
     /// field id: 110
     /// key field id: 121
     /// value field id: 122
     ///
     /// Map from column id to number of null values in the column
+    #[builder(setter(strip_option), default)]
     pub null_value_counts: Option<HashMap<i32, i64>>,
     /// field id: 137
     /// key field id: 138
     /// value field id: 139
     ///
     /// Map from column id to number of NaN values in the column
+    #[builder(setter(strip_option), default)]
     pub nan_value_counts: Option<HashMap<i32, i64>>,
     /// field id: 111
     /// key field id: 123
@@ -1630,6 +1636,7 @@ pub struct DataFile {
     /// distinct counts must be derived using values in the file by counting
     /// or using sketches, but not using methods like merging existing
     /// distinct counts
+    #[builder(setter(strip_option), default)]
     pub distinct_counts: Option<HashMap<i32, i64>>,
     /// field id: 125
     /// key field id: 126
@@ -1642,6 +1649,7 @@ pub struct DataFile {
     /// Reference:
     ///
     /// - [Binary single-value serialization](https://iceberg.apache.org/spec/#binary-single-value-serialization)
+    #[builder(setter(strip_option), default)]
     pub lower_bounds: Option<HashMap<i32, Vec<u8>>>,
     /// field id: 128
     /// key field id: 129
@@ -1654,6 +1662,7 @@ pub struct DataFile {
     /// Reference:
     ///
     /// - [Binary single-value serialization](https://iceberg.apache.org/spec/#binary-single-value-serialization)
+    #[builder(setter(strip_option), default)]
     pub upper_bounds: Option<HashMap<i32, Vec<u8>>>,
     /// field id: 131
     ///
@@ -1664,6 +1673,7 @@ pub struct DataFile {
     ///
     /// Split offsets for the data file. For example, all row group offsets
     /// in a Parquet file. Must be sorted ascending
+    #[builder(setter(strip_option), default)]
     pub split_offsets: Option<Vec<i64>>,
     /// field id: 135
     /// element field id: 136
@@ -1672,6 +1682,7 @@ pub struct DataFile {
     /// Required when content is EqualityDeletes and should be null
     /// otherwise. Fields with ids listed in this column must be present
     /// in the delete file
+    #[builder(setter(strip_option), default)]
     pub equality_ids: Option<Vec<i32>>,
     /// field id: 140
     ///
@@ -1683,6 +1694,7 @@ pub struct DataFile {
     /// sorted by file and position, not a table order, and should set sort
     /// order id to null. Readers must ignore sort order id for position
     /// delete files.
+    #[builder(setter(strip_option), default)]
     pub sort_order_id: Option<i32>,
 }
 

@@ -10,13 +10,12 @@ use parquet::file::properties::{WriterProperties, WriterVersion};
 use parquet::format::FileMetaData;
 
 use crate::config::ParquetWriterConfig;
-use crate::io_v2::{SingleFileWriter, LocationGenerator};
-use crate::types::DataFileBuilder;
+use crate::io_v2::{LocationGenerator, SingleFileWriterStatus};
+use crate::types::DataFileBuilderV2;
 use crate::Result;
 
-use super::{FileWriterBuilder, FileWriter, FileWriteResultVector};
 use super::track_writer::TrackWriter;
-
+use super::{FileWriteResult, FileWriter, FileWriterBuilder};
 
 /// ParquetWriterBuilder is used to builder a [`ParquetWriter`]
 #[derive(Clone)]
@@ -105,7 +104,7 @@ pub struct ParquetWriter {
 
 #[async_trait::async_trait]
 impl FileWriter for ParquetWriter {
-    type R = Vec<ParquetResult>;
+    type R = ParquetResult;
 
     /// Write data into the file.
     ///
@@ -121,7 +120,7 @@ impl FileWriter for ParquetWriter {
     /// # Note
     ///
     /// This function must be called before complete the write process.
-    async fn close(self) -> Result<Self::R> {
+    async fn close(self) -> Result<Vec<Self::R>> {
         let metadata = self.writer.close().await?;
         let written_size = self.written_size.load(std::sync::atomic::Ordering::Relaxed);
         if self.current_row_num == 0 {
@@ -136,7 +135,7 @@ impl FileWriter for ParquetWriter {
     }
 }
 
-impl SingleFileWriter for ParquetWriter {
+impl SingleFileWriterStatus for ParquetWriter {
     fn current_file_path(&self) -> String {
         self.file_path.clone()
     }
@@ -156,8 +155,9 @@ pub struct ParquetResult {
     file_path: String,
 }
 
-impl ParquetResult {
-    fn convert_to_iceberg_result(self) -> DataFileBuilder {
+impl FileWriteResult for ParquetResult {
+    type R = DataFileBuilderV2;
+    fn to_iceberg_result(self) -> DataFileBuilderV2 {
         let (column_sizes, value_counts, null_value_counts, distinct_counts) = {
             let mut per_col_size: HashMap<i32, _> = HashMap::new();
             let mut per_col_val_num: HashMap<i32, _> = HashMap::new();
@@ -201,7 +201,7 @@ impl ParquetResult {
             )
         };
 
-        let mut builder = DataFileBuilder::default();
+        let mut builder = DataFileBuilderV2::default();
         builder
             .with_file_format(crate::types::DataFileFormat::Parquet)
             .with_column_sizes(column_sizes)
@@ -220,28 +220,6 @@ impl ParquetResult {
                     .collect(),
             );
         builder
-    }
-}
-
-impl FileWriteResultVector for Vec<ParquetResult> {
-    type R = Vec<DataFileBuilder>;
-
-    fn to_iceberg_result(self) -> Self::R {
-        self.into_iter()
-            .map(|result| result.convert_to_iceberg_result())
-            .collect()
-    }
-
-    fn empty() -> Self {
-        vec![]
-    }
-
-    fn extend_res(&mut self, other: Self) {
-        self.extend(other); 
-    }
-
-    fn len(&self) -> usize {
-        self.len()
     }
 }
 

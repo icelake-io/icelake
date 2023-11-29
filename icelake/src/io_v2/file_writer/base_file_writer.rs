@@ -1,14 +1,13 @@
 //! A module provide `RollingWriter`.
-use crate::{config::RollingWriterConfig, io_v2::SingleFileWriter};
+use crate::{config::RollingWriterConfig, io_v2::SingleFileWriterStatus};
 use arrow_array::RecordBatch;
 use arrow_cast::cast;
 use async_trait::async_trait;
-use crate::io_v2::file_writer::FileWriteResultVector;
 
 use crate::{Error, Result};
 use arrow_schema::{DataType, SchemaRef};
 
-use super::{FileWriterBuilder, FileWriter};
+use super::{FileWriter, FileWriterBuilder};
 
 #[derive(Clone)]
 pub struct BaseFileWriterBuilder<B: FileWriterBuilder> {
@@ -28,7 +27,7 @@ impl<B: FileWriterBuilder> BaseFileWriterBuilder<B> {
 #[async_trait::async_trait]
 impl<B: FileWriterBuilder> FileWriterBuilder for BaseFileWriterBuilder<B>
 where
-    B::R: SingleFileWriter,
+    B::R: SingleFileWriterStatus,
 {
     type R = BaseFileWriter<B>;
 
@@ -48,13 +47,13 @@ pub struct BaseFileWriter<B: FileWriterBuilder> {
 
     current_writer: Option<B::R>,
 
-    result: <<B as FileWriterBuilder>::R as FileWriter>::R,
+    result: Vec<<<B as FileWriterBuilder>::R as FileWriter>::R>,
     rolling_config: Option<RollingWriterConfig>,
 }
 
 impl<B: FileWriterBuilder> BaseFileWriter<B>
 where
-    B::R: SingleFileWriter,
+    B::R: SingleFileWriterStatus,
 {
     /// Create a new `DataFileWriter`.
     pub async fn try_new(
@@ -66,7 +65,7 @@ where
             writer_builder,
             arrow_schema,
             current_writer: None,
-            result: <<B as FileWriterBuilder>::R as FileWriter>::R::empty(),
+            result: vec![],
             rolling_config,
         };
         writer.open_new_writer().await?;
@@ -86,7 +85,7 @@ where
     async fn close_current_writer(&mut self) -> Result<()> {
         let current_writer = self.current_writer.take().expect("Should not be none here");
         let res = current_writer.close().await?;
-        self.result.extend_res(res);
+        self.result.extend(res);
         Ok(())
     }
 
@@ -148,7 +147,7 @@ where
 #[async_trait]
 impl<B: FileWriterBuilder> FileWriter for BaseFileWriter<B>
 where
-    B::R: SingleFileWriter,
+    B::R: SingleFileWriterStatus,
 {
     type R = <<B as FileWriterBuilder>::R as FileWriter>::R;
     /// Write a record batch. The `DataFileWriter` will create a new file when the current row num is greater than `target_file_row_num`.
@@ -168,15 +167,15 @@ where
     }
 
     /// Complte the write and return the list of `DataFile` as result.
-    async fn close(mut self) -> Result<Self::R> {
+    async fn close(mut self) -> Result<Vec<Self::R>> {
         self.close_current_writer().await?;
         Ok(self.result)
     }
 }
 
-impl<B: FileWriterBuilder> SingleFileWriter for BaseFileWriter<B>
+impl<B: FileWriterBuilder> SingleFileWriterStatus for BaseFileWriter<B>
 where
-    B::R: SingleFileWriter,
+    B::R: SingleFileWriterStatus,
 {
     fn current_file_path(&self) -> String {
         self.current_writer.as_ref().unwrap().current_file_path()
@@ -195,6 +194,8 @@ where
 mod test {
     use std::sync::Arc;
 
+    use itertools::Itertools;
+
     use crate::{
         config::RollingWriterConfig,
         io_v2::{
@@ -202,7 +203,8 @@ mod test {
             test::{
                 create_arrow_schema, create_batch, create_location_generator, create_operator,
                 read_batch,
-            }, FileWriterBuilder, FileWriter, FileWriteResultVector, IcebergWriteResultVector,
+            },
+            FileWriteResult, FileWriter, FileWriterBuilder, IcebergWriteResult,
         },
     };
 
@@ -238,12 +240,20 @@ mod test {
         rolling_writer.write(&to_write).await?;
 
         // check output is 1 file.
-        let mut res = rolling_writer.close().await.unwrap().to_iceberg_result();
+        let mut res = rolling_writer
+            .close()
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|v| v.to_iceberg_result())
+            .collect_vec();
         assert!(res.len() == 1);
 
         // check row num
-        res.with_content(crate::types::DataContentType::Data)
-            .with_partition(None);
+        res.iter_mut().for_each(|v| {
+            v.set_content(crate::types::DataContentType::Data)
+                .set_partition(None);
+        });
         let mut row_num = 0;
         for builder in res {
             let data_file = builder.build().unwrap();
@@ -286,14 +296,20 @@ mod test {
         rolling_writer.write(&to_write).await?;
 
         // check output is 3 file
-        let mut res = rolling_writer.close().await.unwrap().to_iceberg_result();
+        let mut res = rolling_writer
+            .close()
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|v| v.to_iceberg_result())
+            .collect_vec();
         assert!(res.len() == 3);
 
         // check row num
-        // check row num
-        let res = res
-            .with_content(crate::types::DataContentType::Data)
-            .with_partition(None);
+        res.iter_mut().for_each(|v| {
+            v.set_content(crate::types::DataContentType::Data)
+                .set_partition(None);
+        });
         let mut row_num = 0;
         for builder in res {
             let data_file = builder.build().unwrap();
@@ -332,12 +348,20 @@ mod test {
         rolling_writer.write(&to_write).await?;
 
         // check output is 1 file.
-        let mut res = rolling_writer.close().await.unwrap().to_iceberg_result();
+        let mut res = rolling_writer
+            .close()
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|v| v.to_iceberg_result())
+            .collect_vec();
         assert!(res.len() == 1);
-        res.with_content(crate::types::DataContentType::Data)
-            .with_partition(None);
 
         // check row num
+        res.iter_mut().for_each(|v| {
+            v.set_content(crate::types::DataContentType::Data)
+                .set_partition(None);
+        });
         let mut row_num = 0;
         for builder in res {
             let data_file = builder.build().unwrap();
@@ -373,12 +397,20 @@ mod test {
         rolling_writer.write(&to_write).await?;
 
         // check output is 1 file
-        let mut res = rolling_writer.close().await.unwrap().to_iceberg_result();
+        let mut res = rolling_writer
+            .close()
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|v| v.to_iceberg_result())
+            .collect_vec();
         assert!(res.len() == 1);
 
         // check row num
-        res.with_content(crate::types::DataContentType::Data)
-            .with_partition(None);
+        res.iter_mut().for_each(|v| {
+            v.set_content(crate::types::DataContentType::Data)
+                .set_partition(None);
+        });
         let mut row_num = 0;
         for builder in res {
             let data_file = builder.build().unwrap();

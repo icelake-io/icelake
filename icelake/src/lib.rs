@@ -16,3 +16,5 @@ pub mod config;
 pub mod io;
 pub mod transaction;
 pub mod types;
+
+pub mod io_v2;

@@ -126,7 +126,11 @@ mod test {
     use anyhow::Result;
 
     use crate::{
-        types::parse_table_metadata, io_v2::{FileLocationGenerator, location_generator::{WRITE_DATA_LOCATION, WRITE_FOLDER_STORAGE_LOCATION}, LocationGenerator},
+        io_v2::{
+            location_generator::{WRITE_DATA_LOCATION, WRITE_FOLDER_STORAGE_LOCATION},
+            FileLocationGenerator, LocationGenerator,
+        },
+        types::parse_table_metadata,
     };
 
     #[tokio::test]
