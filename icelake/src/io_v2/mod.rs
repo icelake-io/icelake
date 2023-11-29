@@ -37,7 +37,7 @@ pub trait IcebergWriteResultVector: Send + Sync + 'static {
     fn clear(&mut self) -> Self;
 }
 
-pub trait SingleFileWriter {
+pub trait SingleFileWriterStatus {
     fn current_file_path(&self) -> String;
     fn current_row_num(&self) -> usize;
     fn current_written_size(&self) -> usize;
