@@ -66,7 +66,8 @@ impl<B: FileWriterBuilder> IcebergWriter<PositionDeleteInput> for PositionDelete
             .await?
             .into_iter()
             .map(|mut res| {
-                res.set_content(crate::types::DataContentType::PositionDeletes);
+                res.set_content(crate::types::DataContentType::PositionDeletes)
+                    .set_partition(None);
                 res
             })
             .collect_vec();
@@ -112,8 +113,8 @@ mod test {
         create_arrow_schema, create_location_generator, create_operator, read_batch,
     };
     use crate::io_v2::{
-        BaseFileWriterBuilder, IcebergWriteResult, IcebergWriter, IcebergWriterBuilder,
-        ParquetWriterBuilder, PositionDeleteInput, PositionDeleteWriterBuilder,
+        BaseFileWriterBuilder, IcebergWriter, IcebergWriterBuilder, ParquetWriterBuilder,
+        PositionDeleteInput, PositionDeleteWriterBuilder,
     };
 
     fn generate_test_data(
@@ -169,9 +170,8 @@ mod test {
         }
 
         // check result
-        let mut data_file_builder = delete_writer.flush().await.unwrap();
+        let data_file_builder = delete_writer.flush().await.unwrap();
         assert_eq!(data_file_builder.len(), 1);
-        data_file_builder[0].set_partition(None);
         let data_file = data_file_builder[0].build().unwrap();
         let batch = read_batch(&op, &data_file.file_path).await;
         assert_eq!(batch.num_columns(), 2);
@@ -221,10 +221,8 @@ mod test {
         }
 
         // check result
-        let mut data_file_builder = delete_writer.flush().await.unwrap();
+        let data_file_builder = delete_writer.flush().await.unwrap();
         assert_eq!(data_file_builder.len(), 2);
-        data_file_builder[0].set_partition(None);
-        data_file_builder[1].set_partition(None);
 
         // check file 1
         let data_file = data_file_builder[0].build().unwrap();

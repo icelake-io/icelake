@@ -7,6 +7,7 @@ use crate::catalog::CatalogRef;
 use crate::error::Result;
 use crate::io::writer_builder::WriterBuilder;
 use crate::io::TableScanBuilder;
+use arrow_schema::SchemaRef;
 use itertools::Itertools;
 use opendal::Operator;
 use serde::{Deserialize, Serialize};
@@ -381,6 +382,22 @@ impl Table {
             task_id,
             self.table_config.clone(),
         )
+    }
+
+    /// Return `WriterBuilderHelper` used to create v2 writer builder.
+    pub fn builder_helper(&self) -> Result<crate::io_v2::builder_helper::WriterBuilderHelper> {
+        crate::io_v2::builder_helper::WriterBuilderHelper::new(
+            self.current_table_metadata().clone(),
+            self.op.clone(),
+            self.task_id
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            self.table_config.clone(),
+        )
+    }
+
+    pub fn current_arrow_schema(&self) -> Result<SchemaRef> {
+        let current_schema = self.current_table_metadata().current_schema()?;
+        Ok(Arc::new(current_schema.to_owned().try_into()?))
     }
 
     /// Returns path of metadata file relative to the table root path.

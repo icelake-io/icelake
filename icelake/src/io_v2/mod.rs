@@ -11,8 +11,13 @@ pub mod file_writer;
 pub use file_writer::*;
 pub mod base_writer;
 pub use base_writer::*;
+pub mod functional_writer;
+pub use functional_writer::*;
+pub mod input_wrapper;
 pub mod location_generator;
 pub use location_generator::*;
+pub mod builder_helper;
+pub use builder_helper::*;
 
 type DefaultInput = RecordBatch;
 
@@ -64,7 +69,8 @@ impl IcebergWriteResult for DataFileBuilderV2 {
 mod test {
     use std::{fs, sync::Arc};
 
-    use crate::types::{parse_table_metadata, Field, Schema, Struct};
+    use crate::types::{parse_table_metadata, DataFileBuilderV2, Field, Schema, Struct};
+    use crate::Result;
     use arrow_array::{ArrayRef, Int64Array, RecordBatch};
     use arrow_schema::SchemaRef;
     use arrow_select::concat::concat_batches;
@@ -73,7 +79,7 @@ mod test {
     use opendal::{services::Memory, Operator};
     use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 
-    use super::FileLocationGenerator;
+    use super::{FileLocationGenerator, IcebergWriter, IcebergWriterBuilder};
 
     pub async fn read_batch(op: &Operator, path: &str) -> RecordBatch {
         let res = op.read(path).await.unwrap();
@@ -133,5 +139,42 @@ mod test {
         metadata.location = "/".to_string();
 
         FileLocationGenerator::try_new(&metadata, 0, 0, None).unwrap()
+    }
+    /// A writer used to test other iceberg writer.
+    #[derive(Clone)]
+    pub struct TestWriterBuilder;
+
+    #[async_trait::async_trait]
+    impl IcebergWriterBuilder for TestWriterBuilder {
+        type R = TestWriter;
+
+        async fn build(self, _schema: &arrow_schema::SchemaRef) -> Result<Self::R> {
+            Ok(TestWriter { batch: vec![] })
+        }
+    }
+
+    #[derive(Default)]
+    pub struct TestWriter {
+        batch: Vec<RecordBatch>,
+    }
+
+    impl TestWriter {
+        pub fn res(&self) -> RecordBatch {
+            concat_batches(&self.batch[0].schema(), self.batch.iter()).unwrap()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl IcebergWriter for TestWriter {
+        type R = DataFileBuilderV2;
+
+        async fn write(&mut self, batch: RecordBatch) -> Result<()> {
+            self.batch.push(batch);
+            Ok(())
+        }
+
+        async fn flush(&mut self) -> crate::Result<Vec<Self::R>> {
+            unimplemented!()
+        }
     }
 }

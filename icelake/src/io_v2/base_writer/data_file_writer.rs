@@ -62,7 +62,8 @@ impl<B: FileWriterBuilder> IcebergWriter for DataFileWriter<B> {
             .into_iter()
             .map(|res| {
                 let mut res = res.to_iceberg_result();
-                res.set_content(crate::types::DataContentType::Data);
+                res.set_content(crate::types::DataContentType::Data)
+                    .set_partition(None);
                 res
             })
             .collect_vec();
@@ -96,8 +97,8 @@ mod test {
             create_arrow_schema, create_batch, create_location_generator, create_operator,
             read_batch,
         },
-        BaseFileWriterBuilder, DataFileWriterBuilder, IcebergWriteResult, IcebergWriter,
-        IcebergWriterBuilder, ParquetWriterBuilder,
+        BaseFileWriterBuilder, DataFileWriterBuilder, IcebergWriter, IcebergWriterBuilder,
+        ParquetWriterBuilder,
     };
 
     #[tokio::test]
@@ -126,13 +127,10 @@ mod test {
         data_file_writer.write(to_write).await?;
 
         // check output is 1 file.
-        let mut res = data_file_writer.flush().await.unwrap();
+        let res = data_file_writer.flush().await.unwrap();
         assert!(res.len() == 1);
 
         // check row num
-        res.iter_mut().for_each(|res| {
-            res.set_partition(None);
-        });
         let mut row_num = 0;
         for builder in res {
             let data_file = builder.build().unwrap();
@@ -149,13 +147,10 @@ mod test {
         data_file_writer.write(to_write).await?;
 
         // check output is 1 file.
-        let mut res = data_file_writer.flush().await.unwrap();
+        let res = data_file_writer.flush().await.unwrap();
         assert!(res.len() == 1);
 
         // check row num
-        res.iter_mut().for_each(|res| {
-            res.set_partition(None);
-        });
         let mut row_num = 0;
         for builder in res {
             let data_file = builder.build().unwrap();
