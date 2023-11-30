@@ -9,6 +9,8 @@ use crate::Result;
 
 pub mod file_writer;
 pub use file_writer::*;
+pub mod base_writer;
+pub use base_writer::*;
 pub mod location_generator;
 pub use location_generator::*;
 
