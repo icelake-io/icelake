@@ -83,7 +83,8 @@ impl<B: FileWriterBuilder> IcebergWriter for EqualityDeleteWriter<B> {
             .map(|res| {
                 let mut res = res.to_iceberg_result();
                 res.set_content(crate::types::DataContentType::EqualityDeletes)
-                    .set_equality_ids(self.equality_ids.iter().map(|id| *id as i32).collect_vec());
+                    .set_equality_ids(self.equality_ids.iter().map(|id| *id as i32).collect_vec())
+                    .set_partition(None);
                 res
             })
             .collect_vec();
@@ -100,8 +101,8 @@ mod test {
             create_arrow_schema, create_batch, create_location_generator, create_operator,
             read_batch,
         },
-        BaseFileWriterBuilder, EqualityDeleteWriterBuilder, IcebergWriteResult, IcebergWriter,
-        IcebergWriterBuilder, ParquetWriterBuilder,
+        BaseFileWriterBuilder, EqualityDeleteWriterBuilder, IcebergWriter, IcebergWriterBuilder,
+        ParquetWriterBuilder,
     };
 
     #[tokio::test]
@@ -128,9 +129,8 @@ mod test {
         equality_delete_writer.write(to_write).await?;
 
         // check output
-        let mut res = equality_delete_writer.flush().await.unwrap();
+        let res = equality_delete_writer.flush().await.unwrap();
         assert!(res.len() == 1);
-        res[0].set_partition(None);
         let data_file = res[0].build().unwrap();
         assert_eq!(data_file.equality_ids, Some(vec![2, 3]));
         let batch = read_batch(&op, &data_file.file_path).await;
