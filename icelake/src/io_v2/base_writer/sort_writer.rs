@@ -8,6 +8,10 @@ use crate::io_v2::{
 };
 use crate::Result;
 
+pub struct SortWriterMetrics {
+    pub current_cache_number: usize,
+}
+
 pub(crate) struct SortWriterBuilder<I, B: FileWriterBuilder> {
     inner: B,
     sort_col_index: Vec<usize>,
@@ -85,6 +89,12 @@ impl<I: Combinable + Ord, B: FileWriterBuilder> SortWriter<I, B> {
             .collect_vec();
         self.result.extend(res);
         Ok(())
+    }
+
+    pub fn metrics(&self) -> SortWriterMetrics {
+        SortWriterMetrics {
+            current_cache_number: self.current_cache_number,
+        }
     }
 }
 
