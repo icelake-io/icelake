@@ -174,7 +174,7 @@ mod test {
         }
 
         async fn flush(&mut self) -> crate::Result<Vec<Self::R>> {
-            unimplemented!()
+            Ok(vec![])
         }
     }
 }

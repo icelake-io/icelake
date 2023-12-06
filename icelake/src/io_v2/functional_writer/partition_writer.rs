@@ -15,6 +15,13 @@ use itertools::Itertools;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 
+#[cfg(feature = "prometheus")]
+pub use prometheus::*;
+
+pub struct FanoutPartitionedWriterMetrics {
+    pub partition_num: usize,
+}
+
 /// PartitionWriter can route the batch into different inner writer by partition key.
 #[derive(Clone)]
 pub struct FanoutPartitionedWriterBuilder<B: IcebergWriterBuilder> {
@@ -74,6 +81,17 @@ where
     schema: SchemaRef,
 }
 
+impl<B: IcebergWriterBuilder> FanoutPartitionedWriter<B>
+where
+    B::R: IcebergWriter,
+{
+    pub fn metrics(&self) -> FanoutPartitionedWriterMetrics {
+        FanoutPartitionedWriterMetrics {
+            partition_num: self.inner_writers.len(),
+        }
+    }
+}
+
 #[async_trait::async_trait]
 impl<B: IcebergWriterBuilder> IcebergWriter for FanoutPartitionedWriter<B>
 where
@@ -115,6 +133,149 @@ where
     }
 }
 
+#[cfg(feature = "prometheus")]
+mod prometheus {
+    use crate::Result;
+    use arrow_schema::SchemaRef;
+    use prometheus::core::{AtomicU64, GenericGauge};
+
+    use crate::io_v2::{IcebergWriter, IcebergWriterBuilder};
+
+    use super::{
+        FanoutPartitionedWriter, FanoutPartitionedWriterBuilder, FanoutPartitionedWriterMetrics,
+    };
+
+    #[derive(Clone)]
+    pub struct FanoutPartitionedWriterWithMetricsBuilder<B: IcebergWriterBuilder> {
+        inner: FanoutPartitionedWriterBuilder<B>,
+        partition_num: GenericGauge<AtomicU64>,
+    }
+
+    impl<B: IcebergWriterBuilder> FanoutPartitionedWriterWithMetricsBuilder<B> {
+        pub fn new(
+            inner: FanoutPartitionedWriterBuilder<B>,
+            partition_num: GenericGauge<AtomicU64>,
+        ) -> Self {
+            Self {
+                inner,
+                partition_num,
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl<B: IcebergWriterBuilder> IcebergWriterBuilder for FanoutPartitionedWriterWithMetricsBuilder<B>
+    where
+        B::R: IcebergWriter,
+    {
+        type R = FanoutPartitionedWriterWithMetrics<B>;
+
+        async fn build(self, schema: &SchemaRef) -> crate::Result<Self::R> {
+            let writer = self.inner.build(schema).await?;
+            Ok(FanoutPartitionedWriterWithMetrics {
+                inner: writer,
+                partition_num: self.partition_num,
+                current_metrics: FanoutPartitionedWriterMetrics { partition_num: 0 },
+            })
+        }
+    }
+
+    pub struct FanoutPartitionedWriterWithMetrics<B: IcebergWriterBuilder>
+    where
+        B::R: IcebergWriter,
+    {
+        inner: FanoutPartitionedWriter<B>,
+        partition_num: GenericGauge<AtomicU64>,
+        current_metrics: FanoutPartitionedWriterMetrics,
+    }
+
+    impl<B: IcebergWriterBuilder> FanoutPartitionedWriterWithMetrics<B>
+    where
+        B::R: IcebergWriter,
+    {
+        pub fn update_metrics(&mut self) -> Result<()> {
+            let last_metrics = std::mem::replace(&mut self.current_metrics, self.inner.metrics());
+            {
+                let delta =
+                    self.current_metrics.partition_num as i64 - last_metrics.partition_num as i64;
+                if delta > 0 {
+                    self.partition_num.add(delta as u64);
+                } else {
+                    self.partition_num.sub(delta.unsigned_abs());
+                }
+                Ok(())
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl<B: IcebergWriterBuilder> IcebergWriter for FanoutPartitionedWriterWithMetrics<B>
+    where
+        B::R: IcebergWriter,
+    {
+        type R = <FanoutPartitionedWriter<B> as IcebergWriter>::R;
+
+        async fn write(&mut self, batch: arrow_array::RecordBatch) -> crate::Result<()> {
+            self.inner.write(batch).await?;
+            self.update_metrics()?;
+            Ok(())
+        }
+
+        async fn flush(&mut self) -> crate::Result<Vec<Self::R>> {
+            let res = self.inner.flush().await?;
+            self.update_metrics()?;
+            Ok(res)
+        }
+    }
+
+    #[cfg(test)]
+    mod test {
+        use prometheus::core::GenericGauge;
+
+        use crate::{
+            io_v2::{
+                partition_writer::test::create_partition,
+                test::{create_arrow_schema, create_batch, create_schema, TestWriterBuilder},
+                FanoutPartitionedWriterBuilder, IcebergWriter, IcebergWriterBuilder,
+            },
+            types::Any,
+        };
+
+        #[tokio::test]
+        async fn test_metrics_writer() {
+            let schema = create_schema(2);
+            let arrow_schema = create_arrow_schema(2);
+            let partition_spec = create_partition();
+            let partition_type =
+                Any::Struct(partition_spec.partition_type(&schema).unwrap().into());
+            let builder = FanoutPartitionedWriterBuilder::new(
+                TestWriterBuilder {},
+                partition_type,
+                partition_spec,
+            );
+            let metrics = GenericGauge::new("test", "test").unwrap();
+            let metric_builder =
+                super::FanoutPartitionedWriterWithMetricsBuilder::new(builder, metrics.clone());
+
+            let to_write = create_batch(&arrow_schema, vec![vec![1, 2], vec![1, 2]]);
+
+            let mut writer_1 = metric_builder.clone().build(&arrow_schema).await.unwrap();
+            writer_1.write(to_write.clone()).await.unwrap();
+
+            assert_eq!(metrics.get(), 2);
+
+            let mut writer_2 = metric_builder.clone().build(&arrow_schema).await.unwrap();
+            writer_2.write(to_write).await.unwrap();
+
+            assert_eq!(metrics.get(), 4);
+
+            writer_1.flush().await.unwrap();
+
+            assert_eq!(metrics.get(), 2);
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use itertools::Itertools;
@@ -127,7 +288,7 @@ mod test {
         types::{Any, PartitionField, PartitionSpec},
     };
 
-    fn create_partition() -> PartitionSpec {
+    pub fn create_partition() -> PartitionSpec {
         PartitionSpec {
             spec_id: 1,
             fields: vec![PartitionField {

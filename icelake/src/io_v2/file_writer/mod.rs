@@ -11,7 +11,7 @@ pub use base_file_writer::*;
 pub mod track_writer;
 
 #[async_trait::async_trait]
-pub trait FileWriterBuilder: Send + Sync + Clone + 'static {
+pub trait FileWriterBuilder: Send + Clone + 'static {
     type R: FileWriter;
     async fn build(self, schema: &SchemaRef) -> Result<Self::R>;
 }

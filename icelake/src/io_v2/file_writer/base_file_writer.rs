@@ -9,6 +9,14 @@ use arrow_schema::{DataType, SchemaRef};
 
 use super::{FileWriter, FileWriterBuilder};
 
+#[cfg(feature = "prometheus")]
+pub use prometheus::*;
+
+#[derive(Clone)]
+pub struct BaseFileWriterMetrics {
+    pub unflush_data_file: usize,
+}
+
 #[derive(Clone)]
 pub struct BaseFileWriterBuilder<B: FileWriterBuilder> {
     rolling_config: Option<RollingWriterConfig>,
@@ -49,6 +57,8 @@ pub struct BaseFileWriter<B: FileWriterBuilder> {
 
     result: Vec<<<B as FileWriterBuilder>::R as FileWriter>::R>,
     rolling_config: Option<RollingWriterConfig>,
+
+    metrics: BaseFileWriterMetrics,
 }
 
 impl<B: FileWriterBuilder> BaseFileWriter<B>
@@ -67,6 +77,9 @@ where
             current_writer: None,
             result: vec![],
             rolling_config,
+            metrics: BaseFileWriterMetrics {
+                unflush_data_file: 0,
+            },
         };
         writer.open_new_writer().await?;
         Ok(writer)
@@ -86,6 +99,7 @@ where
         let current_writer = self.current_writer.take().expect("Should not be none here");
         let res = current_writer.close().await?;
         self.result.extend(res);
+        self.metrics.unflush_data_file = self.result.len();
         Ok(())
     }
 
@@ -140,6 +154,10 @@ where
             Ok(batch)
         }
     }
+
+    pub fn metrics(&self) -> &BaseFileWriterMetrics {
+        &self.metrics
+    }
 }
 
 // unsafe impl Sync for RollingWriter {}
@@ -187,6 +205,149 @@ where
 
     fn current_written_size(&self) -> usize {
         self.current_writer.as_ref().unwrap().current_written_size()
+    }
+}
+
+#[cfg(feature = "prometheus")]
+mod prometheus {
+    use crate::{io_v2::FileWriter, Result};
+    use arrow_array::RecordBatch;
+    use arrow_schema::SchemaRef;
+    use prometheus::core::{AtomicU64, GenericGauge};
+
+    use crate::io_v2::{FileWriterBuilder, SingleFileWriterStatus};
+
+    use super::{BaseFileWriter, BaseFileWriterBuilder, BaseFileWriterMetrics};
+
+    #[derive(Clone)]
+    pub struct BaseFileWriterWithMetricsBuilder<B: FileWriterBuilder> {
+        inner: BaseFileWriterBuilder<B>,
+
+        // metrics
+        unflush_data_size: GenericGauge<AtomicU64>,
+    }
+
+    impl<B: FileWriterBuilder> BaseFileWriterWithMetricsBuilder<B> {
+        pub fn new(
+            inner: BaseFileWriterBuilder<B>,
+            unflush_data_size: GenericGauge<AtomicU64>,
+        ) -> Self {
+            Self {
+                inner,
+                unflush_data_size,
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl<B: FileWriterBuilder> FileWriterBuilder for BaseFileWriterWithMetricsBuilder<B>
+    where
+        B::R: SingleFileWriterStatus,
+    {
+        type R = BaseFileWriterWithMetrics<B>;
+
+        async fn build(self, schema: &SchemaRef) -> Result<Self::R> {
+            Ok(BaseFileWriterWithMetrics {
+                inner: self.inner.build(schema).await?,
+                unflush_data_size: self.unflush_data_size,
+                cur_metrics: BaseFileWriterMetrics {
+                    unflush_data_file: 0,
+                },
+            })
+        }
+    }
+
+    pub struct BaseFileWriterWithMetrics<B: FileWriterBuilder> {
+        inner: BaseFileWriter<B>,
+
+        // metrics
+        unflush_data_size: GenericGauge<AtomicU64>,
+
+        cur_metrics: BaseFileWriterMetrics,
+    }
+
+    #[async_trait::async_trait]
+    impl<B: FileWriterBuilder> FileWriter for BaseFileWriterWithMetrics<B>
+    where
+        B::R: SingleFileWriterStatus,
+    {
+        type R = <<B as FileWriterBuilder>::R as FileWriter>::R;
+
+        /// Write a record batch. The `DataFileWriter` will create a new file when the current row num is greater than `target_file_row_num`.
+        async fn write(&mut self, batch: &RecordBatch) -> Result<()> {
+            self.inner.write(batch).await?;
+            let last_metrics =
+                std::mem::replace(&mut self.cur_metrics, self.inner.metrics().clone());
+            {
+                let delta =
+                    (self.cur_metrics.unflush_data_file - last_metrics.unflush_data_file) as i64;
+                assert!(delta >= 0);
+                self.unflush_data_size.add(delta as u64);
+            }
+            Ok(())
+        }
+
+        /// Complte the write and return the list of `DataFile` as result.
+        async fn close(self) -> Result<Vec<Self::R>> {
+            self.inner.close().await
+        }
+    }
+
+    #[cfg(test)]
+    mod test {
+        use prometheus::core::GenericGauge;
+        use std::sync::Arc;
+
+        use super::BaseFileWriterWithMetricsBuilder;
+        use crate::{
+            config::RollingWriterConfig,
+            io_v2::{
+                test::{
+                    create_arrow_schema, create_batch, create_location_generator, create_operator,
+                },
+                BaseFileWriterBuilder, FileWriter, FileWriterBuilder, ParquetWriterBuilder,
+            },
+        };
+
+        #[tokio::test]
+        async fn test_metrics_writer() {
+            let op = create_operator();
+            let location_generator = create_location_generator();
+            let schema = create_arrow_schema(3);
+            let parquet_writer_builder = ParquetWriterBuilder::new(
+                op.clone(),
+                0,
+                Default::default(),
+                "/".to_string(),
+                Arc::new(location_generator),
+            );
+            let rolling_writer_builder = BaseFileWriterBuilder::new(
+                Some(RollingWriterConfig {
+                    rows_per_file: 1024,
+                    target_file_size_in_bytes: 0,
+                }),
+                parquet_writer_builder,
+            );
+            let metrics = GenericGauge::new("test", "test").unwrap();
+            let metrics_builder =
+                BaseFileWriterWithMetricsBuilder::new(rolling_writer_builder, metrics.clone());
+
+            let mut writer_1 = metrics_builder.clone().build(&schema).await.unwrap();
+            let mut writer_2 = metrics_builder.clone().build(&schema).await.unwrap();
+
+            let to_write = create_batch(&schema, vec![vec![1; 1024], vec![2; 1024], vec![3; 1024]]);
+            writer_1.write(&to_write).await.unwrap();
+            writer_1.write(&to_write).await.unwrap();
+            writer_2.write(&to_write).await.unwrap();
+            writer_2.write(&to_write).await.unwrap();
+            writer_2.write(&to_write).await.unwrap();
+
+            let mut writer_3 = metrics_builder.build(&schema).await.unwrap();
+            writer_3.write(&to_write).await.unwrap();
+
+            // check output is 5 file.
+            assert_eq!(metrics.get(), 6);
+        }
     }
 }
 

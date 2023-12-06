@@ -12,6 +12,13 @@ use arrow_array::{ArrayRef, RecordBatch};
 use arrow_schema::{FieldRef as ArrowFieldRef, Schema as ArrowSchema, SchemaRef as ArrowSchemaRef};
 use itertools::Itertools;
 
+#[cfg(feature = "prometheus")]
+pub use prometheus::*;
+
+pub struct PositionDeleteMetrics {
+    pub current_cache_number: usize,
+}
+
 #[derive(Clone)]
 pub struct PositionDeleteWriterBuilder<B: FileWriterBuilder> {
     inner: B,
@@ -50,6 +57,15 @@ impl<B: FileWriterBuilder> IcebergWriterBuilder for PositionDeleteWriterBuilder<
 //Position deletes are required to be sorted by file and position,
 pub struct PositionDeleteWriter<B: FileWriterBuilder> {
     inner_writer: SortWriter<PositionDeleteInput, B>,
+}
+
+impl<B: FileWriterBuilder> PositionDeleteWriter<B> {
+    pub fn metrics(&self) -> PositionDeleteMetrics {
+        let metrics = self.inner_writer.metrics();
+        PositionDeleteMetrics {
+            current_cache_number: metrics.current_cache_number,
+        }
+    }
 }
 
 #[async_trait::async_trait]
@@ -102,6 +118,172 @@ impl Combinable for PositionDeleteInput {
         1
     }
 }
+#[cfg(feature = "prometheus")]
+mod prometheus {
+    use crate::io_v2::{FileWriterBuilder, IcebergWriter, IcebergWriterBuilder};
+    use crate::Result;
+    use prometheus::core::{AtomicU64, GenericGauge};
+
+    use super::{
+        PositionDeleteInput, PositionDeleteMetrics, PositionDeleteWriter,
+        PositionDeleteWriterBuilder,
+    };
+
+    #[derive(Clone)]
+    pub struct PositionDeleteWriterWithMetricsBuilder<B: FileWriterBuilder> {
+        current_cache_number: GenericGauge<AtomicU64>,
+        inner: PositionDeleteWriterBuilder<B>,
+    }
+
+    impl<B: FileWriterBuilder> PositionDeleteWriterWithMetricsBuilder<B> {
+        pub fn new(
+            inner: PositionDeleteWriterBuilder<B>,
+            current_cache_number: GenericGauge<AtomicU64>,
+        ) -> Self {
+            Self {
+                inner,
+                current_cache_number,
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl<B: FileWriterBuilder> IcebergWriterBuilder for PositionDeleteWriterWithMetricsBuilder<B> {
+        type R = PositionDeleteWriterWithMetrics<B>;
+
+        async fn build(self, schema: &arrow_schema::SchemaRef) -> crate::Result<Self::R> {
+            let writer = self.inner.build(schema).await?;
+            Ok(PositionDeleteWriterWithMetrics {
+                writer,
+                cache_number: self.current_cache_number,
+                current_metrics: PositionDeleteMetrics {
+                    current_cache_number: 0,
+                },
+            })
+        }
+    }
+
+    pub struct PositionDeleteWriterWithMetrics<B: FileWriterBuilder> {
+        writer: PositionDeleteWriter<B>,
+
+        // metrics
+        cache_number: GenericGauge<AtomicU64>,
+        current_metrics: PositionDeleteMetrics,
+    }
+
+    impl<B: FileWriterBuilder> PositionDeleteWriterWithMetrics<B> {
+        fn update_metrics(&mut self) -> Result<()> {
+            let last_metrics = std::mem::replace(&mut self.current_metrics, self.writer.metrics());
+            {
+                let delta = self.current_metrics.current_cache_number as i64
+                    - last_metrics.current_cache_number as i64;
+                if delta > 0 {
+                    self.cache_number.add(delta as u64);
+                } else {
+                    self.cache_number.sub(delta.unsigned_abs());
+                }
+            }
+            Ok(())
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl<B: FileWriterBuilder> IcebergWriter<PositionDeleteInput>
+        for PositionDeleteWriterWithMetrics<B>
+    {
+        type R = <PositionDeleteWriter<B> as IcebergWriter<PositionDeleteInput>>::R;
+
+        async fn write(&mut self, input: crate::io_v2::PositionDeleteInput) -> crate::Result<()> {
+            self.writer.write(input).await?;
+            self.update_metrics()?;
+            Ok(())
+        }
+
+        async fn flush(&mut self) -> crate::Result<Vec<Self::R>> {
+            let res = self.writer.flush().await?;
+            self.update_metrics()?;
+            Ok(res)
+        }
+    }
+
+    #[cfg(test)]
+    mod test {
+        use std::sync::Arc;
+
+        use prometheus::core::GenericGauge;
+
+        use crate::io_v2::{
+            position_delete_writer::test::generate_test_data,
+            test::{create_arrow_schema, create_location_generator, create_operator},
+            BaseFileWriterBuilder, IcebergWriter, IcebergWriterBuilder, ParquetWriterBuilder,
+            PositionDeleteWriterBuilder,
+        };
+
+        #[tokio::test]
+        async fn test_metrics_writer() {
+            // create writer
+            let op = create_operator();
+            let location_generator = create_location_generator();
+            let parquet_writer_builder = ParquetWriterBuilder::new(
+                op.clone(),
+                0,
+                Default::default(),
+                "/".to_string(),
+                Arc::new(location_generator),
+            );
+            let delete_writer_builder = PositionDeleteWriterBuilder::new(
+                BaseFileWriterBuilder::new(None, parquet_writer_builder),
+                4,
+            );
+            let metrics = GenericGauge::new("test", "test").unwrap();
+            let metrics_builder = super::PositionDeleteWriterWithMetricsBuilder::new(
+                delete_writer_builder,
+                metrics.clone(),
+            );
+
+            // prepare data
+            let (position_delete, _, _) = generate_test_data(vec![("file1", 3)]);
+
+            let mut writer_1 = metrics_builder
+                .clone()
+                .build(&create_arrow_schema(2))
+                .await
+                .unwrap();
+            let mut writer_2 = metrics_builder
+                .clone()
+                .build(&create_arrow_schema(2))
+                .await
+                .unwrap();
+
+            writer_1.write(position_delete[0].clone()).await.unwrap();
+            writer_2.write(position_delete[0].clone()).await.unwrap();
+            writer_1.write(position_delete[0].clone()).await.unwrap();
+            writer_2.write(position_delete[0].clone()).await.unwrap();
+            writer_1.write(position_delete[0].clone()).await.unwrap();
+            writer_2.write(position_delete[0].clone()).await.unwrap();
+
+            assert_eq!(metrics.get(), 6);
+
+            let mut writer_3 = metrics_builder
+                .clone()
+                .build(&create_arrow_schema(2))
+                .await
+                .unwrap();
+
+            writer_3.write(position_delete[0].clone()).await.unwrap();
+            assert_eq!(metrics.get(), 7);
+
+            writer_1.write(position_delete[0].clone()).await.unwrap();
+            assert_eq!(metrics.get(), 4);
+
+            writer_2.write(position_delete[0].clone()).await.unwrap();
+            assert_eq!(metrics.get(), 1);
+
+            writer_3.flush().await.unwrap();
+            assert_eq!(metrics.get(), 0);
+        }
+    }
+}
 
 #[cfg(test)]
 mod test {
@@ -117,7 +299,7 @@ mod test {
         PositionDeleteInput, PositionDeleteWriterBuilder,
     };
 
-    fn generate_test_data(
+    pub fn generate_test_data(
         mut input: Vec<(&str, i64)>,
     ) -> (Vec<PositionDeleteInput>, Vec<&str>, Vec<i64>) {
         let position_delete = input
