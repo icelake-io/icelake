@@ -42,10 +42,7 @@ impl<B: IcebergWriterBuilder> PrometheusWriterBuilder<B> {
 }
 
 #[async_trait::async_trait]
-impl<B: IcebergWriterBuilder> IcebergWriterBuilder for PrometheusWriterBuilder<B>
-where
-    B::R: IcebergWriter,
-{
+impl<B: IcebergWriterBuilder> IcebergWriterBuilder for PrometheusWriterBuilder<B> {
     type R = PrometheusWriter<B::R>;
 
     async fn build(self, schema: &SchemaRef) -> Result<Self::R> {

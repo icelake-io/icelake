@@ -22,8 +22,8 @@ pub use builder_helper::*;
 type DefaultInput = RecordBatch;
 
 #[async_trait::async_trait]
-pub trait IcebergWriterBuilder: Send + Clone + 'static {
-    type R;
+pub trait IcebergWriterBuilder<I = DefaultInput>: Send + Clone + 'static {
+    type R: IcebergWriter<I>;
     async fn build(self, schema: &SchemaRef) -> Result<Self::R>;
 }
 

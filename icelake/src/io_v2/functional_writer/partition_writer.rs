@@ -41,10 +41,7 @@ impl<B: IcebergWriterBuilder> FanoutPartitionedWriterBuilder<B> {
 }
 
 #[async_trait::async_trait]
-impl<B: IcebergWriterBuilder> IcebergWriterBuilder for FanoutPartitionedWriterBuilder<B>
-where
-    B::R: IcebergWriter,
-{
+impl<B: IcebergWriterBuilder> IcebergWriterBuilder for FanoutPartitionedWriterBuilder<B> {
     type R = FanoutPartitionedWriter<B>;
 
     async fn build(self, schema: &SchemaRef) -> Result<Self::R> {
@@ -71,20 +68,14 @@ where
 }
 
 /// Partition append only writer
-pub struct FanoutPartitionedWriter<B: IcebergWriterBuilder>
-where
-    B::R: IcebergWriter,
-{
+pub struct FanoutPartitionedWriter<B: IcebergWriterBuilder> {
     inner_writers: HashMap<PartitionKey, B::R>,
     partition_splitter: PartitionSplitter,
     inner_buidler: B,
     schema: SchemaRef,
 }
 
-impl<B: IcebergWriterBuilder> FanoutPartitionedWriter<B>
-where
-    B::R: IcebergWriter,
-{
+impl<B: IcebergWriterBuilder> FanoutPartitionedWriter<B> {
     pub fn metrics(&self) -> FanoutPartitionedWriterMetrics {
         FanoutPartitionedWriterMetrics {
             partition_num: self.inner_writers.len(),
@@ -93,10 +84,7 @@ where
 }
 
 #[async_trait::async_trait]
-impl<B: IcebergWriterBuilder> IcebergWriter for FanoutPartitionedWriter<B>
-where
-    B::R: IcebergWriter,
-{
+impl<B: IcebergWriterBuilder> IcebergWriter for FanoutPartitionedWriter<B> {
     type R = <<B as IcebergWriterBuilder>::R as IcebergWriter>::R;
 
     /// Write a record batch. The `DataFileWriter` will create a new file when the current row num is greater than `target_file_row_num`.

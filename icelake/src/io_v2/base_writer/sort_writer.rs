@@ -42,7 +42,9 @@ impl<I, B: FileWriterBuilder> SortWriterBuilder<I, B> {
 }
 
 #[async_trait]
-impl<I: Combinable, B: FileWriterBuilder> IcebergWriterBuilder for SortWriterBuilder<I, B> {
+impl<I: Combinable + Ord, B: FileWriterBuilder> IcebergWriterBuilder<I>
+    for SortWriterBuilder<I, B>
+{
     type R = SortWriter<I, B>;
 
     async fn build(self, schema: &SchemaRef) -> Result<Self::R> {
