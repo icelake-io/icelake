@@ -40,7 +40,7 @@ pub trait IcebergWriteResult: Send + Sync + 'static {
     fn set_partition(&mut self, partition_value: Option<StructValue>) -> &mut Self;
 }
 
-pub trait SingleFileWriterStatus {
+pub trait CurrentFileStatus {
     fn current_file_path(&self) -> String;
     fn current_row_num(&self) -> usize;
     fn current_written_size(&self) -> usize;

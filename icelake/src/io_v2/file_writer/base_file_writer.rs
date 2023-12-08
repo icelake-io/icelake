@@ -1,5 +1,5 @@
 //! A module provide `RollingWriter`.
-use crate::{config::RollingWriterConfig, io_v2::SingleFileWriterStatus};
+use crate::{config::RollingWriterConfig, io_v2::CurrentFileStatus};
 use arrow_array::RecordBatch;
 use arrow_cast::cast;
 use async_trait::async_trait;
@@ -33,10 +33,7 @@ impl<B: FileWriterBuilder> BaseFileWriterBuilder<B> {
 }
 
 #[async_trait::async_trait]
-impl<B: FileWriterBuilder> FileWriterBuilder for BaseFileWriterBuilder<B>
-where
-    B::R: SingleFileWriterStatus,
-{
+impl<B: FileWriterBuilder> FileWriterBuilder for BaseFileWriterBuilder<B> {
     type R = BaseFileWriter<B>;
 
     async fn build(self, schema: &SchemaRef) -> Result<BaseFileWriter<B>> {
@@ -59,10 +56,7 @@ pub struct BaseFileWriter<B: FileWriterBuilder> {
     rolling_config: Option<RollingWriterConfig>,
 }
 
-impl<B: FileWriterBuilder> BaseFileWriter<B>
-where
-    B::R: SingleFileWriterStatus,
-{
+impl<B: FileWriterBuilder> BaseFileWriter<B> {
     /// Create a new `DataFileWriter`.
     pub async fn try_new(
         writer_builder: B,
@@ -159,10 +153,7 @@ where
 // unsafe impl Sync for RollingWriter {}
 
 #[async_trait]
-impl<B: FileWriterBuilder> FileWriter for BaseFileWriter<B>
-where
-    B::R: SingleFileWriterStatus,
-{
+impl<B: FileWriterBuilder> FileWriter for BaseFileWriter<B> {
     type R = <<B as FileWriterBuilder>::R as FileWriter>::R;
     /// Write a record batch. The `DataFileWriter` will create a new file when the current row num is greater than `target_file_row_num`.
     async fn write(&mut self, batch: &RecordBatch) -> Result<()> {
@@ -187,10 +178,7 @@ where
     }
 }
 
-impl<B: FileWriterBuilder> SingleFileWriterStatus for BaseFileWriter<B>
-where
-    B::R: SingleFileWriterStatus,
-{
+impl<B: FileWriterBuilder> CurrentFileStatus for BaseFileWriter<B> {
     fn current_file_path(&self) -> String {
         self.current_writer.as_ref().unwrap().current_file_path()
     }
@@ -211,7 +199,7 @@ mod prometheus {
     use arrow_schema::SchemaRef;
     use prometheus::core::{AtomicU64, GenericGauge};
 
-    use crate::io_v2::{FileWriterBuilder, SingleFileWriterStatus};
+    use crate::io_v2::{CurrentFileStatus, FileWriterBuilder};
 
     use super::{BaseFileWriter, BaseFileWriterBuilder, BaseFileWriterMetrics};
 
@@ -236,10 +224,7 @@ mod prometheus {
     }
 
     #[async_trait::async_trait]
-    impl<B: FileWriterBuilder> FileWriterBuilder for BaseFileWriterWithMetricsBuilder<B>
-    where
-        B::R: SingleFileWriterStatus,
-    {
+    impl<B: FileWriterBuilder> FileWriterBuilder for BaseFileWriterWithMetricsBuilder<B> {
         type R = BaseFileWriterWithMetrics<B>;
 
         async fn build(self, schema: &SchemaRef) -> Result<Self::R> {
@@ -263,10 +248,7 @@ mod prometheus {
     }
 
     #[async_trait::async_trait]
-    impl<B: FileWriterBuilder> FileWriter for BaseFileWriterWithMetrics<B>
-    where
-        B::R: SingleFileWriterStatus,
-    {
+    impl<B: FileWriterBuilder> FileWriter for BaseFileWriterWithMetrics<B> {
         type R = <<B as FileWriterBuilder>::R as FileWriter>::R;
 
         /// Write a record batch. The `DataFileWriter` will create a new file when the current row num is greater than `target_file_row_num`.
@@ -292,10 +274,7 @@ mod prometheus {
         }
     }
 
-    impl<B: FileWriterBuilder> SingleFileWriterStatus for BaseFileWriterWithMetrics<B>
-    where
-        B::R: SingleFileWriterStatus,
-    {
+    impl<B: FileWriterBuilder> CurrentFileStatus for BaseFileWriterWithMetrics<B> {
         fn current_file_path(&self) -> String {
             self.inner.current_file_path()
         }

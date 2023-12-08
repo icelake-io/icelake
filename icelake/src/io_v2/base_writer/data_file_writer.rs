@@ -2,8 +2,8 @@
 
 use crate::{
     io_v2::{
-        FileWriteResult, FileWriter, FileWriterBuilder, IcebergWriteResult, IcebergWriter,
-        IcebergWriterBuilder, SingleFileWriterStatus,
+        CurrentFileStatus, FileWriteResult, FileWriter, FileWriterBuilder, IcebergWriteResult,
+        IcebergWriter, IcebergWriterBuilder,
     },
     Result,
 };
@@ -71,10 +71,7 @@ impl<B: FileWriterBuilder> IcebergWriter for DataFileWriter<B> {
     }
 }
 
-impl<B: FileWriterBuilder> SingleFileWriterStatus for DataFileWriter<B>
-where
-    B::R: SingleFileWriterStatus,
-{
+impl<B: FileWriterBuilder> CurrentFileStatus for DataFileWriter<B> {
     fn current_file_path(&self) -> String {
         self.inner_writer.current_file_path()
     }

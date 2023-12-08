@@ -2,7 +2,7 @@ use crate::Result;
 use arrow_array::RecordBatch;
 use arrow_schema::SchemaRef;
 
-use super::IcebergWriteResult;
+use super::{CurrentFileStatus, IcebergWriteResult};
 
 pub mod parquet_writer;
 pub use parquet_writer::*;
@@ -17,7 +17,7 @@ pub trait FileWriterBuilder: Send + Clone + 'static {
 }
 
 #[async_trait::async_trait]
-pub trait FileWriter: Send + 'static {
+pub trait FileWriter: Send + 'static + CurrentFileStatus {
     type R: FileWriteResult;
     async fn write(&mut self, batch: &RecordBatch) -> Result<()>;
     async fn close(self) -> Result<Vec<Self::R>>;

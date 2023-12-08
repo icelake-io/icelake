@@ -2,8 +2,8 @@
 
 use crate::{
     io_v2::{
-        IcebergWriteResult, IcebergWriter, IcebergWriterBuilder, PositionDeleteInput,
-        SingleFileWriterStatus,
+        CurrentFileStatus, IcebergWriteResult, IcebergWriter, IcebergWriterBuilder,
+        PositionDeleteInput,
     },
     Result,
 };
@@ -34,7 +34,7 @@ pub struct EqualityDeltaWriterBuilder<
     PDB: IcebergWriterBuilder<PositionDeleteInput>,
     EDB: IcebergWriterBuilder,
 > where
-    DB::R: SingleFileWriterStatus,
+    DB::R: CurrentFileStatus,
 {
     data_file_writer_builder: DB,
     sorted_cache_writer_builder: PDB,
@@ -48,7 +48,7 @@ impl<
         EDB: IcebergWriterBuilder,
     > EqualityDeltaWriterBuilder<DB, PDB, EDB>
 where
-    DB::R: SingleFileWriterStatus,
+    DB::R: CurrentFileStatus,
 {
     pub fn new(
         data_file_writer_builder: DB,
@@ -72,7 +72,7 @@ impl<
         EDB: IcebergWriterBuilder,
     > IcebergWriterBuilder for EqualityDeltaWriterBuilder<DB, PDB, EDB>
 where
-    DB::R: SingleFileWriterStatus,
+    DB::R: CurrentFileStatus,
     PDB::R: IcebergWriter<PositionDeleteInput, R = <DB::R as IcebergWriter>::R>,
     EDB::R: IcebergWriter<R = <DB::R as IcebergWriter>::R>,
 {
@@ -93,7 +93,7 @@ where
 }
 
 pub struct EqualityDeltaWriter<
-    D: SingleFileWriterStatus + IcebergWriter,
+    D: CurrentFileStatus + IcebergWriter,
     PD: IcebergWriter<PositionDeleteInput, R = D::R>,
     ED: IcebergWriter<R = D::R>,
 > {
@@ -106,7 +106,7 @@ pub struct EqualityDeltaWriter<
 }
 
 impl<
-        D: SingleFileWriterStatus + IcebergWriter,
+        D: CurrentFileStatus + IcebergWriter,
         PD: IcebergWriter<PositionDeleteInput, R = D::R>,
         ED: IcebergWriter<R = D::R>,
     > EqualityDeltaWriter<D, PD, ED>
@@ -205,7 +205,7 @@ impl<
 
 #[async_trait::async_trait]
 impl<
-        D: SingleFileWriterStatus + IcebergWriter,
+        D: CurrentFileStatus + IcebergWriter,
         PD: IcebergWriter<PositionDeleteInput, R = D::R>,
         ED: IcebergWriter<R = D::R>,
     > IcebergWriter for EqualityDeltaWriter<D, PD, ED>
