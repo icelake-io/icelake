@@ -15,9 +15,6 @@ impl<
         UP: IcebergWriterBuilder,
         P: IcebergWriterBuilder<R = impl IcebergWriter<R = <UP::R as IcebergWriter>::R>>,
     > DispatcherWriterBuilder<UP, P>
-where
-    UP::R: IcebergWriter,
-    P::R: IcebergWriter,
 {
     pub fn new(is_partition: bool, partition_builder: P, no_partition_builder: UP) -> Self {
         Self {
@@ -33,9 +30,6 @@ impl<
         UP: IcebergWriterBuilder,
         P: IcebergWriterBuilder<R = impl IcebergWriter<R = <UP::R as IcebergWriter>::R>>,
     > IcebergWriterBuilder for DispatcherWriterBuilder<UP, P>
-where
-    UP::R: IcebergWriter,
-    P::R: IcebergWriter,
 {
     type R = DispatcherWriter<UP::R, P::R>;
 

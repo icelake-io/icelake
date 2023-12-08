@@ -32,7 +32,9 @@ impl<B: FileWriterBuilder> PositionDeleteWriterBuilder<B> {
 }
 
 #[async_trait::async_trait]
-impl<B: FileWriterBuilder> IcebergWriterBuilder for PositionDeleteWriterBuilder<B> {
+impl<B: FileWriterBuilder> IcebergWriterBuilder<PositionDeleteInput>
+    for PositionDeleteWriterBuilder<B>
+{
     type R = PositionDeleteWriter<B>;
 
     async fn build(self, _schema: &ArrowSchemaRef) -> Result<Self::R> {
@@ -148,7 +150,9 @@ mod prometheus {
     }
 
     #[async_trait::async_trait]
-    impl<B: FileWriterBuilder> IcebergWriterBuilder for PositionDeleteWriterWithMetricsBuilder<B> {
+    impl<B: FileWriterBuilder> IcebergWriterBuilder<PositionDeleteInput>
+        for PositionDeleteWriterWithMetricsBuilder<B>
+    {
         type R = PositionDeleteWriterWithMetrics<B>;
 
         async fn build(self, schema: &arrow_schema::SchemaRef) -> crate::Result<Self::R> {

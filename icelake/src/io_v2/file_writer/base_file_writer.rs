@@ -1,5 +1,5 @@
 //! A module provide `RollingWriter`.
-use crate::{config::RollingWriterConfig, io_v2::SingleFileWriterStatus};
+use crate::{config::RollingWriterConfig, io_v2::CurrentFileStatus};
 use arrow_array::RecordBatch;
 use arrow_cast::cast;
 use async_trait::async_trait;
@@ -33,10 +33,7 @@ impl<B: FileWriterBuilder> BaseFileWriterBuilder<B> {
 }
 
 #[async_trait::async_trait]
-impl<B: FileWriterBuilder> FileWriterBuilder for BaseFileWriterBuilder<B>
-where
-    B::R: SingleFileWriterStatus,
-{
+impl<B: FileWriterBuilder> FileWriterBuilder for BaseFileWriterBuilder<B> {
     type R = BaseFileWriter<B>;
 
     async fn build(self, schema: &SchemaRef) -> Result<BaseFileWriter<B>> {
@@ -57,14 +54,9 @@ pub struct BaseFileWriter<B: FileWriterBuilder> {
 
     result: Vec<<<B as FileWriterBuilder>::R as FileWriter>::R>,
     rolling_config: Option<RollingWriterConfig>,
-
-    metrics: BaseFileWriterMetrics,
 }
 
-impl<B: FileWriterBuilder> BaseFileWriter<B>
-where
-    B::R: SingleFileWriterStatus,
-{
+impl<B: FileWriterBuilder> BaseFileWriter<B> {
     /// Create a new `DataFileWriter`.
     pub async fn try_new(
         writer_builder: B,
@@ -77,9 +69,6 @@ where
             current_writer: None,
             result: vec![],
             rolling_config,
-            metrics: BaseFileWriterMetrics {
-                unflush_data_file: 0,
-            },
         };
         writer.open_new_writer().await?;
         Ok(writer)
@@ -99,7 +88,6 @@ where
         let current_writer = self.current_writer.take().expect("Should not be none here");
         let res = current_writer.close().await?;
         self.result.extend(res);
-        self.metrics.unflush_data_file = self.result.len();
         Ok(())
     }
 
@@ -155,18 +143,17 @@ where
         }
     }
 
-    pub fn metrics(&self) -> &BaseFileWriterMetrics {
-        &self.metrics
+    pub fn metrics(&self) -> BaseFileWriterMetrics {
+        BaseFileWriterMetrics {
+            unflush_data_file: self.result.len(),
+        }
     }
 }
 
 // unsafe impl Sync for RollingWriter {}
 
 #[async_trait]
-impl<B: FileWriterBuilder> FileWriter for BaseFileWriter<B>
-where
-    B::R: SingleFileWriterStatus,
-{
+impl<B: FileWriterBuilder> FileWriter for BaseFileWriter<B> {
     type R = <<B as FileWriterBuilder>::R as FileWriter>::R;
     /// Write a record batch. The `DataFileWriter` will create a new file when the current row num is greater than `target_file_row_num`.
     async fn write(&mut self, batch: &RecordBatch) -> Result<()> {
@@ -191,10 +178,7 @@ where
     }
 }
 
-impl<B: FileWriterBuilder> SingleFileWriterStatus for BaseFileWriter<B>
-where
-    B::R: SingleFileWriterStatus,
-{
+impl<B: FileWriterBuilder> CurrentFileStatus for BaseFileWriter<B> {
     fn current_file_path(&self) -> String {
         self.current_writer.as_ref().unwrap().current_file_path()
     }
@@ -215,7 +199,7 @@ mod prometheus {
     use arrow_schema::SchemaRef;
     use prometheus::core::{AtomicU64, GenericGauge};
 
-    use crate::io_v2::{FileWriterBuilder, SingleFileWriterStatus};
+    use crate::io_v2::{CurrentFileStatus, FileWriterBuilder};
 
     use super::{BaseFileWriter, BaseFileWriterBuilder, BaseFileWriterMetrics};
 
@@ -224,32 +208,29 @@ mod prometheus {
         inner: BaseFileWriterBuilder<B>,
 
         // metrics
-        unflush_data_size: GenericGauge<AtomicU64>,
+        unflush_data_file: GenericGauge<AtomicU64>,
     }
 
     impl<B: FileWriterBuilder> BaseFileWriterWithMetricsBuilder<B> {
         pub fn new(
             inner: BaseFileWriterBuilder<B>,
-            unflush_data_size: GenericGauge<AtomicU64>,
+            unflush_data_file: GenericGauge<AtomicU64>,
         ) -> Self {
             Self {
                 inner,
-                unflush_data_size,
+                unflush_data_file,
             }
         }
     }
 
     #[async_trait::async_trait]
-    impl<B: FileWriterBuilder> FileWriterBuilder for BaseFileWriterWithMetricsBuilder<B>
-    where
-        B::R: SingleFileWriterStatus,
-    {
+    impl<B: FileWriterBuilder> FileWriterBuilder for BaseFileWriterWithMetricsBuilder<B> {
         type R = BaseFileWriterWithMetrics<B>;
 
         async fn build(self, schema: &SchemaRef) -> Result<Self::R> {
             Ok(BaseFileWriterWithMetrics {
                 inner: self.inner.build(schema).await?,
-                unflush_data_size: self.unflush_data_size,
+                unflush_data_file: self.unflush_data_file,
                 cur_metrics: BaseFileWriterMetrics {
                     unflush_data_file: 0,
                 },
@@ -261,35 +242,49 @@ mod prometheus {
         inner: BaseFileWriter<B>,
 
         // metrics
-        unflush_data_size: GenericGauge<AtomicU64>,
+        unflush_data_file: GenericGauge<AtomicU64>,
 
         cur_metrics: BaseFileWriterMetrics,
     }
 
     #[async_trait::async_trait]
-    impl<B: FileWriterBuilder> FileWriter for BaseFileWriterWithMetrics<B>
-    where
-        B::R: SingleFileWriterStatus,
-    {
+    impl<B: FileWriterBuilder> FileWriter for BaseFileWriterWithMetrics<B> {
         type R = <<B as FileWriterBuilder>::R as FileWriter>::R;
 
         /// Write a record batch. The `DataFileWriter` will create a new file when the current row num is greater than `target_file_row_num`.
         async fn write(&mut self, batch: &RecordBatch) -> Result<()> {
             self.inner.write(batch).await?;
-            let last_metrics =
-                std::mem::replace(&mut self.cur_metrics, self.inner.metrics().clone());
+            let last_metrics = std::mem::replace(&mut self.cur_metrics, self.inner.metrics());
             {
                 let delta =
                     (self.cur_metrics.unflush_data_file - last_metrics.unflush_data_file) as i64;
                 assert!(delta >= 0);
-                self.unflush_data_size.add(delta as u64);
+                self.unflush_data_file.add(delta as u64);
             }
             Ok(())
         }
 
         /// Complte the write and return the list of `DataFile` as result.
         async fn close(self) -> Result<Vec<Self::R>> {
-            self.inner.close().await
+            let res = self.inner.close().await?;
+            let delta = (res.len() - self.cur_metrics.unflush_data_file) as i64;
+            assert!(delta >= 0);
+            self.unflush_data_file.add(delta as u64);
+            Ok(res)
+        }
+    }
+
+    impl<B: FileWriterBuilder> CurrentFileStatus for BaseFileWriterWithMetrics<B> {
+        fn current_file_path(&self) -> String {
+            self.inner.current_file_path()
+        }
+
+        fn current_row_num(&self) -> usize {
+            self.inner.current_row_num()
+        }
+
+        fn current_written_size(&self) -> usize {
+            self.inner.current_written_size()
         }
     }
 
@@ -347,6 +342,38 @@ mod prometheus {
 
             // check output is 5 file.
             assert_eq!(metrics.get(), 6);
+        }
+
+        #[tokio::test]
+        async fn test_metrics_writer_close() {
+            let op = create_operator();
+            let location_generator = create_location_generator();
+            let schema = create_arrow_schema(3);
+            let parquet_writer_builder = ParquetWriterBuilder::new(
+                op.clone(),
+                0,
+                Default::default(),
+                "/".to_string(),
+                Arc::new(location_generator),
+            );
+            let rolling_writer_builder = BaseFileWriterBuilder::new(
+                Some(RollingWriterConfig {
+                    rows_per_file: 1024,
+                    target_file_size_in_bytes: 0,
+                }),
+                parquet_writer_builder,
+            );
+            let metrics = GenericGauge::new("test", "test").unwrap();
+            let metrics_builder =
+                BaseFileWriterWithMetricsBuilder::new(rolling_writer_builder, metrics.clone());
+
+            let mut writer = metrics_builder.build(&schema).await.unwrap();
+            let to_write = create_batch(&schema, vec![vec![1; 10], vec![2; 10], vec![3; 10]]);
+            writer.write(&to_write).await.unwrap();
+            writer.close().await.unwrap();
+
+            // check output is 5 file.
+            assert_eq!(metrics.get(), 1);
         }
     }
 }

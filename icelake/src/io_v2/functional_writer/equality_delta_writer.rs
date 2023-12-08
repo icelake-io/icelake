@@ -2,8 +2,8 @@
 
 use crate::{
     io_v2::{
-        IcebergWriteResult, IcebergWriter, IcebergWriterBuilder, PositionDeleteInput,
-        SingleFileWriterStatus,
+        CurrentFileStatus, IcebergWriteResult, IcebergWriter, IcebergWriterBuilder,
+        PositionDeleteInput,
     },
     Result,
 };
@@ -31,11 +31,10 @@ pub const DELETE_OP: i32 = 2;
 #[derive(Clone)]
 pub struct EqualityDeltaWriterBuilder<
     DB: IcebergWriterBuilder,
-    PDB: IcebergWriterBuilder,
+    PDB: IcebergWriterBuilder<PositionDeleteInput>,
     EDB: IcebergWriterBuilder,
 > where
-    DB::R: SingleFileWriterStatus + IcebergWriter,
-    PDB::R: IcebergWriter<PositionDeleteInput>,
+    DB::R: CurrentFileStatus,
 {
     data_file_writer_builder: DB,
     sorted_cache_writer_builder: PDB,
@@ -43,12 +42,13 @@ pub struct EqualityDeltaWriterBuilder<
     unique_column_ids: Vec<usize>,
 }
 
-impl<DB: IcebergWriterBuilder, PDB: IcebergWriterBuilder, EDB: IcebergWriterBuilder>
-    EqualityDeltaWriterBuilder<DB, PDB, EDB>
+impl<
+        DB: IcebergWriterBuilder,
+        PDB: IcebergWriterBuilder<PositionDeleteInput>,
+        EDB: IcebergWriterBuilder,
+    > EqualityDeltaWriterBuilder<DB, PDB, EDB>
 where
-    DB::R: SingleFileWriterStatus + IcebergWriter,
-    PDB::R: IcebergWriter<PositionDeleteInput>,
-    EDB::R: IcebergWriter,
+    DB::R: CurrentFileStatus,
 {
     pub fn new(
         data_file_writer_builder: DB,
@@ -66,12 +66,15 @@ where
 }
 
 #[async_trait::async_trait]
-impl<DB: IcebergWriterBuilder, PDB: IcebergWriterBuilder, EDB: IcebergWriterBuilder>
-    IcebergWriterBuilder for EqualityDeltaWriterBuilder<DB, PDB, EDB>
+impl<
+        DB: IcebergWriterBuilder,
+        PDB: IcebergWriterBuilder<PositionDeleteInput>,
+        EDB: IcebergWriterBuilder,
+    > IcebergWriterBuilder for EqualityDeltaWriterBuilder<DB, PDB, EDB>
 where
-    DB::R: SingleFileWriterStatus + IcebergWriter,
-    PDB::R: IcebergWriter<PositionDeleteInput>,
-    EDB::R: IcebergWriter,
+    DB::R: CurrentFileStatus,
+    PDB::R: IcebergWriter<PositionDeleteInput, R = <DB::R as IcebergWriter>::R>,
+    EDB::R: IcebergWriter<R = <DB::R as IcebergWriter>::R>,
 {
     type R = EqualityDeltaWriter<DB::R, PDB::R, EDB::R>;
 
@@ -90,9 +93,9 @@ where
 }
 
 pub struct EqualityDeltaWriter<
-    D: SingleFileWriterStatus + IcebergWriter,
-    PD: IcebergWriter<PositionDeleteInput>,
-    ED: IcebergWriter,
+    D: CurrentFileStatus + IcebergWriter,
+    PD: IcebergWriter<PositionDeleteInput, R = D::R>,
+    ED: IcebergWriter<R = D::R>,
 > {
     data_file_writer: D,
     position_delete_writer: PD,
@@ -103,9 +106,9 @@ pub struct EqualityDeltaWriter<
 }
 
 impl<
-        D: SingleFileWriterStatus + IcebergWriter,
-        PD: IcebergWriter<PositionDeleteInput>,
-        ED: IcebergWriter,
+        D: CurrentFileStatus + IcebergWriter,
+        PD: IcebergWriter<PositionDeleteInput, R = D::R>,
+        ED: IcebergWriter<R = D::R>,
     > EqualityDeltaWriter<D, PD, ED>
 {
     pub fn try_new(
@@ -202,7 +205,7 @@ impl<
 
 #[async_trait::async_trait]
 impl<
-        D: SingleFileWriterStatus + IcebergWriter,
+        D: CurrentFileStatus + IcebergWriter,
         PD: IcebergWriter<PositionDeleteInput, R = D::R>,
         ED: IcebergWriter<R = D::R>,
     > IcebergWriter for EqualityDeltaWriter<D, PD, ED>

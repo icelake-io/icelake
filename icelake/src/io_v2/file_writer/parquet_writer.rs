@@ -10,7 +10,7 @@ use parquet::file::properties::{WriterProperties, WriterVersion};
 use parquet::format::FileMetaData;
 
 use crate::config::ParquetWriterConfig;
-use crate::io_v2::{LocationGenerator, SingleFileWriterStatus};
+use crate::io_v2::{CurrentFileStatus, LocationGenerator};
 use crate::types::DataFileBuilderV2;
 use crate::Result;
 
@@ -135,7 +135,7 @@ impl FileWriter for ParquetWriter {
     }
 }
 
-impl SingleFileWriterStatus for ParquetWriter {
+impl CurrentFileStatus for ParquetWriter {
     fn current_file_path(&self) -> String {
         self.file_path.clone()
     }
