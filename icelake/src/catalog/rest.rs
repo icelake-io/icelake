@@ -10,7 +10,7 @@ use urlencoding::encode;
 
 use crate::{
     catalog::{
-        rest::_models::{CatalogConfig, CommitTableResponse},
+        rest::models::{CatalogConfig, CommitTableResponse},
         IcebergTableIoArgs,
     },
     table::{Namespace, TableIdentifier},
@@ -18,7 +18,7 @@ use crate::{
     Error, ErrorKind, Table,
 };
 
-use self::_models::{CommitTableRequest, ListTablesResponse, LoadTableResult};
+use self::models::{CommitTableRequest, ListTablesResponse, LoadTableResult};
 
 use super::{BaseCatalogConfig, Catalog, UpdateTable};
 use crate::catalog::{OperatorCreator, CATALOG_CONFIG_PREFIX};
@@ -143,7 +143,7 @@ impl Catalog for RestCatalog {
             table_metadata,
             update_table.table_name.clone(),
         )
-        .build()?)
+            .build()?)
     }
 }
 
@@ -289,7 +289,7 @@ impl Endpoint {
             &ns.encode_in_url()?,
             "tables",
         ]
-        .join("/"))
+            .join("/"))
     }
 
     fn table(&self, table: &TableIdentifier) -> Result<String> {
@@ -301,7 +301,7 @@ impl Endpoint {
             "tables",
             encode(&table.name).as_ref(),
         ]
-        .join("/"))
+            .join("/"))
     }
 }
 
@@ -319,7 +319,7 @@ impl Namespace {
     }
 }
 
-mod _models {
+pub mod models {
     use std::collections::HashMap;
 
     use crate::{error::Result, types::SchemaSerDe, ErrorKind};
@@ -331,11 +331,12 @@ mod _models {
         types::{SnapshotSerDe, TableMetadataSerDe},
         Error,
     };
+    use crate::types::{parse_table_metadata, TableMetadata};
 
     #[derive(Clone, Debug, Serialize, Deserialize)]
-    pub(super) struct TableIdentifier {
-        pub(super) namespace: Vec<String>,
-        pub(super) name: String,
+    pub struct TableIdentifier {
+        pub namespace: Vec<String>,
+        pub name: String,
     }
 
     impl From<TableIdentifier> for table::TableIdentifier {
@@ -357,32 +358,39 @@ mod _models {
     }
 
     #[derive(Clone, Debug, Serialize, Deserialize)]
-    pub(super) struct ListTablesResponse {
-        pub(super) identifiers: Vec<TableIdentifier>,
+    pub struct ListTablesResponse {
+        pub identifiers: Vec<TableIdentifier>,
     }
 
     #[derive(Clone, Debug, Serialize, Deserialize)]
-    pub(super) struct CatalogConfig {
-        pub(super) overrides: HashMap<String, String>,
-        pub(super) defaults: HashMap<String, String>,
+    pub struct CatalogConfig {
+        pub overrides: HashMap<String, String>,
+        pub defaults: HashMap<String, String>,
     }
 
     #[derive(Serialize, Deserialize)]
-    pub(super) struct LoadTableResult {
+    pub struct LoadTableResult {
         /// May be null if the table is staged as part of a transaction
         #[serde(rename = "metadata-location", skip_serializing_if = "Option::is_none")]
-        pub(super) metadata_location: Option<String>,
+        pub metadata_location: Option<String>,
         #[serde(rename = "metadata")]
         pub(super) metadata: TableMetadataSerDe,
         #[serde(rename = "config", skip_serializing_if = "Option::is_none")]
-        pub(super) config: Option<::std::collections::HashMap<String, String>>,
+        pub config: Option<HashMap<String, String>>,
+    }
+
+    impl LoadTableResult {
+        pub fn table_metadata(&self) -> Result<TableMetadata> {
+            let json = serde_json::to_string(&self.metadata)?;
+            parse_table_metadata(json.as_bytes())
+        }
     }
 
     #[derive(Serialize, Deserialize)]
-    pub(super) struct CommitTableRequest {
-        pub(super) identifier: TableIdentifier,
-        pub(super) requirements: Vec<TableRequirement>,
-        pub(super) updates: Vec<TableUpdate>,
+    pub struct CommitTableRequest {
+        pub identifier: TableIdentifier,
+        pub requirements: Vec<TableRequirement>,
+        pub updates: Vec<TableUpdate>,
     }
 
     impl TryFrom<&catalog::UpdateTable> for CommitTableRequest {
@@ -410,17 +418,17 @@ mod _models {
 
     #[derive(Serialize, Deserialize)]
     #[serde(rename_all = "kebab-case")]
-    pub(super) struct TableRequirement {
+    pub struct TableRequirement {
         #[serde(rename = "type")]
-        pub(super) typ: String,
-        pub(super) r#ref: Option<String>,
-        pub(super) uuid: Option<String>,
-        pub(super) snapshot_id: Option<i64>,
-        pub(super) last_assigned_field_id: Option<i32>,
-        pub(super) current_schema_id: Option<i32>,
-        pub(super) last_assigned_partition_id: Option<i32>,
-        pub(super) default_spec_id: Option<i32>,
-        pub(super) default_sort_order_id: Option<i32>,
+        pub typ: String,
+        pub r#ref: Option<String>,
+        pub uuid: Option<String>,
+        pub snapshot_id: Option<i64>,
+        pub last_assigned_field_id: Option<i32>,
+        pub current_schema_id: Option<i32>,
+        pub last_assigned_partition_id: Option<i32>,
+        pub default_spec_id: Option<i32>,
+        pub default_sort_order_id: Option<i32>,
     }
 
     impl From<&UpdateRequirement> for TableRequirement {
@@ -524,7 +532,7 @@ mod _models {
 
     #[derive(Serialize, Deserialize)]
     #[serde(tag = "action")]
-    pub(super) enum TableUpdate {
+    pub enum TableUpdate {
         #[serde(rename = "upgrade-format-version")]
         UpgradeFormatVersion {
             #[serde(rename = "format-version")]
@@ -598,10 +606,17 @@ mod _models {
     }
 
     #[derive(Serialize, Deserialize)]
-    pub(super) struct CommitTableResponse {
+    pub struct CommitTableResponse {
         #[serde(rename = "metadata-location")]
-        pub(super) metadata_location: String,
+        pub metadata_location: String,
         pub(super) metadata: TableMetadataSerDe,
+    }
+
+    impl CommitTableResponse {
+        pub fn metadata(&self) -> Result<TableMetadata> {
+            let json = serde_json::to_string(&self.metadata)?;
+            parse_table_metadata(json.as_bytes())
+        }
     }
 }
 
@@ -609,7 +624,7 @@ mod _models {
 mod tests {
     use crate::table::Namespace;
 
-    use super::_models::TableUpdate;
+    use super::models::TableUpdate;
 
     #[test]
     fn test_namespace_encode() {
