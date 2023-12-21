@@ -143,7 +143,7 @@ impl Catalog for RestCatalog {
             table_metadata,
             update_table.table_name.clone(),
         )
-            .build()?)
+        .build()?)
     }
 }
 
@@ -289,7 +289,7 @@ impl Endpoint {
             &ns.encode_in_url()?,
             "tables",
         ]
-            .join("/"))
+        .join("/"))
     }
 
     fn table(&self, table: &TableIdentifier) -> Result<String> {
@@ -301,7 +301,7 @@ impl Endpoint {
             "tables",
             encode(&table.name).as_ref(),
         ]
-            .join("/"))
+        .join("/"))
     }
 }
 
@@ -325,13 +325,13 @@ pub mod models {
     use crate::{error::Result, types::SchemaSerDe, ErrorKind};
     use serde::{Deserialize, Serialize};
 
+    use crate::types::{parse_table_metadata, TableMetadata};
     use crate::{
         catalog::{self, MetadataUpdate, UpdateRequirement},
         table,
         types::{SnapshotSerDe, TableMetadataSerDe},
         Error,
     };
-    use crate::types::{parse_table_metadata, TableMetadata};
 
     #[derive(Clone, Debug, Serialize, Deserialize)]
     pub struct TableIdentifier {
