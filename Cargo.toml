@@ -10,7 +10,7 @@ resolver = "2"
 [workspace.dependencies]
 anyhow = "1"
 async-trait = "0.1"
-apache-avro = { version = "0.15", features = ["derive"] }
+apache-avro = { git = "https://github.com/icelake-io/avro", branch = "fix_custom_attr" , features = ["derive"] }
 arrow-array = { version = ">=48" }
 arrow-schema = { version = ">=48" }
 arrow-select = { version = ">=48" }
