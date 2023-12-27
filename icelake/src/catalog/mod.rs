@@ -319,6 +319,21 @@ impl UpdateTable {
             updates: vec![],
         })
     }
+
+    /// Get table name.
+    pub fn table_name(&self) -> &TableIdentifier {
+        &self.table_name
+    }
+
+    /// Get update requirements.
+    pub fn requirements(&self) -> &[UpdateRequirement] {
+        &self.requirements
+    }
+
+    /// Get updates.
+    pub fn updates(&self) -> &[MetadataUpdate] {
+        &self.updates
+    }
 }
 
 impl UpdateTableBuilder {
