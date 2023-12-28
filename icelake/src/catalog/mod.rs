@@ -18,15 +18,22 @@ use crate::types::{
 use crate::Table;
 
 mod rest;
+
 pub use rest::*;
+
 mod storage;
+
 use crate::error::{Error, ErrorKind};
 pub use storage::*;
+
 mod io;
+
 pub use io::*;
+
 mod layer;
 #[cfg(feature = "prometheus")]
 pub mod prometheus;
+
 pub use layer::*;
 
 /// Reference to catalog.
@@ -340,14 +347,14 @@ impl UpdateTableBuilder {
     /// Add requirements.
     pub fn add_requirements(
         &mut self,
-        requirements: impl IntoIterator<Item = UpdateRequirement>,
+        requirements: impl IntoIterator<Item=UpdateRequirement>,
     ) -> &mut Self {
         self.0.requirements.extend(requirements);
         self
     }
 
     /// Add updates.
-    pub fn add_updates(&mut self, updates: impl IntoIterator<Item = MetadataUpdate>) -> &mut Self {
+    pub fn add_updates(&mut self, updates: impl IntoIterator<Item=MetadataUpdate>) -> &mut Self {
         self.0.updates.extend(updates);
         self
     }
@@ -458,6 +465,26 @@ pub async fn load_catalog(configs: &HashMap<String, String>) -> Result<CatalogRe
         )
     })?;
 
+    let base_catalog_config = load_iceberg_base_catalog_config(configs)?;
+
+    match catalog_type.as_str() {
+        "storage" => Ok(Arc::new(
+            StorageCatalog::from_config(base_catalog_config, configs).await?,
+        )),
+        "rest" => Ok(Arc::new(
+            RestCatalog::new(base_catalog_config, configs).await?,
+        )),
+        _ => Err(Error::new(
+            ErrorKind::IcebergDataInvalid,
+            format!("Unsupported catalog type: {catalog_type}"),
+        )),
+    }
+}
+
+/// Load base catalog config from configuration.
+pub fn load_iceberg_base_catalog_config(configs: &HashMap<String, String>) -> Result<BaseCatalogConfig> {
+    log::info!("Loading base catalog config from configs: {:?}", configs);
+
     let catalog_name = configs.get(CATALOG_NAME).ok_or_else(|| {
         Error::new(
             ErrorKind::IcebergDataInvalid,
@@ -481,16 +508,5 @@ pub async fn load_catalog(configs: &HashMap<String, String>) -> Result<CatalogRe
 
     log::info!("Parsed base catalog config: {:?}", base_catalog_config);
 
-    match catalog_type.as_str() {
-        "storage" => Ok(Arc::new(
-            StorageCatalog::from_config(base_catalog_config, configs).await?,
-        )),
-        "rest" => Ok(Arc::new(
-            RestCatalog::new(base_catalog_config, configs).await?,
-        )),
-        _ => Err(Error::new(
-            ErrorKind::IcebergDataInvalid,
-            format!("Unsupported catalog type: {catalog_type}"),
-        )),
-    }
+    Ok(base_catalog_config)
 }
