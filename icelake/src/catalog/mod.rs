@@ -347,14 +347,14 @@ impl UpdateTableBuilder {
     /// Add requirements.
     pub fn add_requirements(
         &mut self,
-        requirements: impl IntoIterator<Item=UpdateRequirement>,
+        requirements: impl IntoIterator<Item = UpdateRequirement>,
     ) -> &mut Self {
         self.0.requirements.extend(requirements);
         self
     }
 
     /// Add updates.
-    pub fn add_updates(&mut self, updates: impl IntoIterator<Item=MetadataUpdate>) -> &mut Self {
+    pub fn add_updates(&mut self, updates: impl IntoIterator<Item = MetadataUpdate>) -> &mut Self {
         self.0.updates.extend(updates);
         self
     }
@@ -482,7 +482,9 @@ pub async fn load_catalog(configs: &HashMap<String, String>) -> Result<CatalogRe
 }
 
 /// Load base catalog config from configuration.
-pub fn load_iceberg_base_catalog_config(configs: &HashMap<String, String>) -> Result<BaseCatalogConfig> {
+pub fn load_iceberg_base_catalog_config(
+    configs: &HashMap<String, String>,
+) -> Result<BaseCatalogConfig> {
     log::info!("Loading base catalog config from configs: {:?}", configs);
 
     let catalog_name = configs.get(CATALOG_NAME).ok_or_else(|| {
