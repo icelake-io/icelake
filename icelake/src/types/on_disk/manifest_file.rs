@@ -247,7 +247,7 @@ impl TryFrom<types::DataFile> for DataFile {
         Ok(DataFile {
             content: v.content as i32,
             file_path: v.file_path,
-            file_format: v.file_format.to_string(),
+            file_format: v.file_format.to_string().to_ascii_uppercase(),
             record_count: v.record_count,
             file_size_in_bytes: v.file_size_in_bytes,
             column_sizes: v.column_sizes.map(to_i64_entry),
