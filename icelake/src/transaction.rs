@@ -161,7 +161,10 @@ impl<'a> Transaction<'a> {
         table: &Table,
     ) -> Result<Snapshot> {
         let cur_metadata = table.current_table_metadata();
-        let cur_snapshot_id = cur_metadata.current_snapshot_id.unwrap_or(0);
+        let cur_snapshot_id = cur_metadata
+            .current_snapshot_id
+            .and_then(|v| if v == -1 { None } else { Some(v) })
+            .unwrap_or(0);
         let next_snapshot_id = cur_snapshot_id + 1;
         let next_seq_number = cur_metadata.last_sequence_number + 1;
 
