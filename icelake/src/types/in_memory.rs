@@ -20,11 +20,11 @@ use serde::Serialize;
 use std::hash::Hash;
 use uuid::Uuid;
 
+use crate::types::in_memory::_decimal::REQUIRED_LENGTH;
 use crate::types::parse_manifest_list;
 use crate::ErrorKind;
 use crate::Result;
 use crate::{Error, Table};
-use crate::types::in_memory::_decimal::REQUIRED_LENGTH;
 
 pub(crate) const UNASSIGNED_SEQ_NUM: i64 = -1;
 pub(crate) const MAIN_BRANCH: &str = "main";

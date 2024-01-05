@@ -3,7 +3,10 @@
 use crate::error::Result;
 use crate::types::in_memory::{Any, Field, Primitive, Schema};
 use crate::{Error, ErrorKind};
-use apache_avro::schema::{DecimalSchema, FixedSchema, Name, RecordField as AvroRecordField, RecordFieldOrder, RecordSchema as AvroRecordSchema, UnionSchema};
+use apache_avro::schema::{
+    DecimalSchema, FixedSchema, Name, RecordField as AvroRecordField, RecordFieldOrder,
+    RecordSchema as AvroRecordSchema, UnionSchema,
+};
 use apache_avro::Schema as AvroSchema;
 use serde_json::{Number, Value as JsonValue};
 use std::collections::BTreeMap;
@@ -219,7 +222,7 @@ impl<'a, 'b> TryFrom<AnyWithFieldId<'a, 'b>> for AvroSchema {
 
 fn avro_record_schema(
     name: impl Into<String>,
-    fields: impl IntoIterator<Item=AvroRecordField>,
+    fields: impl IntoIterator<Item = AvroRecordField>,
 ) -> AvroRecordSchema {
     let avro_fields = fields.into_iter().collect::<Vec<AvroRecordField>>();
     let lookup = avro_fields
@@ -255,9 +258,9 @@ fn to_avro_option(avro_schema: AvroSchema) -> Result<AvroSchema> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
     use super::*;
     use crate::types::{self, Struct};
+    use std::sync::Arc;
 
     #[test]
     fn test_to_manifest_schema() {
@@ -498,7 +501,7 @@ mod tests {
             &types::ManifestFile::v2_schema(partition_type),
             Some("manifest_entry"),
         )
-            .unwrap();
+        .unwrap();
 
         assert_eq!(avro_schema, expect_schema);
     }
@@ -628,9 +631,18 @@ mod tests {
 
     #[test]
     fn test_avro_schema_with_decimal() {
-        let schema = Schema::new(0, None, Struct::new(vec![
-            Arc::new(Field::required(1, "test_decimal", Any::Primitive(Primitive::Decimal { precision: 36, scale: 2 }))),
-        ]));
+        let schema = Schema::new(
+            0,
+            None,
+            Struct::new(vec![Arc::new(Field::required(
+                1,
+                "test_decimal",
+                Any::Primitive(Primitive::Decimal {
+                    precision: 36,
+                    scale: 2,
+                }),
+            ))]),
+        );
 
         let avro_schema = to_avro_schema(&schema, None).unwrap();
 
@@ -652,6 +664,9 @@ mod tests {
   ]
 }"#;
 
-        assert_eq!(expected_str, serde_json::to_string_pretty(&avro_schema).unwrap());
+        assert_eq!(
+            expected_str,
+            serde_json::to_string_pretty(&avro_schema).unwrap()
+        );
     }
 }
