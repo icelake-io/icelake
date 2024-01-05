@@ -3,10 +3,7 @@
 use crate::error::Result;
 use crate::types::in_memory::{Any, Field, Primitive, Schema};
 use crate::{Error, ErrorKind};
-use apache_avro::schema::{
-    DecimalSchema, Name, RecordField as AvroRecordField, RecordFieldOrder,
-    RecordSchema as AvroRecordSchema, UnionSchema,
-};
+use apache_avro::schema::{DecimalSchema, FixedSchema, Name, RecordField as AvroRecordField, RecordFieldOrder, RecordSchema as AvroRecordSchema, UnionSchema};
 use apache_avro::Schema as AvroSchema;
 use serde_json::{Number, Value as JsonValue};
 use std::collections::BTreeMap;
@@ -117,7 +114,13 @@ impl<'a, 'b> TryFrom<AnyWithFieldId<'a, 'b>> for AvroSchema {
                 Primitive::Decimal { precision, scale } => AvroSchema::Decimal(DecimalSchema {
                     precision: *precision as usize,
                     scale: *scale as usize,
-                    inner: Box::new(AvroSchema::Bytes),
+                    inner: Box::new(AvroSchema::Fixed(FixedSchema {
+                        name: Name::new(&*&format!("decimal_{}_{}", precision, scale))?,
+                        aliases: None,
+                        doc: None,
+                        size: Primitive::decimal_required_bytes(*precision as u32)? as usize,
+                        attributes: BTreeMap::default(),
+                    })),
                 }),
                 Primitive::Date => AvroSchema::Date,
                 Primitive::Time => AvroSchema::TimeMicros,
@@ -133,7 +136,7 @@ impl<'a, 'b> TryFrom<AnyWithFieldId<'a, 'b>> for AvroSchema {
                             "Unable to convert iceberg data type {:?} to avro type",
                             data_type
                         ),
-                    ))
+                    ));
                 }
             },
 
@@ -216,7 +219,7 @@ impl<'a, 'b> TryFrom<AnyWithFieldId<'a, 'b>> for AvroSchema {
 
 fn avro_record_schema(
     name: impl Into<String>,
-    fields: impl IntoIterator<Item = AvroRecordField>,
+    fields: impl IntoIterator<Item=AvroRecordField>,
 ) -> AvroRecordSchema {
     let avro_fields = fields.into_iter().collect::<Vec<AvroRecordField>>();
     let lookup = avro_fields
@@ -252,6 +255,7 @@ fn to_avro_option(avro_schema: AvroSchema) -> Result<AvroSchema> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
     use super::*;
     use crate::types::{self, Struct};
 
@@ -494,7 +498,7 @@ mod tests {
             &types::ManifestFile::v2_schema(partition_type),
             Some("manifest_entry"),
         )
-        .unwrap();
+            .unwrap();
 
         assert_eq!(avro_schema, expect_schema);
     }
@@ -620,5 +624,34 @@ mod tests {
             to_avro_schema(&types::ManifestList::v2_schema(), Some("manifest_file")).unwrap();
 
         assert_eq!(avro_schema, expect_schema);
+    }
+
+    #[test]
+    fn test_avro_schema_with_decimal() {
+        let schema = Schema::new(0, None, Struct::new(vec![
+            Arc::new(Field::required(1, "test_decimal", Any::Primitive(Primitive::Decimal { precision: 36, scale: 2 }))),
+        ]));
+
+        let avro_schema = to_avro_schema(&schema, None).unwrap();
+
+        let expected_str = r#"{
+  "type": "record",
+  "name": "r_0",
+  "fields": [
+    {
+      "name": "test_decimal",
+      "type": {
+        "type": "fixed",
+        "name": "decimal_36_2",
+        "size": 16,
+        "logicalType": "decimal",
+        "scale": 2,
+        "precision": 36
+      }
+    }
+  ]
+}"#;
+
+        assert_eq!(expected_str, serde_json::to_string_pretty(&avro_schema).unwrap());
     }
 }
