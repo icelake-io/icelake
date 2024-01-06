@@ -456,7 +456,8 @@ impl From<in_memory::AnyValue> for Value {
                 Value::List(v.into_iter().map(|v| v.map(|v| v.into())).collect())
             }
             in_memory::AnyValue::Map { keys, values } => {
-                if let Some(in_memory::AnyValue::Primitive(PrimitiveValue::String(_))) = keys.get(0)
+                if let Some(in_memory::AnyValue::Primitive(PrimitiveValue::String(_))) =
+                    keys.first()
                 {
                     Value::StringMap(
                         keys.into_iter()

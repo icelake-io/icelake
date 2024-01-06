@@ -20,6 +20,7 @@ use serde::Serialize;
 use std::hash::Hash;
 use uuid::Uuid;
 
+use crate::types::in_memory::_decimal::REQUIRED_LENGTH;
 use crate::types::parse_manifest_list;
 use crate::ErrorKind;
 use crate::Result;
@@ -28,6 +29,44 @@ use crate::{Error, Table};
 pub(crate) const UNASSIGNED_SEQ_NUM: i64 = -1;
 pub(crate) const MAIN_BRANCH: &str = "main";
 const EMPTY_SNAPSHOT_ID: i64 = -1;
+
+pub(crate) const MAX_DECIMAL_BYTES: u32 = 24;
+pub(crate) const MAX_DECIMAL_PRECISION: u32 = 38;
+
+mod _decimal {
+    use lazy_static::lazy_static;
+
+    use super::{MAX_DECIMAL_BYTES, MAX_DECIMAL_PRECISION};
+
+    lazy_static! {
+        // Max precision of bytes, starts from 1
+        pub(super) static ref MAX_PRECISION: [u32; MAX_DECIMAL_BYTES as usize] = {
+            let mut ret: [u32; 24] = [0; 24];
+            for (i, prec) in ret.iter_mut().enumerate() {
+                *prec = 2f64.powi((8 * (i + 1) - 1) as i32).log10().floor() as u32;
+            }
+
+            ret
+        };
+
+        //  Required bytes of precision, starts from 1
+        pub(super) static ref REQUIRED_LENGTH: [u32; MAX_DECIMAL_PRECISION as usize] = {
+            let mut ret: [u32; MAX_DECIMAL_PRECISION as usize] = [0; MAX_DECIMAL_PRECISION as usize];
+
+            for (i, required_len) in ret.iter_mut().enumerate() {
+                for j in 0..MAX_PRECISION.len() {
+                    if MAX_PRECISION[j] >= ((i+1) as u32) {
+                        *required_len = (j+1) as u32;
+                        break;
+                    }
+                }
+            }
+
+            ret
+        };
+
+    }
+}
 
 /// All data types are either primitives or nested types, which are maps, lists, or structs.
 #[derive(Debug, PartialEq, Clone, Eq)]
@@ -185,6 +224,22 @@ pub enum Primitive {
 impl From<Primitive> for Any {
     fn from(value: Primitive) -> Self {
         Any::Primitive(value)
+    }
+}
+
+impl Primitive {
+    /// Returns minimum bytes required for decimal with [`precision`].
+    #[inline(always)]
+    pub fn decimal_required_bytes(precision: u32) -> Result<u32> {
+        if precision == 0 || precision > MAX_DECIMAL_PRECISION {
+            return Err(Error::new(
+                ErrorKind::IcebergDataInvalid,
+                format!(
+                    "Decimal precision must be between 1 and {MAX_DECIMAL_PRECISION}: {precision}",
+                ),
+            ));
+        }
+        Ok(REQUIRED_LENGTH[precision as usize - 1])
     }
 }
 
