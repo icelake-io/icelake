@@ -3,13 +3,18 @@ use crate::Result;
 use arrow_array::ArrayRef;
 
 mod bucket;
+pub use bucket::Bucket;
 mod identity;
+pub use identity::Identity;
 mod temporal;
+pub use temporal::{Day, Hour, Month, Year};
 mod truncate;
+pub use truncate::Truncate;
 mod void;
+pub use void::Void;
 
 /// TransformFunction is a trait that defines the interface of a transform function.
-pub trait TransformFunction: Send {
+pub trait TransformFunction: Send + Sync {
     /// transform will take an input array and transform it into a new array.
     /// The implementation of this function will need to check and downcast the input to specific
     /// type.
