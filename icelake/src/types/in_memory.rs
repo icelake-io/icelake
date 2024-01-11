@@ -793,7 +793,7 @@ pub enum Transform {
 }
 
 impl Transform {
-    fn result_type(&self, input_type: &Any) -> Result<Any> {
+    pub fn result_type(&self, input_type: &Any) -> Result<Any> {
         match self {
             Transform::Identity => Ok(input_type.clone()),
             Transform::Void => Ok(Primitive::Int.into()),
