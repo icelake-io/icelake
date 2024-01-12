@@ -9,6 +9,7 @@ packages = [{include = "icelake_integration_tests"}]
 [tool.poetry.dependencies]
 python = "^3.11"
 pyspark = { version = "3.4.1", extras = ["sql", "connect"] }
+pyiceberg = { version = "0.5.1" , extras = ["s3fs","hive","duckdb"] }
 
 
 [build-system]

@@ -19,6 +19,7 @@ pub struct TestFixture {
     catalog_configs: HashMap<String, String>,
 
     test_case: TestCase,
+    catalog_type: String,
 }
 
 impl TestFixture {
@@ -99,6 +100,7 @@ impl TestFixture {
                 .iter()
                 .map(|(k, v)| (k.to_string(), v.to_string()))
                 .collect(),
+            catalog_type: catalog_type.to_string(),
         }
     }
 
@@ -134,6 +136,40 @@ impl TestFixture {
                 format!("Check {}", check_sqls[0].as_str()),
             )
         }
+    }
+
+    fn check_table_with_pyiceberg(&self) {
+        for check_sqls in &self.test_case.query_sql {
+            self.poetry.run_file(
+                "check_pyiceberg.py",
+                [
+                    "-rest",
+                    &self.rest_url(),
+                    "-s3",
+                    &self.s3_url(),
+                    "-t1",
+                    "t1",
+                    "-t2",
+                    "tmp",
+                ],
+                format!("Check {}", check_sqls[0].as_str()),
+            )
+        }
+    }
+
+    fn rest_url(&self) -> String {
+        format!(
+            "http://{}:{REST_CATALOG_PORT}",
+            self.docker_compose.get_container_ip("rest")
+        )
+    }
+
+    fn s3_url(&self) -> String {
+        format!(
+            "http://{}:{}",
+            self.docker_compose.get_container_ip("minio"),
+            MINIO_DATA_PORT
+        )
     }
 
     fn spark_connect_url(&self) -> String {
@@ -204,6 +240,9 @@ impl TestFixture {
         self.init_table_with_spark();
         self.write_data_with_icelake().await;
         self.check_table_with_spark();
+        if self.catalog_type == "rest" {
+            self.check_table_with_pyiceberg();
+        }
     }
 
     pub fn block_run(self) {
