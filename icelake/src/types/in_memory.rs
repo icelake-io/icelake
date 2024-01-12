@@ -794,15 +794,96 @@ pub enum Transform {
 
 impl Transform {
     pub fn result_type(&self, input_type: &Any) -> Result<Any> {
+        let check_time = |input_type: &Any| {
+            if !matches!(
+                input_type,
+                Any::Primitive(Primitive::Date)
+                    | Any::Primitive(Primitive::Timestamp)
+                    | Any::Primitive(Primitive::Timestampz)
+            ) {
+                return Err(Error::new(
+                    ErrorKind::IcebergDataInvalid,
+                    format!("transform year type {input_type:?} is invalid"),
+                ));
+            }
+            Ok(())
+        };
+        let check_bucket = |input_type: &Any| {
+            if !matches!(
+                input_type,
+                Any::Primitive(Primitive::Int)
+                    | Any::Primitive(Primitive::Long)
+                    | Any::Primitive(Primitive::Decimal { .. })
+                    | Any::Primitive(Primitive::Date)
+                    | Any::Primitive(Primitive::Time)
+                    | Any::Primitive(Primitive::Timestamp)
+                    | Any::Primitive(Primitive::Timestampz)
+                    | Any::Primitive(Primitive::String)
+                    | Any::Primitive(Primitive::Uuid)
+                    | Any::Primitive(Primitive::Fixed(_))
+                    | Any::Primitive(Primitive::Binary)
+            ) {
+                return Err(Error::new(
+                    ErrorKind::IcebergDataInvalid,
+                    format!("transform bucket type {input_type:?} is invalid"),
+                ));
+            }
+            Ok(())
+        };
+        let check_truncate = |input_type: &Any| {
+            if !matches!(
+                input_type,
+                Any::Primitive(Primitive::Int)
+                    | Any::Primitive(Primitive::Long)
+                    | Any::Primitive(Primitive::Decimal { .. })
+                    | Any::Primitive(Primitive::String)
+            ) {
+                return Err(Error::new(
+                    ErrorKind::IcebergDataInvalid,
+                    format!("transform truncate type {input_type:?} is invalid"),
+                ));
+            }
+            Ok(())
+        };
+        let check_hour = |input_type: &Any| {
+            if !matches!(
+                input_type,
+                Any::Primitive(Primitive::Timestamp) | Any::Primitive(Primitive::Timestampz)
+            ) {
+                return Err(Error::new(
+                    ErrorKind::IcebergDataInvalid,
+                    format!("transform hour type {input_type:?} is invalid"),
+                ));
+            }
+            Ok(())
+        };
         match self {
             Transform::Identity => Ok(input_type.clone()),
             Transform::Void => Ok(Primitive::Int.into()),
-            Transform::Year => Ok(Primitive::Int.into()),
-            Transform::Month => Ok(Primitive::Int.into()),
-            Transform::Day => Ok(Primitive::Int.into()),
-            Transform::Hour => Ok(Primitive::Int.into()),
-            Transform::Bucket(_) => Ok(Primitive::Int.into()),
-            Transform::Truncate(_) => Ok(input_type.clone()),
+            Transform::Year => {
+                check_time(input_type)?;
+                Ok(Primitive::Int.into())
+            }
+            Transform::Month => {
+                check_time(input_type)?;
+                Ok(Primitive::Int.into())
+            }
+            Transform::Day => {
+                check_time(input_type)?;
+                Ok(Primitive::Int.into())
+            }
+            Transform::Hour => {
+                check_hour(input_type)?;
+                Ok(Primitive::Int.into())
+            }
+            Transform::Bucket(_) => {
+                check_bucket(input_type)?;
+                Ok(Primitive::Int.into())
+            }
+            Transform::Truncate(_) => {
+                check_truncate(input_type)?;
+                Ok(input_type.clone())
+            }
         }
     }
 }
