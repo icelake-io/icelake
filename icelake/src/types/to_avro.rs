@@ -689,7 +689,8 @@ mod tests {
         "logicalType": "decimal",
         "scale": 2,
         "precision": 36
-      }
+      },
+      "field-id": 1
     }
   ]
 }"#;
