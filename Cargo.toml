@@ -11,7 +11,7 @@ resolver = "2"
 anyhow = "1"
 async-trait = "0.1"
 # branch is icelake-dev
-apache-avro = { git = "https://github.com/icelake-io/avro.git", rev = "4866a4ad0ed5d6af7160c9b52af898ab6d0551f9", features = ["derive"] }
+apache-avro = { git = "https://github.com/icelake-io/avro.git", branch = "icelake-dev", recv = "4b828e9283e7248fd3ca42f5b590c2160b201785",features = ["derive"] }
 arrow-array = { version = ">=48" }
 arrow-schema = { version = ">=48" }
 arrow-select = { version = ">=48" }

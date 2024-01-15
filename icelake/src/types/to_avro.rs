@@ -4,13 +4,19 @@ use crate::error::Result;
 use crate::types::in_memory::{Any, Field, Primitive, Schema};
 use crate::{Error, ErrorKind};
 use apache_avro::schema::{
-    DecimalSchema, FixedSchema, Name, RecordField as AvroRecordField, RecordFieldOrder,
-    RecordSchema as AvroRecordSchema, UnionSchema,
+    ArraySchema as AvroArraySchema, DecimalSchema, FixedSchema, MapSchema as AvroMapSchema, Name,
+    RecordField as AvroRecordField, RecordFieldOrder, RecordSchema as AvroRecordSchema,
+    UnionSchema,
 };
 use apache_avro::Schema as AvroSchema;
 use serde_json::{Number, Value as JsonValue};
 use std::collections::BTreeMap;
 use std::iter::Iterator;
+
+const ELEMENT_ID: &str = "element-id";
+const LOGICAL_TYPE: &str = "logicalType";
+const KEY_ID: &str = "key-id";
+const VALUE_ID: &str = "value-id";
 
 pub fn to_avro_schema(value: &Schema, name: Option<&str>) -> Result<AvroSchema> {
     let avro_fields: Vec<AvroRecordField> = value
@@ -153,7 +159,19 @@ impl<'a, 'b> TryFrom<AnyWithFieldId<'a, 'b>> for AvroSchema {
                         value_avro_schema = to_avro_option(value_avro_schema)?;
                     }
 
-                    AvroSchema::Map(Box::new(value_avro_schema))
+                    AvroSchema::Map(AvroMapSchema {
+                        types: Box::new(value_avro_schema),
+                        custom_attributes: BTreeMap::from([
+                            (
+                                KEY_ID.to_string(),
+                                JsonValue::String(map.key_id.to_string()),
+                            ),
+                            (
+                                VALUE_ID.to_string(),
+                                JsonValue::String(map.value_id.to_string()),
+                            ),
+                        ]),
+                    })
                 } else {
                     let key_field = new_avro_record_field(
                         "key".to_string(),
@@ -184,10 +202,16 @@ impl<'a, 'b> TryFrom<AnyWithFieldId<'a, 'b>> for AvroSchema {
                         )
                     };
 
-                    AvroSchema::Array(Box::new(AvroSchema::Record(avro_record_schema(
-                        format!("k{}_v{}", map.key_id, map.value_id).as_str(),
-                        vec![key_field, value_field],
-                    ))))
+                    AvroSchema::Array(AvroArraySchema {
+                        items: Box::new(AvroSchema::Record(avro_record_schema(
+                            format!("k{}_v{}", map.key_id, map.value_id).as_str(),
+                            vec![key_field, value_field],
+                        ))),
+                        custom_attributes: BTreeMap::from([(
+                            LOGICAL_TYPE.to_string(),
+                            JsonValue::String("map".to_string()),
+                        )]),
+                    })
                 }
             }
             Any::List(list) => {
@@ -198,7 +222,13 @@ impl<'a, 'b> TryFrom<AnyWithFieldId<'a, 'b>> for AvroSchema {
                 if !list.element_required {
                     avro_schema = to_avro_option(avro_schema)?;
                 }
-                AvroSchema::Array(Box::new(avro_schema))
+                AvroSchema::Array(AvroArraySchema {
+                    items: Box::new(avro_schema),
+                    custom_attributes: BTreeMap::from([(
+                        ELEMENT_ID.to_string(),
+                        list.element_id.into(),
+                    )]),
+                })
             }
             Any::Struct(s) => {
                 let avro_fields: Vec<AvroRecordField> = s
@@ -659,7 +689,8 @@ mod tests {
         "logicalType": "decimal",
         "scale": 2,
         "precision": 36
-      }
+      },
+      "field-id": 1
     }
   ]
 }"#;
