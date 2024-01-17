@@ -9,6 +9,7 @@ use super::{
     BaseFileWriterBuilder, DataFileWriterBuilder, DispatcherWriterBuilder,
     EqualityDeleteWriterBuilder, FanoutPartitionedWriterBuilder, FileWriterBuilder, IcebergWriter,
     IcebergWriterBuilder, ParquetWriterBuilder, PositionDeleteWriterBuilder,
+    PrecomputedPartitionedWriterBuilder,
 };
 
 /// `WriterBuilderHelper` used to create kinds of writer builder.
@@ -100,6 +101,24 @@ impl WriterBuilderHelper {
             partition_type,
             partition_spec.clone(),
         ))
+    }
+
+    pub fn precompute_partition_writer_builder<B: IcebergWriterBuilder>(
+        &self,
+        inner_builder: B,
+        partition_col_idx: usize,
+    ) -> Result<PrecomputedPartitionedWriterBuilder<B>> {
+        let partition_spec = self.table_metadata.current_partition_spec()?;
+        let partition_type = Any::Struct(
+            partition_spec
+                .partition_type(self.table_metadata.current_schema()?)?
+                .into(),
+        );
+        PrecomputedPartitionedWriterBuilder::try_new(
+            inner_builder,
+            partition_type,
+            partition_col_idx,
+        )
     }
 
     pub fn dispatcher_writer_builder<

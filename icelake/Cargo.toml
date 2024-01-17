@@ -91,3 +91,7 @@ name = "delta_test_v2"
 path = "tests/delta_test_v2.rs"
 harness = false
 
+[[test]]
+name = "precompute_partition_test"
+path = "tests/precompute_partition_test.rs"
+harness = false
