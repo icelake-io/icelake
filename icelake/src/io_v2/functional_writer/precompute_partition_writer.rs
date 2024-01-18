@@ -25,7 +25,7 @@ use crate::types::StructValue;
 use crate::Error;
 use crate::ErrorKind;
 use crate::Result;
-use arrow_array::{BooleanArray, RecordBatch, StructArray};
+use arrow_array::{RecordBatch, StructArray};
 use arrow_row::{OwnedRow, RowConverter, SortField};
 use arrow_schema::SchemaBuilder;
 use arrow_schema::{DataType, SchemaRef};
@@ -36,6 +36,17 @@ pub struct PrecomputedPartitionedWriterMetrics {
     pub partition_num: usize,
 }
 
+/// `PrecomputePartitionWriter` is the writer accept the data chunk with partition value and
+/// dispatch the data chunk with the same partition value to a same inner writer.
+///
+/// ## Why need this
+/// For compute engine, they will compute partition value in advanced and shuffle the data according to the partition,
+/// this writer can help them to write the data with partition value to the corresponding file.
+///
+/// ## How to use it
+/// The user should pass `partition_type` and `partition_col_idx` to the writer builder, the `partition_type` is the type of the partition value,
+/// the `partition_col_idx` is the index of the partition column in the schema.
+/// In `write`, the writer will remove the partition column from the batch and use it as the partition value to dispatch the data chunk.
 #[derive(Clone)]
 pub struct PrecomputedPartitionedWriterBuilder<B: IcebergWriterBuilder> {
     inner: B,
@@ -122,15 +133,49 @@ impl<B: IcebergWriterBuilder> IcebergWriterBuilder for PrecomputedPartitionedWri
         })
     }
 }
-
-/// Partition append only writer
 pub struct PrecomputedPartitionedWriter<B: IcebergWriterBuilder> {
+    // The key is the row representatiton of partition value, the value is the inner writer and the partition value.
+    // After the write, the inner writer will be flushed and the partition value will be set to the `DataFile`.
     inner_writers: HashMap<OwnedRow, (B::R, StructValue)>,
     partition_type: Any,
     row_converter: RowConverter,
     inner_buidler: B,
     schema: SchemaRef,
     partition_col_idx: usize,
+}
+
+impl<B: IcebergWriterBuilder> PrecomputedPartitionedWriter<B> {
+    pub fn metrics(&self) -> PrecomputedPartitionedWriterMetrics {
+        PrecomputedPartitionedWriterMetrics {
+            partition_num: self.inner_writers.len(),
+        }
+    }
+
+    async fn write_partition(
+        &mut self,
+        partial_batch: RecordBatch,
+        owned_row: OwnedRow,
+        partition_value: AnyValue,
+    ) -> Result<()> {
+        match self.inner_writers.entry(owned_row) {
+            Entry::Occupied(mut writer) => {
+                writer.get_mut().0.write(partial_batch).await?;
+            }
+            Entry::Vacant(vacant) => {
+                if let AnyValue::Struct(value) = partition_value {
+                    let new_writer = self.inner_buidler.clone().build(&self.schema).await?;
+                    vacant
+                        .insert((new_writer, value))
+                        .0
+                        .write(partial_batch)
+                        .await?;
+                } else {
+                    unreachable!()
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 #[async_trait::async_trait]
@@ -150,43 +195,48 @@ impl<B: IcebergWriterBuilder> IcebergWriter for PrecomputedPartitionedWriter<B> 
         )?;
 
         // Group the batch by row value.
-        // # TODO
-        // Maybe optimize the alloc and clone
         let rows = self
             .row_converter
             .convert_columns(&[partition_value.clone()])
             .map_err(|e| Error::new(ErrorKind::ArrowError, e.to_string()))?;
-        let mut filters = HashMap::new();
-        rows.into_iter().enumerate().for_each(|(row_id, row)| {
-            filters
-                .entry(row.owned())
-                .or_insert_with(|| (vec![false; batch.num_rows()], row_id))
-                .0[row_id] = true;
-        });
-
-        for (row, filter) in filters {
-            let filter_array: BooleanArray = filter.0.into();
-            let partial_batch = filter_record_batch(&batch, &filter_array)
-                .expect("We should guarantee the filter array is valid");
-            match self.inner_writers.entry(row) {
-                Entry::Occupied(mut writer) => {
-                    writer.get_mut().0.write(partial_batch).await?;
-                }
-                Entry::Vacant(vacant) => {
-                    let value = value_array.get(filter.1).unwrap().as_ref().unwrap().clone();
-                    if let AnyValue::Struct(value) = value {
-                        let new_writer = self.inner_buidler.clone().build(&self.schema).await?;
-                        vacant
-                            .insert((new_writer, value))
-                            .0
-                            .write(partial_batch)
-                            .await?;
-                    } else {
-                        unreachable!()
-                    }
-                }
-            }
+        assert_eq!(rows.num_rows(), value_array.len());
+        let mut rows = rows.into_iter().zip(value_array).enumerate().collect_vec();
+        rows.sort_by(|a, b| a.1 .0.cmp(&b.1 .0));
+        // group by row value
+        let mut row_iter = rows.into_iter();
+        let mut current_partition_value;
+        let mut current_owned_row;
+        let mut filter_array = vec![false; batch.num_rows()];
+        if let Some((idx, (row, partition_value))) = row_iter.next() {
+            current_partition_value = partition_value.unwrap();
+            current_owned_row = row.owned();
+            filter_array[idx] = true;
+        } else {
+            return Ok(());
         }
+        for (idx, (row, partition_value)) in row_iter {
+            // This group is end.
+            if row != current_owned_row.row() {
+                // Write this group.
+                let partial_batch = filter_record_batch(
+                    &batch,
+                    &std::mem::replace(&mut filter_array, vec![false; batch.num_rows()]).into(),
+                )
+                .expect("We should guarantee the filter array is valid");
+                self.write_partition(
+                    partial_batch,
+                    std::mem::replace(&mut current_owned_row, row.owned()),
+                    std::mem::replace(&mut current_partition_value, partition_value.unwrap()),
+                )
+                .await?;
+            }
+            filter_array[idx] = true;
+        }
+        // Write the last group.
+        let partial_batch = filter_record_batch(&batch, &filter_array.into())
+            .expect("We should guarantee the filter array is valid");
+        self.write_partition(partial_batch, current_owned_row, current_partition_value)
+            .await?;
         Ok(())
     }
 
@@ -202,14 +252,6 @@ impl<B: IcebergWriterBuilder> IcebergWriter for PrecomputedPartitionedWriter<B> 
             res_vec.extend(res);
         }
         Ok(res_vec)
-    }
-}
-
-impl<B: IcebergWriterBuilder> PrecomputedPartitionedWriter<B> {
-    pub fn metrics(&self) -> PrecomputedPartitionedWriterMetrics {
-        PrecomputedPartitionedWriterMetrics {
-            partition_num: self.inner_writers.len(),
-        }
     }
 }
 
