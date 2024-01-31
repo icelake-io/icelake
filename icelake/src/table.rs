@@ -14,7 +14,10 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::config::{TableConfig, TableConfigRef};
-use crate::types::{Any, DataFile, FieldProjector, ManifestStatus, PartitionSplitter, Schema, Snapshot, TableMetadata};
+use crate::types::{
+    Any, DataFile, FieldProjector, ManifestStatus, PartitionSplitter, Schema, Snapshot,
+    TableMetadata,
+};
 use crate::{types, Error, ErrorKind};
 
 pub(crate) const META_ROOT_PATH: &str = "metadata";
@@ -288,9 +291,13 @@ impl Table {
             let manifest_path = self.rel_path(&manifest_list_entry.manifest_path)?;
             let manifest_content = self.op.read(&manifest_path).await?;
             let manifest = types::parse_manifest_file(&manifest_content)?;
-            data_files.extend(manifest.entries.into_iter()
-                .filter(|f| f.status != ManifestStatus::Deleted)
-                .map(|v| v.data_file));
+            data_files.extend(
+                manifest
+                    .entries
+                    .into_iter()
+                    .filter(|f| f.status != ManifestStatus::Deleted)
+                    .map(|v| v.data_file),
+            );
         }
 
         Ok(data_files)
