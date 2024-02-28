@@ -135,7 +135,7 @@ impl TryFrom<types::Primitive> for ArrowDataType {
                     Ok(ArrowDataType::LargeBinary)
                 }
             }
-            types::Primitive::Binary => Ok(ArrowDataType::LargeBinary),
+            types::Primitive::Binary => Ok(ArrowDataType::Binary),
         }
     }
 }
@@ -172,15 +172,27 @@ mod tests {
                     write_default: None,
                 }
                 .into(),
+                types::Field {
+                    name: "binary_data".to_string(),
+                    field_type: types::Any::Primitive(types::Primitive::Binary),
+                    id: 2,
+                    required: false,
+                    comment: None,
+                    initial_default: None,
+                    write_default: None,
+                }
+                .into(),
             ]),
         );
 
         let arrow_schema = ArrowSchema::try_from(schema).unwrap();
 
-        assert_eq!(arrow_schema.fields().len(), 2);
+        assert_eq!(arrow_schema.fields().len(), 3);
         assert_eq!(arrow_schema.fields()[0].name(), "id");
         assert_eq!(arrow_schema.fields()[0].data_type(), &ArrowDataType::Int64);
         assert_eq!(arrow_schema.fields()[1].name(), "data");
         assert_eq!(arrow_schema.fields()[1].data_type(), &ArrowDataType::Utf8);
+        assert_eq!(arrow_schema.fields()[2].name(), "binary_data");
+        assert_eq!(arrow_schema.fields()[2].data_type(), &ArrowDataType::Binary);
     }
 }
