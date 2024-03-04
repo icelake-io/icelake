@@ -1,7 +1,7 @@
 FROM apache/spark:3.4.1 as build
 
-# ENV https_proxy=http://192.168.110.27:7890
-# ENV http_proxy=http://192.168.110.27:7890
+# ENV https_proxy=http://localhost:7890
+# ENV http_proxy=http://localhost:7890
 # ENV use_proxy=yes
 
 USER root
