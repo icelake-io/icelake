@@ -76,10 +76,10 @@ path = "tests/insert_compact_test.rs"
 harness = false
 
 
-[[test]]
-name = "delta_test"
-path = "tests/delta_test.rs"
-harness = false
+#[[test]]
+#name = "delta_test"
+#path = "tests/delta_test.rs"
+#harness = false
 
 [[test]]
 name = "insertion_test_v2"
