@@ -5,14 +5,14 @@
         <proxy>
             <id>a</id>
             <active>true</active>
-            <host>192.168.110.27</host>
+            <host>host.docker.internal</host>
             <port>7890</port>
             <protocol>http</protocol>
         </proxy>
         <proxy>
             <id>b</id>
             <active>true</active>
-            <host>192.168.110.27</host>
+            <host>host.docker.internal</host>
             <port>7890</port>
             <protocol>https</protocol>
         </proxy>

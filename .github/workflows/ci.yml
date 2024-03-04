@@ -54,4 +54,4 @@ jobs:
           cd testdata/python
           poetry update --quiet
       - name: Test
-        run: cargo test --all-targets --all-features
+        run: RUST_BACKTRACE=1 cargo test --all-targets --all-features

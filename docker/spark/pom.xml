@@ -17,6 +17,7 @@
         <scala.version>2.12</scala.version>
         <aws.sdk.version>2.20.18</aws.sdk.version>
         <hadoop.version>3.3.2</hadoop.version>
+        <pg.version>42.5.1</pg.version>
     </properties>
 
     <dependencies>
@@ -39,6 +40,11 @@
             <groupId>org.apache.hadoop</groupId>
             <artifactId>hadoop-aws</artifactId>
             <version>${hadoop.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <version>${pg.version}</version>
         </dependency>
     </dependencies>
 </project>
