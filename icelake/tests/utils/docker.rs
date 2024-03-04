@@ -64,29 +64,29 @@ impl DockerCompose {
 
 impl Drop for DockerCompose {
     fn drop(&mut self) {
-        let mut cmd = Command::new("docker");
-        let absolute_dir = format!(
-            "{}/../testdata/docker/{}",
-            env!("CARGO_MANIFEST_DIR"),
-            self.docker_compose_dir
-        );
-        cmd.current_dir(absolute_dir.as_str());
-
-        cmd.args(vec![
-            "compose",
-            "-p",
-            self.project_name.as_str(),
-            "down",
-            "-v",
-            "--remove-orphans",
-        ]);
-
-        run_command(
-            cmd,
-            format!(
-                "Stopping docker compose in {absolute_dir}, project name: {}",
-                self.project_name
-            ),
-        )
+        // let mut cmd = Command::new("docker");
+        // let absolute_dir = format!(
+        //     "{}/../testdata/docker/{}",
+        //     env!("CARGO_MANIFEST_DIR"),
+        //     self.docker_compose_dir
+        // );
+        // cmd.current_dir(absolute_dir.as_str());
+        //
+        // cmd.args(vec![
+        //     "compose",
+        //     "-p",
+        //     self.project_name.as_str(),
+        //     "down",
+        //     "-v",
+        //     "--remove-orphans",
+        // ]);
+        //
+        // run_command(
+        //     cmd,
+        //     format!(
+        //         "Stopping docker compose in {absolute_dir}, project name: {}",
+        //         self.project_name
+        //     ),
+        // )
     }
 }

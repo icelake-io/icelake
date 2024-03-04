@@ -12,6 +12,8 @@ impl Poetry {
     pub fn new<S: ToString>(s: S) -> Self {
         let proj_dir = s.to_string();
 
+        Poetry::init(proj_dir.as_str());
+
         Self { proj_dir }
     }
 
@@ -28,5 +30,14 @@ impl Poetry {
         cmd.args(other_args);
 
         run_command(cmd, desc)
+    }
+
+    fn init(proj_dir: &str) {
+        let mut cmd = Command::new(POETRY_CMD);
+        cmd.current_dir(proj_dir);
+
+        cmd.args(vec!["update", "--quiet"]);
+
+        run_command(cmd, "Updating poetry dependencies")
     }
 }
