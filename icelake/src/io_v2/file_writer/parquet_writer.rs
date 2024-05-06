@@ -23,7 +23,7 @@ pub struct ParquetWriterBuilder<L: LocationGenerator> {
     operator: Operator,
     /// `buffer_size` determines the initial size of the intermediate buffer.
     /// The intermediate buffer will automatically be resized if necessary
-    init_buffer_size: usize,
+    _init_buffer_size: usize,
     props: WriterProperties,
     table_location: String,
     location_generator: L,
@@ -50,7 +50,7 @@ impl<L: LocationGenerator> ParquetWriterBuilder<L> {
         }
         Self {
             operator,
-            init_buffer_size,
+            _init_buffer_size: init_buffer_size,
             props: props.build(),
             table_location,
             location_generator,
@@ -229,7 +229,6 @@ mod tests {
     use arrow_array::ArrayRef;
     use arrow_array::Int64Array;
     use arrow_array::RecordBatch;
-    use bytes::Bytes;
     use opendal::services::Memory;
     use opendal::Operator;
     use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;

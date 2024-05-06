@@ -2,7 +2,7 @@ use crate::Result;
 use crate::{types::PrimitiveValue, Error, ErrorKind};
 use arrow_schema::DataType;
 use arrow_schema::TimeUnit;
-use chrono::{NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
+use chrono::{DateTime, NaiveDate, NaiveTime, TimeZone, Utc};
 
 /// Help to convert arrow primitive value to iceberg primitive value.
 /// We implement this trait in the `ArrowPrimitiveType::Naive` type.
@@ -109,8 +109,8 @@ impl ToPrimitiveValue for i64 {
             DataType::Int64 => Ok(PrimitiveValue::Long(self)),
             DataType::Timestamp(unit, with_tz) => {
                 let dt = match unit {
-                    TimeUnit::Second => {
-                        NaiveDateTime::from_timestamp_opt(self, 0).ok_or_else(|| {
+                    TimeUnit::Second => DateTime::from_timestamp(self, 0)
+                        .ok_or_else(|| {
                             Error::new(
                                 ErrorKind::DataTypeUnsupported,
                                 format!(
@@ -119,8 +119,8 @@ impl ToPrimitiveValue for i64 {
                                 ),
                             )
                         })?
-                    }
-                    TimeUnit::Millisecond => NaiveDateTime::from_timestamp_millis(self)
+                        .naive_utc(),
+                    TimeUnit::Millisecond => DateTime::from_timestamp_millis(self)
                         .ok_or_else(|| {
                             Error::new(
                                 ErrorKind::DataTypeUnsupported,
@@ -129,8 +129,9 @@ impl ToPrimitiveValue for i64 {
                                     data_type
                                 ),
                             )
-                        })?,
-                    TimeUnit::Microsecond => NaiveDateTime::from_timestamp_micros(self)
+                        })?
+                        .naive_utc(),
+                    TimeUnit::Microsecond => DateTime::from_timestamp_micros(self)
                         .ok_or_else(|| {
                             Error::new(
                                 ErrorKind::DataTypeUnsupported,
@@ -139,8 +140,9 @@ impl ToPrimitiveValue for i64 {
                                     data_type
                                 ),
                             )
-                        })?,
-                    TimeUnit::Nanosecond => NaiveDateTime::from_timestamp_opt(
+                        })?
+                        .naive_utc(),
+                    TimeUnit::Nanosecond => DateTime::from_timestamp(
                         0,
                         self.try_into().map_err(|_| {
                             Error::new(
@@ -160,7 +162,8 @@ impl ToPrimitiveValue for i64 {
                                 data_type
                             ),
                         )
-                    })?,
+                    })?
+                    .naive_utc(),
                 };
                 if with_tz.is_some() {
                     Ok(PrimitiveValue::Timestamp(dt))

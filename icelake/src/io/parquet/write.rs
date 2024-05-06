@@ -4,7 +4,6 @@ use std::sync::Arc;
 use arrow_array::RecordBatch;
 use arrow_schema::SchemaRef;
 use opendal::FuturesAsyncWriter;
-use opendal::Writer;
 use parquet::arrow::AsyncArrowWriter;
 use parquet::file::properties::WriterProperties;
 use parquet::format::FileMetaData;
@@ -116,7 +115,6 @@ mod tests {
     use arrow_array::ArrayRef;
     use arrow_array::Int64Array;
     use arrow_array::RecordBatch;
-    use bytes::Bytes;
     use opendal::services::Memory;
     use opendal::Operator;
     use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;

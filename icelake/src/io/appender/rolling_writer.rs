@@ -248,7 +248,6 @@ mod test {
     use std::{fs, sync::Arc};
 
     use arrow_array::{ArrayRef, Int64Array, RecordBatch};
-    use bytes::Bytes;
     use opendal::{services::Memory, Operator};
     use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 

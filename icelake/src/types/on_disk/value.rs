@@ -1,5 +1,5 @@
 use crate::{types::in_memory, Error, ErrorKind};
-use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, Utc};
+use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime};
 use in_memory::{Any, AnyValue, Primitive, PrimitiveValue, StructValue};
 use serde::{
     de::Visitor,
@@ -208,9 +208,10 @@ impl Value {
             in_memory::PrimitiveValue::Date(v) => Self::Int(v.num_days_from_ce()),
             in_memory::PrimitiveValue::Time(v) => Self::Long(
                 NaiveDateTime::new(NaiveDate::from_ymd_opt(1970, 1, 1).unwrap(), v)
+                    .and_utc()
                     .timestamp_micros(),
             ),
-            in_memory::PrimitiveValue::Timestamp(v) => Self::Long(v.timestamp_micros()),
+            in_memory::PrimitiveValue::Timestamp(v) => Self::Long(v.and_utc().timestamp_micros()),
             in_memory::PrimitiveValue::Timestampz(v) => Self::Long(v.timestamp_micros()),
             in_memory::PrimitiveValue::String(v) => Self::String(v),
             in_memory::PrimitiveValue::Uuid(v) => Self::String(v.to_string()),
@@ -256,22 +257,22 @@ impl Value {
                 ))),
                 Any::Primitive(Primitive::Time) => Ok(Some(in_memory::AnyValue::Primitive(
                     in_memory::PrimitiveValue::Time(
-                        NaiveDateTime::from_timestamp_micros(v)
+                        DateTime::from_timestamp_micros(v)
                             .ok_or_else(invalid_err)?
+                            .naive_utc()
                             .time(),
                     ),
                 ))),
                 Any::Primitive(Primitive::Timestamp) => Ok(Some(in_memory::AnyValue::Primitive(
                     in_memory::PrimitiveValue::Timestamp(
-                        NaiveDateTime::from_timestamp_micros(v).ok_or_else(invalid_err)?,
+                        DateTime::from_timestamp_micros(v)
+                            .ok_or_else(invalid_err)?
+                            .naive_utc(),
                     ),
                 ))),
                 Any::Primitive(Primitive::Timestampz) => Ok(Some(in_memory::AnyValue::Primitive(
                     in_memory::PrimitiveValue::Timestampz(
-                        DateTime::<Utc>::from_naive_utc_and_offset(
-                            NaiveDateTime::from_timestamp_micros(v).ok_or_else(invalid_err)?,
-                            Utc,
-                        ),
+                        DateTime::from_timestamp_micros(v).ok_or_else(invalid_err)?,
                     ),
                 ))),
                 Any::Primitive(Primitive::Date) => Ok(Some(in_memory::AnyValue::Primitive(
@@ -495,7 +496,7 @@ impl From<StructValue> for Value {
 mod test {
     use std::sync::Arc;
 
-    use chrono::{NaiveDate, NaiveDateTime};
+    use chrono::{DateTime, NaiveDate};
 
     use crate::types::{
         self, to_avro::to_avro_schema, AnyValue, List, Map, PrimitiveValue, Schema, Struct,
@@ -778,7 +779,10 @@ mod test {
             .add_field(
                 8,
                 Some(AnyValue::Primitive(PrimitiveValue::Time(
-                    NaiveDateTime::from_timestamp_opt(0, 1000).unwrap().time(),
+                    DateTime::from_timestamp(0, 1000)
+                        .unwrap()
+                        .naive_utc()
+                        .time(),
                 ))),
             )
             .unwrap();
@@ -795,10 +799,7 @@ mod test {
             .add_field(
                 11,
                 Some(AnyValue::Primitive(PrimitiveValue::Timestampz(
-                    chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(
-                        NaiveDateTime::from_timestamp_opt(0, 1000).unwrap(),
-                        chrono::Utc,
-                    ),
+                    chrono::DateTime::from_timestamp(0, 1000).unwrap(),
                 ))),
             )
             .unwrap();
@@ -847,7 +848,10 @@ mod test {
             .add_field(
                 8,
                 Some(AnyValue::Primitive(PrimitiveValue::Time(
-                    NaiveDateTime::from_timestamp_opt(0, 1000).unwrap().time(),
+                    DateTime::from_timestamp(0, 1000)
+                        .unwrap()
+                        .naive_utc()
+                        .time(),
                 ))),
             )
             .unwrap();
@@ -855,7 +859,7 @@ mod test {
             .add_field(
                 9,
                 Some(AnyValue::Primitive(PrimitiveValue::Timestamp(
-                    NaiveDateTime::from_timestamp_opt(0, 1000).unwrap(),
+                    DateTime::from_timestamp(0, 1000).unwrap().naive_utc(),
                 ))),
             )
             .unwrap();
@@ -871,10 +875,7 @@ mod test {
             .add_field(
                 11,
                 Some(AnyValue::Primitive(PrimitiveValue::Timestampz(
-                    chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(
-                        NaiveDateTime::from_timestamp_opt(0, 1000).unwrap(),
-                        chrono::Utc,
-                    ),
+                    DateTime::from_timestamp(0, 1000).unwrap(),
                 ))),
             )
             .unwrap();

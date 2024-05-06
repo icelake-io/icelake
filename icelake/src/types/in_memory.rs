@@ -313,9 +313,14 @@ impl Serialize for PrimitiveValue {
             PrimitiveValue::Double(value) => serializer.serialize_f64(value.0),
             PrimitiveValue::Decimal(value) => serializer.serialize_bytes(&value.to_be_bytes()),
             PrimitiveValue::Date(value) => serializer.serialize_i32(value.num_days_from_ce()),
-            PrimitiveValue::Time(value) => serializer
-                .serialize_i64(NaiveDateTime::new(NaiveDate::default(), *value).timestamp_micros()),
-            PrimitiveValue::Timestamp(value) => serializer.serialize_i64(value.timestamp_micros()),
+            PrimitiveValue::Time(value) => serializer.serialize_i64(
+                NaiveDateTime::new(NaiveDate::default(), *value)
+                    .and_utc()
+                    .timestamp_micros(),
+            ),
+            PrimitiveValue::Timestamp(value) => {
+                serializer.serialize_i64(value.and_utc().timestamp_micros())
+            }
             PrimitiveValue::Timestampz(value) => serializer.serialize_i64(value.timestamp_micros()),
             PrimitiveValue::String(value) => serializer.serialize_str(value),
             PrimitiveValue::Uuid(value) => serializer.serialize_str(&value.to_string()),

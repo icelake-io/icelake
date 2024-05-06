@@ -1,7 +1,7 @@
 use super::TransformFunction;
 use crate::{Error, Result};
 use arrow_arith::arity::binary;
-use arrow_arith::temporal::{month_dyn, year_dyn};
+use arrow_arith::temporal::{date_part, DatePart};
 use arrow_array::{
     Array, TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray,
     TimestampSecondArray,
@@ -21,7 +21,7 @@ pub struct Year;
 
 impl TransformFunction for Year {
     fn transform(&self, input: ArrayRef) -> Result<ArrayRef> {
-        let array = year_dyn(&input).map_err(|err| {
+        let array = date_part(&input, DatePart::Year).map_err(|err| {
             Error::new(
                 crate::ErrorKind::ArrowError,
                 format!("error in transformfunction: {}", err),
@@ -41,7 +41,7 @@ pub struct Month;
 
 impl TransformFunction for Month {
     fn transform(&self, input: ArrayRef) -> Result<ArrayRef> {
-        let year_array = year_dyn(&input).map_err(|err| {
+        let year_array = date_part(&input, DatePart::Year).map_err(|err| {
             Error::new(
                 crate::ErrorKind::ArrowError,
                 format!("error in transformfunction: {}", err),
@@ -52,7 +52,7 @@ impl TransformFunction for Month {
             .downcast_ref::<Int32Array>()
             .unwrap()
             .unary(|v| 12 * (v - 1970));
-        let month_array = month_dyn(&input).map_err(|err| {
+        let month_array = date_part(&input, DatePart::Month).map_err(|err| {
             Error::new(
                 crate::ErrorKind::ArrowError,
                 format!("error in transformfunction: {}", err),

@@ -74,7 +74,6 @@ mod test {
     use arrow_array::{ArrayRef, Int64Array, RecordBatch};
     use arrow_schema::SchemaRef;
     use arrow_select::concat::concat_batches;
-    use bytes::Bytes;
     use itertools::Itertools;
     use opendal::{services::Memory, Operator};
     use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;

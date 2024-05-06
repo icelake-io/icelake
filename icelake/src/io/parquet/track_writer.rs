@@ -4,7 +4,7 @@ use std::{
     sync::{atomic::AtomicU64, Arc},
 };
 
-use opendal::{FuturesAsyncWriter, Writer};
+use opendal::FuturesAsyncWriter;
 
 /// `TrackWriter` is used to track the written size.
 pub struct TrackWriter {
