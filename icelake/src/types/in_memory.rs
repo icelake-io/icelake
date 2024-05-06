@@ -1,5 +1,6 @@
 //! in_memory module provides the definition of iceberg in-memory data types.
 
+use std::fmt::{Display, Formatter};
 use std::hash::Hasher;
 use std::sync::Arc;
 use std::{collections::HashMap, str::FromStr};
@@ -893,17 +894,17 @@ impl Transform {
     }
 }
 
-impl<'a> ToString for &'a Transform {
-    fn to_string(&self) -> String {
+impl<'a> Display for &'a Transform {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Transform::Identity => "identity".to_string(),
-            Transform::Year => "year".to_string(),
-            Transform::Month => "month".to_string(),
-            Transform::Day => "day".to_string(),
-            Transform::Hour => "hour".to_string(),
-            Transform::Void => "void".to_string(),
-            Transform::Bucket(length) => format!("bucket[{}]", length),
-            Transform::Truncate(width) => format!("truncate[{}]", width),
+            Transform::Identity => write!(f, "identity"),
+            Transform::Year => write!(f, "year"),
+            Transform::Month => write!(f, "month"),
+            Transform::Day => write!(f, "day"),
+            Transform::Hour => write!(f, "hour"),
+            Transform::Void => write!(f, "void"),
+            Transform::Bucket(length) => write!(f, "bucket[{}]", length),
+            Transform::Truncate(width) => write!(f, "truncate[{}]", width),
         }
     }
 }
@@ -1092,11 +1093,11 @@ pub enum SortDirection {
     DESC,
 }
 
-impl ToString for SortDirection {
-    fn to_string(&self) -> String {
+impl Display for SortDirection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SortDirection::ASC => "asc".to_string(),
-            SortDirection::DESC => "desc".to_string(),
+            SortDirection::ASC => write!(f, "asc"),
+            SortDirection::DESC => write!(f, "desc"),
         }
     }
 }
@@ -1126,11 +1127,11 @@ pub enum NullOrder {
     Last,
 }
 
-impl ToString for NullOrder {
-    fn to_string(&self) -> String {
+impl Display for NullOrder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            NullOrder::First => "nulls-first".to_string(),
-            NullOrder::Last => "nulls-last".to_string(),
+            NullOrder::First => write!(f, "nulls-first"),
+            NullOrder::Last => write!(f, "nulls-last"),
         }
     }
 }
@@ -1503,11 +1504,11 @@ pub enum ManifestContentType {
     Deletes = 1,
 }
 
-impl ToString for ManifestContentType {
-    fn to_string(&self) -> String {
+impl Display for ManifestContentType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            ManifestContentType::Data => "data".to_string(),
-            ManifestContentType::Deletes => "deletes".to_string(),
+            ManifestContentType::Data => write!(f, "data"),
+            ManifestContentType::Deletes => write!(f, "deletes"),
         }
     }
 }
@@ -2079,14 +2080,13 @@ impl FromStr for DataFileFormat {
     }
 }
 
-impl ToString for DataFileFormat {
-    fn to_string(&self) -> String {
+impl Display for DataFileFormat {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            DataFileFormat::Avro => "avro",
-            DataFileFormat::Orc => "orc",
-            DataFileFormat::Parquet => "parquet",
+            DataFileFormat::Avro => f.write_str("avro"),
+            DataFileFormat::Orc => f.write_str("orc"),
+            DataFileFormat::Parquet => f.write_str("parquet"),
         }
-        .to_string()
     }
 }
 
@@ -2409,11 +2409,11 @@ pub enum SnapshotReferenceType {
     Branch,
 }
 
-impl ToString for SnapshotReferenceType {
-    fn to_string(&self) -> String {
+impl Display for SnapshotReferenceType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            SnapshotReferenceType::Tag => "tag".to_string(),
-            SnapshotReferenceType::Branch => "branch".to_string(),
+            SnapshotReferenceType::Tag => f.write_str("tag"),
+            SnapshotReferenceType::Branch => f.write_str("branch"),
         }
     }
 }
@@ -2684,11 +2684,11 @@ impl TryFrom<u8> for TableFormatVersion {
     }
 }
 
-impl ToString for TableFormatVersion {
-    fn to_string(&self) -> String {
+impl Display for TableFormatVersion {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            TableFormatVersion::V1 => "1".to_string(),
-            TableFormatVersion::V2 => "2".to_string(),
+            TableFormatVersion::V1 => f.write_str("1"),
+            TableFormatVersion::V2 => f.write_str("2"),
         }
     }
 }
