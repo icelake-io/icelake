@@ -82,8 +82,7 @@ mod test {
     use super::{FileLocationGenerator, IcebergWriter, IcebergWriterBuilder};
 
     pub async fn read_batch(op: &Operator, path: &str) -> RecordBatch {
-        let res = op.read(path).await.unwrap();
-        let res = Bytes::from(res);
+        let res = op.read(path).await.unwrap().to_bytes();
         let reader = ParquetRecordBatchReaderBuilder::try_new(res)
             .unwrap()
             .build()

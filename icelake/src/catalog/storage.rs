@@ -89,7 +89,7 @@ impl<O: OperatorCreator> StorageCatalog<O> {
             .operator_creator
             .create()?
             .read(format!("{table_path}/metadata/version-hint.text").as_str())
-            .await?;
+            .await?.to_vec();
         let version_hint = String::from_utf8(content).map_err(|err| {
             Error::new(
                 crate::ErrorKind::IcebergDataInvalid,
@@ -107,7 +107,7 @@ impl<O: OperatorCreator> StorageCatalog<O> {
 
     /// Read table metadata of the given version.
     async fn read_table_metadata(&self, path: &str) -> Result<types::TableMetadata> {
-        let content = self.operator()?.read(path).await?;
+        let content = self.operator()?.read(path).await?.to_bytes();
 
         let metadata = types::parse_table_metadata(&content)?;
 

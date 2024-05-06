@@ -67,14 +67,13 @@ impl<L: LocationGenerator> FileWriterBuilder for ParquetWriterBuilder<L> {
 
         let written_size = Arc::new(AtomicI64::new(0));
         let writer = TrackWriter::new(
-            self.operator.writer(&file_name).await?,
+            self.operator.writer(&file_name).await?.into_futures_async_write(),
             written_size.clone(),
         );
 
         let writer = AsyncArrowWriter::try_new(
             writer,
             schema.clone(),
-            self.init_buffer_size,
             Some(self.props),
         )?;
 
@@ -269,7 +268,7 @@ mod tests {
         pw.close().await?;
 
         let res = op.read("test").await?;
-        let res = Bytes::from(res);
+        let res = res.to_bytes();
         let mut reader = ParquetRecordBatchReaderBuilder::try_new(res)
             .unwrap()
             .build()

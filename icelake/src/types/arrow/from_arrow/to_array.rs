@@ -262,6 +262,7 @@ pub fn to_anyvalue_array_with_type(
             .downcast_ref::<arrow_array::LargeStringArray>()
             .unwrap()
             .to_anyvalue_array(),
+        _ => todo!(),
     }
 }
 
