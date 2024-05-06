@@ -134,7 +134,11 @@ impl RollingWriter {
         assert!(self.current_writer.is_none());
 
         let location = self.location_generator.generate_name();
-        let file_writer = self.operator.writer(&location).await?;
+        let file_writer = self
+            .operator
+            .writer(&location)
+            .await?
+            .into_futures_async_write();
         let current_writer = {
             let mut props = WriterProperties::builder()
                 .set_writer_version(WriterVersion::PARQUET_1_0)
@@ -244,7 +248,6 @@ mod test {
     use std::{fs, sync::Arc};
 
     use arrow_array::{ArrayRef, Int64Array, RecordBatch};
-    use bytes::Bytes;
     use opendal::{services::Memory, Operator};
     use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 
@@ -306,8 +309,8 @@ mod test {
         for data_file in data_files {
             let res = op
                 .read(data_file.file_path.strip_prefix("/tmp/table").unwrap())
-                .await?;
-            let res = Bytes::from(res);
+                .await?
+                .to_bytes();
             let reader = ParquetRecordBatchReaderBuilder::try_new(res)
                 .unwrap()
                 .build()

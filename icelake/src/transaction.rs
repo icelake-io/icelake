@@ -109,7 +109,7 @@ impl<'a> Transaction<'a> {
             "{}-m{}.{}",
             &ctx.uuid,
             ctx.manifest_num,
-            DataFileFormat::Avro.to_string()
+            DataFileFormat::Avro
         ))
     }
 
@@ -120,7 +120,7 @@ impl<'a> Transaction<'a> {
             snapshot_id,
             ctx.attempt,
             &ctx.uuid,
-            DataFileFormat::Avro.to_string()
+            DataFileFormat::Avro
         ))
     }
 

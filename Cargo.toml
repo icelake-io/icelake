@@ -12,17 +12,17 @@ anyhow = "1"
 async-trait = "0.1"
 # branch is icelake-dev
 apache-avro = { git = "https://github.com/icelake-io/avro.git", branch = "icelake-dev", recv = "4b828e9283e7248fd3ca42f5b590c2160b201785",features = ["derive"] }
-arrow-array = { version = ">=48" }
-arrow-schema = { version = ">=48" }
-arrow-select = { version = ">=48" }
-arrow-row = { version = ">=48" }
-arrow-buffer = { version = ">=48" }
-arrow-arith = { version = ">=48" }
-arrow-csv = { version = ">=48" }
-arrow-cast = { version = ">=48" }
-arrow-ord = { version = ">=48" }
+arrow-array = { version = ">=50" }
+arrow-schema = { version = ">=50" }
+arrow-select = { version = ">=50" }
+arrow-row = { version = ">=50" }
+arrow-buffer = { version = ">=50" }
+arrow-arith = { version = ">=50" }
+arrow-csv = { version = ">=50" }
+arrow-cast = { version = ">=50" }
+arrow-ord = { version = ">=50" }
 bytes = "1"
-opendal = { version = ">=0.40", features = ["layers-prometheus"] }
+opendal = { version = ">=0.46", features = ["layers-prometheus"] }
 uuid = { version = "1", features = ["v4"] }
 serde = "1"
 serde_json = "1"

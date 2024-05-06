@@ -57,6 +57,7 @@ csv = { workspace = true }
 env_logger = { workspace = true }
 arrow-csv = { workspace = true }
 libtest-mimic = { workspace = true }
+opendal = { workspace = true, features = ["layers-prometheus", "services-fs"] }
 
 [features]
 prometheus = ["dep:prometheus"]

@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use arrow_array::RecordBatch;
 use arrow_schema::SchemaRef;
-use opendal::Writer;
+use opendal::FuturesAsyncWriter;
 use parquet::arrow::AsyncArrowWriter;
 use parquet::file::properties::WriterProperties;
 use parquet::format::FileMetaData;
@@ -14,7 +14,7 @@ use super::track_writer::TrackWriter;
 
 /// ParquetWriterBuilder is used to builder a [`ParquetWriter`]
 pub struct ParquetWriterBuilder {
-    writer: Writer,
+    writer: FuturesAsyncWriter,
     arrow_schema: SchemaRef,
 
     /// `buffer_size` determines the initial size of the intermediate buffer.
@@ -25,7 +25,7 @@ pub struct ParquetWriterBuilder {
 
 impl ParquetWriterBuilder {
     /// Initiate a new builder.
-    pub fn new(w: Writer, arrow_schema: SchemaRef) -> Self {
+    pub fn new(w: FuturesAsyncWriter, arrow_schema: SchemaRef) -> Self {
         Self {
             writer: w,
             arrow_schema,
@@ -60,8 +60,7 @@ impl ParquetWriterBuilder {
         let writer = TrackWriter::new(self.writer);
         let written_size = writer.get_wrriten_size();
 
-        let writer =
-            AsyncArrowWriter::try_new(writer, self.arrow_schema, self.buffer_size, self.props)?;
+        let writer = AsyncArrowWriter::try_new(writer, self.arrow_schema, self.props)?;
 
         Ok(ParquetWriter {
             writer,
@@ -116,7 +115,6 @@ mod tests {
     use arrow_array::ArrayRef;
     use arrow_array::Int64Array;
     use arrow_array::RecordBatch;
-    use bytes::Bytes;
     use opendal::services::Memory;
     use opendal::Operator;
     use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
@@ -130,14 +128,13 @@ mod tests {
         let col = Arc::new(Int64Array::from_iter_values(vec![1; 1024])) as ArrayRef;
         let to_write = RecordBatch::try_from_iter([("col", col)]).unwrap();
 
-        let w = op.writer("test").await?;
+        let w = op.writer("test").await?.into_futures_async_write();
         let mut pw = ParquetWriterBuilder::new(w, to_write.schema()).build()?;
         pw.write(&to_write).await?;
         pw.write(&to_write).await?;
         pw.close().await?;
 
-        let res = op.read("test").await?;
-        let res = Bytes::from(res);
+        let res = op.read("test").await?.to_bytes();
         let mut reader = ParquetRecordBatchReaderBuilder::try_new(res)
             .unwrap()
             .build()

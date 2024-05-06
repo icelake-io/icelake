@@ -74,7 +74,6 @@ mod test {
     use arrow_array::{ArrayRef, Int64Array, RecordBatch};
     use arrow_schema::SchemaRef;
     use arrow_select::concat::concat_batches;
-    use bytes::Bytes;
     use itertools::Itertools;
     use opendal::{services::Memory, Operator};
     use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
@@ -82,8 +81,7 @@ mod test {
     use super::{FileLocationGenerator, IcebergWriter, IcebergWriterBuilder};
 
     pub async fn read_batch(op: &Operator, path: &str) -> RecordBatch {
-        let res = op.read(path).await.unwrap();
-        let res = Bytes::from(res);
+        let res = op.read(path).await.unwrap().to_bytes();
         let reader = ParquetRecordBatchReaderBuilder::try_new(res)
             .unwrap()
             .build()

@@ -3,17 +3,17 @@ use std::{
     sync::{atomic::AtomicI64, Arc},
 };
 
-use opendal::Writer;
-use tokio::io::AsyncWrite;
+use futures::AsyncWrite;
+use opendal::FuturesAsyncWriter;
 
 /// `TrackWriter` is used to track the written size.
 pub struct TrackWriter {
-    writer: Writer,
+    writer: FuturesAsyncWriter,
     written_size: Arc<AtomicI64>,
 }
 
 impl TrackWriter {
-    pub fn new(writer: Writer, written_size: Arc<AtomicI64>) -> Self {
+    pub fn new(writer: FuturesAsyncWriter, written_size: Arc<AtomicI64>) -> Self {
         Self {
             writer,
             written_size,
@@ -21,7 +21,7 @@ impl TrackWriter {
     }
 }
 
-impl AsyncWrite for TrackWriter {
+impl tokio::io::AsyncWrite for TrackWriter {
     fn poll_write(
         mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
@@ -49,6 +49,6 @@ impl AsyncWrite for TrackWriter {
         mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<std::result::Result<(), std::io::Error>> {
-        Pin::new(&mut self.writer).poll_shutdown(cx)
+        Pin::new(&mut self.writer).poll_close(cx)
     }
 }

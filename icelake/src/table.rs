@@ -283,13 +283,13 @@ impl Table {
         snapshot: &Snapshot,
     ) -> Result<Vec<types::DataFile>> {
         let manifest_list_path = self.rel_path(&snapshot.manifest_list)?;
-        let manifest_list_content = self.op.read(&manifest_list_path).await?;
+        let manifest_list_content = self.op.read(&manifest_list_path).await?.to_vec();
         let manifest_list = types::parse_manifest_list(&manifest_list_content)?;
 
         let mut data_files: Vec<DataFile> = Vec::new();
         for manifest_list_entry in manifest_list.entries {
             let manifest_path = self.rel_path(&manifest_list_entry.manifest_path)?;
-            let manifest_content = self.op.read(&manifest_path).await?;
+            let manifest_content = self.op.read(&manifest_path).await?.to_vec();
             let manifest = types::parse_manifest_file(&manifest_content)?;
             data_files.extend(
                 manifest
