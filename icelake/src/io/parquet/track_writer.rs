@@ -1,8 +1,8 @@
+use futures::AsyncWrite;
 use std::{
     pin::Pin,
     sync::{atomic::AtomicU64, Arc},
 };
-use futures::AsyncWrite;
 
 use opendal::{FuturesAsyncWriter, Writer};
 

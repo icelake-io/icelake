@@ -67,15 +67,14 @@ impl<L: LocationGenerator> FileWriterBuilder for ParquetWriterBuilder<L> {
 
         let written_size = Arc::new(AtomicI64::new(0));
         let writer = TrackWriter::new(
-            self.operator.writer(&file_name).await?.into_futures_async_write(),
+            self.operator
+                .writer(&file_name)
+                .await?
+                .into_futures_async_write(),
             written_size.clone(),
         );
 
-        let writer = AsyncArrowWriter::try_new(
-            writer,
-            schema.clone(),
-            Some(self.props),
-        )?;
+        let writer = AsyncArrowWriter::try_new(writer, schema.clone(), Some(self.props))?;
 
         Ok(ParquetWriter {
             file_path: format!("{}/{}", self.table_location, file_name),

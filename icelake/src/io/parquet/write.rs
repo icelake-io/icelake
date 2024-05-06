@@ -3,11 +3,11 @@ use std::sync::Arc;
 
 use arrow_array::RecordBatch;
 use arrow_schema::SchemaRef;
+use opendal::FuturesAsyncWriter;
 use opendal::Writer;
 use parquet::arrow::AsyncArrowWriter;
 use parquet::file::properties::WriterProperties;
 use parquet::format::FileMetaData;
-use opendal::FuturesAsyncWriter;
 
 use crate::Result;
 
@@ -61,8 +61,7 @@ impl ParquetWriterBuilder {
         let writer = TrackWriter::new(self.writer);
         let written_size = writer.get_wrriten_size();
 
-        let writer =
-            AsyncArrowWriter::try_new(writer, self.arrow_schema, self.props)?;
+        let writer = AsyncArrowWriter::try_new(writer, self.arrow_schema, self.props)?;
 
         Ok(ParquetWriter {
             writer,

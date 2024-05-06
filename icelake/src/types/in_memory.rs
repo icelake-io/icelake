@@ -2141,7 +2141,8 @@ impl Snapshot {
     pub(crate) async fn load_manifest_list(&self, op: &Operator) -> Result<ManifestList> {
         parse_manifest_list(
             &op.read(Table::relative_path(op, self.manifest_list.as_str())?.as_str())
-                .await?.to_vec(),
+                .await?
+                .to_vec(),
         )
     }
 
