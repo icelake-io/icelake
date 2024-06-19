@@ -225,10 +225,7 @@ impl<'a, 'b> TryFrom<AnyWithFieldId<'a, 'b>> for AvroSchema {
                 }
                 AvroSchema::Array(AvroArraySchema {
                     items: Box::new(avro_schema),
-                    attributes: BTreeMap::from([(
-                        ELEMENT_ID.to_string(),
-                        list.element_id.into(),
-                    )]),
+                    attributes: BTreeMap::from([(ELEMENT_ID.to_string(), list.element_id.into())]),
                 })
             }
             Any::Struct(s) => {
