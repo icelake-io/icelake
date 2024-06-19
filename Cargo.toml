@@ -12,15 +12,15 @@ anyhow = "1"
 async-trait = "0.1"
 # branch is icelake-dev
 apache-avro = { git = "https://github.com/apache/avro.git", recv = "fdab5db0816e28e3e10c87910c8b6f98c33072dc",features = ["derive"] }
-arrow-array = { version = ">=50" }
-arrow-schema = { version = ">=50" }
-arrow-select = { version = ">=50" }
-arrow-row = { version = ">=50" }
-arrow-buffer = { version = ">=50" }
-arrow-arith = { version = ">=50" }
-arrow-csv = { version = ">=50" }
-arrow-cast = { version = ">=50" }
-arrow-ord = { version = ">=50" }
+arrow-array = { version = ">=51" }
+arrow-schema = { version = ">=51" }
+arrow-select = { version = ">=51" }
+arrow-row = { version = ">=51" }
+arrow-buffer = { version = ">=51" }
+arrow-arith = { version = ">=51" }
+arrow-csv = { version = ">=51" }
+arrow-cast = { version = ">=51" }
+arrow-ord = { version = ">=51" }
 bytes = "1"
 opendal = { version = ">=0.46", features = ["layers-prometheus"] }
 uuid = { version = "1", features = ["v4"] }
@@ -28,7 +28,7 @@ serde = "1"
 serde_json = "1"
 serde_with = "3"
 tokio = { version = "1.28", features = ["full"] }
-parquet = { version = ">=46", features = ["async"] }
+parquet = { version = ">=51", features = ["async"] }
 rust_decimal = "1.30"
 chrono = "0.4"
 faster-hex = "0.8.0"
