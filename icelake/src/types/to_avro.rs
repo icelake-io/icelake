@@ -129,6 +129,7 @@ impl<'a, 'b> TryFrom<AnyWithFieldId<'a, 'b>> for AvroSchema {
                         doc: None,
                         size: Primitive::decimal_required_bytes(*precision as u32)? as usize,
                         attributes: BTreeMap::default(),
+                        default: None,
                     })),
                 }),
                 Primitive::Date => AvroSchema::Date,
@@ -161,7 +162,7 @@ impl<'a, 'b> TryFrom<AnyWithFieldId<'a, 'b>> for AvroSchema {
 
                     AvroSchema::Map(AvroMapSchema {
                         types: Box::new(value_avro_schema),
-                        custom_attributes: BTreeMap::from([
+                        attributes: BTreeMap::from([
                             (
                                 KEY_ID.to_string(),
                                 JsonValue::String(map.key_id.to_string()),
@@ -207,7 +208,7 @@ impl<'a, 'b> TryFrom<AnyWithFieldId<'a, 'b>> for AvroSchema {
                             format!("k{}_v{}", map.key_id, map.value_id).as_str(),
                             vec![key_field, value_field],
                         ))),
-                        custom_attributes: BTreeMap::from([(
+                        attributes: BTreeMap::from([(
                             LOGICAL_TYPE.to_string(),
                             JsonValue::String("map".to_string()),
                         )]),
@@ -224,7 +225,7 @@ impl<'a, 'b> TryFrom<AnyWithFieldId<'a, 'b>> for AvroSchema {
                 }
                 AvroSchema::Array(AvroArraySchema {
                     items: Box::new(avro_schema),
-                    custom_attributes: BTreeMap::from([(
+                    attributes: BTreeMap::from([(
                         ELEMENT_ID.to_string(),
                         list.element_id.into(),
                     )]),
