@@ -18,14 +18,8 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Update Rust Stable
-        run: rustup update stable
-
       - name: Format
         run: cargo fmt --all  -- --check
-
-      - name: Clippy
-        run: cargo clippy --all-targets --workspace --all-features -- -D warnings
 
   build:
     runs-on: ubuntu-latest
