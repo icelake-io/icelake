@@ -2,19 +2,12 @@
 
 The Rust implementation of [Iceberg](https://iceberg.apache.org/).
 
-## Status
+---
 
-IceLake is currently in its early proof-of-concept stage and is undergoing heavy development.
+All contributor and code of this repo has been moved to [apache/iceberg-rust](https://github.com/apache/iceberg-rust/). 
 
-For more information on our plan, please refer to the [IceLake v0.1 RoadMap](https://github.com/icelake-io/icelake/issues/1).
+For any issue or PR, please go to [apache/iceberg-rust](https://github.com/apache/iceberg-rust/) instead.
 
-## Acknowledgement
+For more information, please refer to [ANNOUNCEMENT: Sunset of Icelake](https://github.com/icelake-io/icelake/issues/279).
 
-Inspired a lot by:
-
-- [iceberg-rs](https://github.com/oliverdaff/iceberg-rs)
-- [delta-rs](https://github.com/delta-io/delta-rs/)
-
-## License
-
-Licensed under the [Apache License, Version 2.0](http://www.apache.org/licenses/LICENSE-2.0)
+Thank you for your support, let's meet at the iceberg community.
