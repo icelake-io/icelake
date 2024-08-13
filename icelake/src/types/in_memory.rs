@@ -1235,17 +1235,17 @@ pub struct ManifestListEntry {
     ///
     /// Number of entries in the manifest that have status ADDED, when null
     /// this is assumed to be non-zero
-    pub added_data_files_count: i32,
+    pub added_files_count: i32,
     /// field: 505
     ///
     /// Number of entries in the manifest that have status EXISTING (0),
     /// when null this is assumed to be non-zero
-    pub existing_data_files_count: i32,
+    pub existing_files_count: i32,
     /// field: 506
     ///
     /// Number of entries in the manifest that have status DELETED (2),
     /// when null this is assumed to be non-zero
-    pub deleted_data_files_count: i32,
+    pub deleted_files_count: i32,
     /// field: 512
     ///
     /// Number of rows in all of files in the manifest that have status
@@ -1294,21 +1294,21 @@ mod manifest_list {
     pub static ADDED_FILES_COUNT: Lazy<Field> = Lazy::new(|| {
         Field::required(
             504,
-            "added_data_files_count",
+            "added_files_count",
             Any::Primitive(Primitive::Int),
         )
     });
     pub static EXISTING_FILES_COUNT: Lazy<Field> = Lazy::new(|| {
         Field::required(
             505,
-            "existing_data_files_count",
+            "existing_files_count",
             Any::Primitive(Primitive::Int),
         )
     });
     pub static DELETED_FILES_COUNT: Lazy<Field> = Lazy::new(|| {
         Field::required(
             506,
-            "deleted_data_files_count",
+            "deleted_files_count",
             Any::Primitive(Primitive::Int),
         )
     });
